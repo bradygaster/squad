@@ -164,7 +164,10 @@ export function markDispatchedThisRound(context: WatchContext, items: Array<{ nu
 
 /**
  * Try to claim each item. `held` and `unavailable` items are skipped (fail
- * closed); only `won` items may be dispatched. Never throws.
+ * closed); only `won` items may be dispatched. A won claim that reached its
+ * renew deadline before acquisition finished is renewed first, and moved to
+ * `held` (fenced) or `unavailable` (renew failed) if that does not succeed.
+ * Never throws.
  */
 export async function acquireClaims<T extends { number: number; url?: string }>(
   context: WatchContext,
@@ -219,7 +222,51 @@ export async function acquireClaims<T extends { number: number; url?: string }>(
       log.warn(`claim #${item.number} unavailable: ${reason} — skipping`);
     }
   }
+  if (provider.guarantees.leases) await confirmStaleClaims(provider, timing, result, log, metrics);
   return result;
+}
+
+/**
+ * Acquisition is sequential, so a slow or hanging remote can carry an early
+ * claim past its self-fence deadline (`expiresAt - skewMarginMs`) before the
+ * batch is dispatched, and past `expiresAt + skewMarginMs` another executor
+ * may already have taken it over. Renew every such claim before dispatch and
+ * drop the ones that are fenced (held elsewhere) or cannot be renewed
+ * (unavailable), so no agent ever starts on a claim the holder would already
+ * have fenced itself for.
+ */
+async function confirmStaleClaims<T extends { number: number }>(
+  provider: WorkClaimProvider,
+  timing: ClaimTiming,
+  result: ClaimAcquisition<T>,
+  log: ClaimLogger,
+  metrics: WatchContext['claimMetrics'],
+): Promise<void> {
+  const won: Array<WonClaim<T>> = [];
+  for (const w of result.won) {
+    if (timing.now() < w.claim.expiresAt - timing.skewMarginMs) {
+      won.push(w);
+      continue;
+    }
+    try {
+      const r = await provider.renew(w.claim, { ttlMs: timing.ttlMs });
+      if (r.status === 'renewed') {
+        won.push({ item: w.item, claim: r.claim });
+        log.debug(`claim #${w.item.number} reached its renew deadline during acquisition; renewed (epoch ${r.claim.epoch})`);
+        continue;
+      }
+      result.held.push(w.item);
+      metrics?.record('fenced');
+      const by = r.by ? ` by ${r.by.holder.machineId}/${r.by.holder.instanceId}` : '';
+      log.warn(`claim #${w.item.number} fenced${by} before dispatch (acquisition outlasted its lease) — skipping`);
+    } catch (e) {
+      const reason = `claim expired during acquisition and could not be renewed: ${(e as Error).message}`;
+      result.unavailable.push({ item: w.item, reason });
+      metrics?.record('lost');
+      log.warn(`claim #${w.item.number} unavailable: ${reason} — skipping`);
+    }
+  }
+  result.won = won;
 }
 
 /** Finish outcome for a spawned agent run (ADR-002 vocabulary). */

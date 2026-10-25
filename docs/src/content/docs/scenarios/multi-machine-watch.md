@@ -60,6 +60,10 @@ renewals keep failing until the lease is about to expire (`lost`), the
 watcher kills the agent's whole process tree. A claim left behind by a
 crashed watcher expires and another watcher takes it over.
 
+Claims are acquired one issue at a time. If acquiring the rest of a batch
+takes so long that an earlier claim reaches its renewal deadline, the watcher
+renews that claim before dispatch and skips the issue if the renewal fails.
+
 ## Enable claims
 
 Every watcher that may compete for the same issues must enable claims with
@@ -204,8 +208,8 @@ Each round report adds a claims line when anything happened:
 | `won` | Claims this watcher acquired |
 | `contended` | Issues skipped because another watcher holds them |
 | `unavailable` | Issues skipped because the claim could not be decided |
-| `fenced` | Claims another watcher took over while this one held them; the agent was killed |
-| `lost` | Claims not renewed before expiry; the agent was killed |
+| `fenced` | Claims another watcher took over while this one held them; the agent was killed (or never started) |
+| `lost` | Claims not renewed before expiry; the agent was killed (or never started) |
 | `released` | Claims released, by outcome: `completed`, `cancelled`, or `abandoned` |
 | `implausible` | Malformed or implausible claim records taken over as expired |
 

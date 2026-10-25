@@ -727,6 +727,85 @@ describe('watch claims: unsafe lease timing never reaches the renew timer', () =
   });
 });
 
+describe('watch claims: acquisition that outlasts a lease never dispatches on a stale claim', () => {
+  const ttlMs = 30_000;
+  const skewMarginMs = 5_000;
+
+  /**
+   * A and B share one store and one clock. A's acquire of every issue after
+   * #1 takes `stall` ms (a slow remote), so by the time A's batch is complete
+   * its claim on #1 is past `expiresAt - skewMarginMs`; when `takeover` is
+   * set, B legitimately takes #1 over once it is past `expiresAt + skewMarginMs`.
+   */
+  function slowAcquisition(opts: { stall: number; takeover: boolean }) {
+    let t = 1_000_000;
+    const now = (): number => t;
+    const store = new InMemoryClaimStore();
+    const a = new InMemoryClaimProvider({ identity: identity('slow-A'), store, now, skewMarginMs });
+    const b = new InMemoryClaimProvider({ identity: identity('fast-B'), store, now, skewMarginMs });
+    const acquire = a.acquire.bind(a);
+    const bTook: string[] = [];
+    vi.spyOn(a, 'acquire').mockImplementation(async (key, o) => {
+      if (key.id !== '1') {
+        t += opts.stall;
+        if (opts.takeover && bTook.length === 0) {
+          const r = await b.acquire({ platform: 'github', repo: 'acme/widgets', id: '1' }, { ttlMs });
+          bTook.push(r.status);
+        }
+      }
+      return acquire(key, o);
+    });
+    const ctx = (root: string, extra: Partial<WatchContext> = {}): WatchContext => makeContext(root, {
+      executor: identity('slow-A'),
+      claims: a,
+      claimTiming: { ttlMs, skewMarginMs, now },
+      ...extra,
+    });
+    return { a, b, bTook, ctx, now };
+  }
+
+  it('drops a claim another executor took over during acquisition, so its issue is never dispatched', async () => {
+    const { b, bTook, ctx } = slowAcquisition({ stall: ttlMs + skewMarginMs + 1, takeover: true });
+    const recordFile = path.join(ROOT, 'stale-takeover.jsonl');
+    const warns: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((m: unknown) => { warns.push(String(m)); });
+    try {
+      const result = await new ExecuteCapability().execute(ctx(teamDir('stale-takeover'), {
+        adapter: fakeAdapter(ISSUES.slice(0, 2)),
+        agentCmd: recorderCmd(recordFile, 'A'),
+      }));
+      expect(bTook, 'B takeover of #1 while A was still acquiring').toEqual(['acquired']);
+      expect(readRecords(recordFile).get('A'), `A dispatched issues: ${result.summary}`).toEqual([2]);
+      expect(result.success, result.summary).toBe(true);
+      expect(warns.join('\n')).toMatch(/claim #1 fenced by fast-B\/fast-B-instance before dispatch/);
+      expect((await b.inspect({ platform: 'github', repo: 'acme/widgets', id: '1' }))?.holder.machineId).toBe('fast-B');
+    } finally {
+      log.mockRestore();
+    }
+  });
+
+  it('renews a claim that reached its renew deadline during acquisition and keeps it', async () => {
+    const { a, ctx, now } = slowAcquisition({ stall: ttlMs - skewMarginMs, takeover: false });
+    const renew = vi.spyOn(a, 'renew');
+    const result = await acquireClaims(ctx(ROOT), [{ number: 1 }, { number: 2 }], { debug: () => {}, warn: () => {} });
+    expect(result.won.map(w => w.item.number)).toEqual([1, 2]);
+    expect(renew).toHaveBeenCalledTimes(1);
+    const one = result.won[0]!.claim;
+    expect(one.epoch).toBe(2);
+    expect(one.expiresAt).toBe(now() + ttlMs);
+  });
+
+  it('reports the claim unavailable (lost) when that renewal fails', async () => {
+    const { a, ctx } = slowAcquisition({ stall: ttlMs - skewMarginMs, takeover: false });
+    vi.spyOn(a, 'renew').mockRejectedValue(new Error('remote unreachable'));
+    const result = await acquireClaims(ctx(ROOT), [{ number: 1 }, { number: 2 }], { debug: () => {}, warn: () => {} });
+    expect(result.won.map(w => w.item.number)).toEqual([2]);
+    expect(result.unavailable.map(u => [u.item.number, u.reason])).toEqual([
+      [1, 'claim expired during acquisition and could not be renewed: remote unreachable'],
+    ]);
+  });
+});
+
 describe('watch claims: fence kill reaches the whole process tree', () => {
   const fakeChild = (patch: Record<string, unknown> = {}) => ({
     pid: 424242,

@@ -149,7 +149,9 @@ ownership, the same stance gh-aw takes for its Issue mirror.
   "open pull request already exists" check, and marker-keyed comments.
 - **Batches.** When one agent session receives several issues, the executor
   holds and renews every claim for the whole session and releases each in
-  `finally`.
+  `finally`. Claims are acquired one at a time, so before dispatch the
+  executor renews any claim that reached `expiresAt - skewMarginMs` while the
+  rest of the batch was being acquired, and drops it if that renewal fails.
 - **In-process dedupe.** One watch round never dispatches an issue twice
   (hybrid `execute` plus `fleet-dispatch`), whatever provider is configured.
   This is a bug fix, not opt-in behavior.

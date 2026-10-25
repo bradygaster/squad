@@ -48,7 +48,8 @@ const hasGit = (() => {
 const ROOT = path.resolve('.evidence-tmp', `watch-double-pick-${randomUUID().slice(0, 8)}`);
 const RECORD_SCRIPT = path.join(ROOT, 'record.cjs');
 const SLEEP_SCRIPT = path.join(ROOT, 'sleep.cjs');
-const TIMEOUT = 60_000;
+// Generous: real git under a fully loaded parallel suite can take seconds per command.
+const TIMEOUT = 120_000;
 
 const fwd = (p: string): string => p.replace(/\\/g, '/');
 
@@ -59,21 +60,28 @@ function git(cwd: string, args: string[]): string {
 beforeAll(() => {
   fs.mkdirSync(ROOT, { recursive: true });
   // Records the issue numbers in the prompt it received (following the
-  // Windows prompt-file spill), then lingers so concurrent executors overlap.
+  // Windows prompt-file spill), then lingers: until `gateFile` exists when one
+  // is given ('-' = none), else briefly so concurrent executors overlap.
   fs.writeFileSync(RECORD_SCRIPT, [
     "const fs = require('fs');",
-    'const [recordFile, tag, ...rest] = process.argv.slice(2);',
+    'const [recordFile, gateFile, tag, ...rest] = process.argv.slice(2);',
     "let prompt = rest.join(' ');",
     "const spill = prompt.match(/instructions are in the file (\\S+?) - read/);",
     "if (spill) { try { prompt = fs.readFileSync(spill[1], 'utf8'); } catch {} }",
     'const nums = [...prompt.matchAll(/- #(\\d+):/g)].map(m => Number(m[1]));',
     "fs.appendFileSync(recordFile, JSON.stringify({ tag, nums }) + '\\n');",
-    'setTimeout(() => {}, 300);',
+    "if (gateFile === '-') setTimeout(() => {}, 300);",
+    'else { const until = Date.now() + 110000; const poll = setInterval(() => { if (fs.existsSync(gateFile) || Date.now() > until) clearInterval(poll); }, 25); }',
   ].join('\n'));
+  // Writes its pid, then lives until 30 s after `<pidFile>.takenover` appears
+  // (capped at 110 s); only if it lives that long does it write `<pidFile>.natural`.
   fs.writeFileSync(SLEEP_SCRIPT, [
     "const fs = require('fs');",
-    'fs.writeFileSync(process.argv[2], String(process.pid));',
-    'setTimeout(() => {}, 30000);',
+    'const pidFile = process.argv[2];',
+    'fs.writeFileSync(pidFile, String(process.pid));',
+    "const natural = () => { fs.writeFileSync(pidFile + '.natural', ''); process.exit(0); };",
+    'const cap = setTimeout(natural, 110000);',
+    "const poll = setInterval(() => { if (fs.existsSync(pidFile + '.takenover')) { clearInterval(poll); clearTimeout(cap); setTimeout(natural, 30000); } }, 25);",
   ].join('\n'));
 });
 
@@ -152,14 +160,15 @@ function makeContext(teamRoot: string, overrides: Partial<WatchContext> = {}): W
     adapter: fakeAdapter(ISSUES),
     round: 1,
     roster: [{ name: 'EECOM', label: 'squad:eecom', expertise: [] }],
-    config: { timeout: 1 },
+    // Agent timeout in minutes: above TIMEOUT, so it never ends a gated or fenced agent first.
+    config: { timeout: 5 },
     workRepo: 'acme/widgets',
     ...overrides,
   };
 }
 
-function recorderCmd(recordFile: string, tag: string): string {
-  return `node ${fwd(RECORD_SCRIPT)} ${fwd(recordFile)} ${tag} {prompt}`;
+function recorderCmd(recordFile: string, tag: string, gateFile = '-'): string {
+  return `node ${fwd(RECORD_SCRIPT)} ${fwd(recordFile)} ${gateFile === '-' ? '-' : fwd(gateFile)} ${tag} {prompt}`;
 }
 
 function readRecords(recordFile: string): Map<string, number[]> {
@@ -174,22 +183,45 @@ function readRecords(recordFile: string): Map<string, number[]> {
 
 const sorted = (xs: number[]): number[] => [...xs].sort((x, y) => x - y);
 
-/** Two ExecuteCapability executors, each in its own clone, racing one round over ISSUES. */
+/**
+ * Two ExecuteCapability executors, each in its own clone, racing one round over ISSUES.
+ *
+ * Each agent stays alive (holding its claims) until BOTH executors have
+ * finished every acquire. Without that gate a slow executor can reach an
+ * issue after the fast one already finished and released it, and then
+ * legitimately claim it fresh (epoch 1) from its stale issue list — observed
+ * under the full parallel suite as "A dispatched [1,2,3,4], B dispatched [4]".
+ * That is sequential re-dispatch, not a double pick; claims only promise that
+ * no two executors hold an issue at the same time, which is what this asserts.
+ */
 async function raceTwoExecutors(
   name: string,
   providerFor: (teamRoot: string, id: ExecutorIdentity) => Promise<WorkClaimProvider>,
 ): Promise<{ a: number[]; b: number[]; summaries: string[]; bare: string }> {
   const bare = newRemote(name);
   const recordFile = path.join(ROOT, `${name}-dispatched.jsonl`);
+  const gateFile = path.join(ROOT, `${name}-all-acquired`);
   const adapter = fakeAdapter(ISSUES);
+  let acquires = 0;
+  const gated = (p: WorkClaimProvider): WorkClaimProvider => {
+    const acquire = p.acquire.bind(p);
+    p.acquire = async (key, o) => {
+      try {
+        return await acquire(key, o);
+      } finally {
+        if (++acquires === 2 * ISSUES.length) fs.writeFileSync(gateFile, '');
+      }
+    };
+    return p;
+  };
   const mk = async (tag: string): Promise<WatchContext> => {
     const root = clone(bare, `${name}-${tag}`);
     const executor = identity(`${name}-${tag}`);
     return makeContext(root, {
       adapter,
       executor,
-      claims: await providerFor(root, executor),
-      agentCmd: recorderCmd(recordFile, tag),
+      claims: gated(await providerFor(root, executor)),
+      agentCmd: recorderCmd(recordFile, tag, gateFile),
     });
   };
   const [ctxA, ctxB] = await Promise.all([mk('A'), mk('B')]);
@@ -199,6 +231,7 @@ async function raceTwoExecutors(
   ]);
   const summaries = results.map((r, i) => `${i === 0 ? 'A' : 'B'}: ${r.summary}`);
   for (const r of results) expect(r.success, summaries.join(' | ')).toBe(true);
+  expect(acquires, `acquire calls across both executors (${summaries.join(' | ')})`).toBe(2 * ISSUES.length);
   const records = readRecords(recordFile);
   return { a: sorted(records.get('A') ?? []), b: sorted(records.get('B') ?? []), summaries, bare };
 }
@@ -248,8 +281,9 @@ describe.skipIf(!hasGit)('double-pick: git-ref claims across real clones of one 
   }, TIMEOUT);
 
   it('fencing: A lapses on an injected clock, B takes over from its clone, A renew is fenced and its agent killed', async () => {
-    // A's clock stands still; B's runs 10 s ahead, so from B's view A's 3 s
-    // lease has lapsed however often A renews it.
+    // A's clock stands still; B's runs 10 s ahead, so from B's view A's 9 s
+    // lease has lapsed however often A renews it. A renews every 3 s, which
+    // leaves B's fetch-then-push takeover a wide window even on a loaded host.
     const base = 1_000_000;
     const nowA = (): number => base;
     const nowB = (): number => base + 10_000;
@@ -257,7 +291,8 @@ describe.skipIf(!hasGit)('double-pick: git-ref claims across real clones of one 
     const rootA = clone(bare, 'fence-A');
     const rootB = clone(bare, 'fence-B');
     const pidFile = path.join(rootA, 'agent.pid');
-    const ttlMs = 3_000;
+    const naturalExitFile = `${pidFile}.natural`;
+    const ttlMs = 9_000;
     const key = { platform: 'github', repo: 'acme/widgets', id: '1' };
     const a = new GitRefClaimProvider({ identity: identity('fence-A'), cwd: rootA, now: nowA, skewMarginMs: 0 });
     const b = new GitRefClaimProvider({ identity: identity('fence-B'), cwd: rootB, now: nowB, skewMarginMs: 0 });
@@ -266,7 +301,6 @@ describe.skipIf(!hasGit)('double-pick: git-ref claims across real clones of one 
     let pid = 0;
 
     try {
-      const started = Date.now();
       const run = new ExecuteCapability().execute(makeContext(rootA, {
         adapter: fakeAdapter([ISSUES[0]!]),
         executor: identity('fence-A'),
@@ -285,9 +319,14 @@ describe.skipIf(!hasGit)('double-pick: git-ref claims across real clones of one 
         if (r.status === 'acquired') break;
       }
       expect(attempts.at(-1), `B takeover attempts on #1: ${attempts.join(', ')}`).toBe('acquired');
+      const takenOverAt = Date.now();
+      fs.writeFileSync(`${pidFile}.takenover`, '');
 
       const result = await run;
-      expect(Date.now() - started, `A's agent outlived the fence: ${result.summary}`).toBeLessThan(15_000);
+      // The stub agent only writes this marker if it lives 30 s past B's
+      // takeover, so its absence proves the fence killed it, however slow the host.
+      expect(fs.existsSync(naturalExitFile),
+        `A's agent outlived the fence (run settled ${Date.now() - takenOverAt} ms after B's takeover): ${result.summary}`).toBe(false);
       expect(result.success, `A's round should fail when fenced: ${result.summary}`).toBe(false);
       expect(result.summary).toContain('claim #1 fenced by fence-B/fence-B-instance');
       expect(await waitForDeath(pid), `A's agent pid ${pid} still alive after the fence`).toBe(true);
