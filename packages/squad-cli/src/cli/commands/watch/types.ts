@@ -7,6 +7,7 @@
 
 import type { PlatformAdapter } from '@bradygaster/squad-sdk/platform';
 import type { ExecutorIdentity, WorkClaimProvider } from '@bradygaster/squad-sdk/ralph/claims';
+import type { WatchClaimMetrics } from './claim-metrics.js';
 
 /** Phase within a single watch round. */
 export type WatchPhase = 'pre-scan' | 'post-triage' | 'post-execute' | 'housekeeping';
@@ -67,6 +68,11 @@ export interface WatchContext {
    * same issue twice, whatever claim provider is configured.
    */
   dispatchedThisRound?: Set<number>;
+  /**
+   * Claim outcome counters (ADR-002 telemetry). Set only when the provider
+   * excludes other executors; unset leaves claim helpers uninstrumented.
+   */
+  claimMetrics?: WatchClaimMetrics;
 }
 
 /** Contract that every watch capability must implement. */

@@ -90,7 +90,7 @@ export function unsafeClaimTiming(timing: Pick<ClaimTiming, 'ttlMs' | 'skewMargi
  */
 export async function createWatchClaimProvider(
   config: WatchClaimsConfig | undefined,
-  opts: { teamRoot: string; identity: ExecutorIdentity },
+  opts: { teamRoot: string; identity: ExecutorIdentity; onWarning?: (message: string) => void },
 ): Promise<WorkClaimProvider> {
   if (!config || config.provider === 'none') {
     return new NoopClaimProvider({ identity: opts.identity });
@@ -102,6 +102,7 @@ export async function createWatchClaimProvider(
     remote: config.remote ?? 'origin',
     ...(config.refPrefix ? { refPrefix: config.refPrefix } : {}),
     ...(config.skewMarginMs !== undefined ? { skewMarginMs: config.skewMarginMs } : {}),
+    ...(opts.onWarning ? { onWarning: opts.onWarning } : {}),
   });
 }
 
@@ -173,6 +174,7 @@ export async function acquireClaims<T extends { number: number; url?: string }>(
   const provider = claimProviderFor(context);
   const timing = claimTimingFor(context);
   const { ttlMs } = timing;
+  const metrics = context.claimMetrics;
   const result: ClaimAcquisition<T> = { won: [], held: [], unavailable: [] };
 
   const badTiming = provider.guarantees.leases ? unsafeClaimTiming(timing) : null;
@@ -180,6 +182,7 @@ export async function acquireClaims<T extends { number: number; url?: string }>(
     const reason = `invalid claim timing: ${badTiming}`;
     log.warn(`claims unavailable: ${reason} — skipping ${items.length} issue(s)`);
     for (const item of items) result.unavailable.push({ item, reason });
+    metrics?.record('unavailable', items.length);
     return result;
   }
 
@@ -189,6 +192,7 @@ export async function acquireClaims<T extends { number: number; url?: string }>(
       if (claimsAreExclusive(provider)) {
         const reason = 'no stable repository for the work key (set an origin remote)';
         result.unavailable.push({ item, reason });
+        metrics?.record('unavailable');
         log.warn(`claim #${item.number} unavailable: ${reason} — skipping`);
         continue;
       }
@@ -198,16 +202,20 @@ export async function acquireClaims<T extends { number: number; url?: string }>(
       const r = await provider.acquire(key, { ttlMs });
       if (r.status === 'acquired') {
         result.won.push({ item, claim: r.claim });
+        metrics?.record('acquired');
       } else if (r.status === 'held') {
         result.held.push(item);
+        metrics?.record('contended');
         log.debug(`claim #${item.number} held by ${r.by.holder.machineId}/${r.by.holder.instanceId} — skipping`);
       } else {
         result.unavailable.push({ item, reason: r.reason });
+        metrics?.record('unavailable');
         log.warn(`claim #${item.number} unavailable: ${r.reason} — skipping`);
       }
     } catch (e) {
       const reason = (e as Error).message;
       result.unavailable.push({ item, reason });
+      metrics?.record('unavailable');
       log.warn(`claim #${item.number} unavailable: ${reason} — skipping`);
     }
   }
@@ -247,8 +255,11 @@ export async function holdClaimsWhile<R>(
 ): Promise<HoldResult<R>> {
   const provider = claimProviderFor(context);
   const timing = claimTimingFor(context);
+  const metrics = context.claimMetrics;
   const controller = new AbortController();
   const current = claims.map(c => ({ ...c }));
+  // Claims already counted as fenced or lost, so release does not count them twice.
+  const lostOrFenced = new Set<number>();
   let fencedReason: string | undefined;
   let stopped = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
@@ -272,11 +283,19 @@ export async function holdClaimsWhile<R>(
           log.debug(`claim ${label(c)} renewed (epoch ${r.claim.epoch})`);
         } else {
           const by = r.by ? ` by ${r.by.holder.machineId}/${r.by.holder.instanceId}` : '';
+          if (!lostOrFenced.has(idx)) {
+            lostOrFenced.add(idx);
+            metrics?.record('fenced');
+          }
           fence(`claim ${label(c)} fenced${by}`);
         }
       } catch (e) {
         const msg = (e as Error).message;
         if (timing.now() >= c.expiresAt - timing.skewMarginMs) {
+          if (!lostOrFenced.has(idx)) {
+            lostOrFenced.add(idx);
+            metrics?.record('lost');
+          }
           fence(`claim ${label(c)} could not be renewed before expiry (${msg})`);
         } else {
           log.warn(`claim ${label(c)} renew failed, will retry: ${msg}`);
@@ -309,7 +328,9 @@ export async function holdClaimsWhile<R>(
       // Fail closed: never run work under a renew schedule that would spin.
       await Promise.all(current.map(async c => {
         try {
-          await provider.release(c, 'cancelled');
+          const r = await provider.release(c, 'cancelled');
+          if (r.status === 'fenced') metrics?.record('fenced');
+          else metrics?.recordRelease('cancelled');
         } catch (e) {
           log.warn(`claim ${label(c)} release failed (cancelled): ${(e as Error).message}`);
         }
@@ -328,11 +349,19 @@ export async function holdClaimsWhile<R>(
     if (timer) clearTimeout(timer);
     if (inflight) await inflight.catch(() => undefined);
     const outcome = outcomeOf(result, fencedReason !== undefined);
-    await Promise.all(current.map(async c => {
+    await Promise.all(current.map(async (c, idx) => {
       try {
         const r = await provider.release(c, outcome);
-        if (r.status === 'fenced') log.warn(`claim ${label(c)} was fenced before release (${outcome})`);
-        else log.debug(`claim ${label(c)} ${r.status} (${outcome})`);
+        if (r.status === 'fenced') {
+          if (!lostOrFenced.has(idx)) {
+            lostOrFenced.add(idx);
+            metrics?.record('fenced');
+          }
+          log.warn(`claim ${label(c)} was fenced before release (${outcome})`);
+        } else {
+          metrics?.recordRelease(outcome);
+          log.debug(`claim ${label(c)} ${r.status} (${outcome})`);
+        }
       } catch (e) {
         log.warn(`claim ${label(c)} release failed (${outcome}): ${(e as Error).message}`);
       }
