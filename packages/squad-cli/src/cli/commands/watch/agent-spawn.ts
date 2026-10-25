@@ -9,7 +9,7 @@
  * @see https://github.com/bradygaster/squad/issues/923
  */
 
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -341,16 +341,66 @@ export function spawnWithTimeout(
 }
 
 /**
- * Kill a child and, on Windows, its whole process tree (agents run through
- * `cmd.exe` there, so killing only the shell would orphan the agent).
+ * Spawn options that make a POSIX agent the leader of its own process group
+ * (`detached: true`), so {@link killProcessTree} can kill the whole tree with
+ * `process.kill(-pid)`. Windows uses `taskkill /T` instead and is unchanged.
  */
-export function killProcessTree(child: { pid?: number; kill(signal?: NodeJS.Signals): boolean }): void {
-  if (IS_WINDOWS && child.pid) {
+export function agentProcessGroupOptions(platform: NodeJS.Platform = process.platform): { detached: boolean } {
+  return { detached: platform !== 'win32' };
+}
+
+const liveAgentGroups = new Set<number>();
+let agentGroupExitHookInstalled = false;
+
+/**
+ * Remember a detached POSIX agent until it exits so its process group is
+ * killed when watch exits: a detached group is outside the terminal's
+ * foreground group and no longer receives Ctrl+C.
+ */
+export function trackAgentProcessGroup(child: ChildProcess, platform: NodeJS.Platform = process.platform): void {
+  // Only real child processes (which report their exit) are tracked.
+  if (platform === 'win32' || !child.pid || typeof child.once !== 'function') return;
+  const pid = child.pid;
+  liveAgentGroups.add(pid);
+  child.once('exit', () => liveAgentGroups.delete(pid));
+  if (!agentGroupExitHookInstalled) {
+    agentGroupExitHookInstalled = true;
+    process.on('exit', () => {
+      for (const group of liveAgentGroups) {
+        try { process.kill(-group, 'SIGKILL'); } catch { /* group already gone */ }
+      }
+    });
+  }
+}
+
+export interface KillableChild {
+  pid?: number;
+  exitCode?: number | null;
+  signalCode?: NodeJS.Signals | string | null;
+  kill(signal?: NodeJS.Signals): boolean;
+}
+
+/**
+ * Kill a child and its whole process tree: `taskkill /T` on Windows (agents
+ * run through `cmd.exe` there), the child's process group on POSIX (agents
+ * are spawned detached, see {@link agentProcessGroupOptions}). Does nothing
+ * once the child has exited, because its PID may already be reused.
+ */
+export function killProcessTree(child: KillableChild, platform: NodeJS.Platform = process.platform): void {
+  if (child.exitCode != null || child.signalCode != null) return;
+  if (platform === 'win32' && child.pid) {
     try {
       execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5_000 });
       return;
     } catch {
       // Fall through to a direct kill
+    }
+  } else if (platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+      return;
+    } catch {
+      // ESRCH: not a group leader (spawned without detached) — kill the child directly
     }
   }
   try {
@@ -369,7 +419,7 @@ export function killProcessTree(child: { pid?: number; kill(signal?: NodeJS.Sign
  * with a {@link WatchContext.pidTracker} for cleanup on exit/crash (e.g.
  * the `execute` capability, which spawns long-running sessions).
  *
- * Pass `signal` to kill the child (process tree on Windows) on abort — used
+ * Pass `signal` to kill the child and its process tree on abort — used
  * when a work claim is fenced while the agent runs.
  */
 export function spawnAgent(
@@ -382,6 +432,8 @@ export function spawnAgent(
   signal?: AbortSignal,
 ): Promise<AgentSpawnResult> {
   const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
+  // Callers that may need to kill the agent get a POSIX process group.
+  const group = signal || pidTracking ? agentProcessGroupOptions() : { detached: false };
   return new Promise<AgentSpawnResult>((resolve) => {
     let onAbort: (() => void) | undefined;
     const cp = execFile(
@@ -392,6 +444,7 @@ export function spawnAgent(
         timeout: timeoutMs,
         maxBuffer: 50 * 1024 * 1024,
         shell: IS_WINDOWS,
+        ...group,
       },
       (err) => {
         if (onAbort) signal?.removeEventListener('abort', onAbort);
@@ -431,6 +484,8 @@ export function spawnAgent(
         }
       },
     );
+
+    if (group.detached) trackAgentProcessGroup(cp);
 
     if (pidTracking && cp.pid) {
       pidTracking.tracker.track(cp.pid, pidTracking.label);

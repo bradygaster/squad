@@ -174,6 +174,18 @@ describe('agent-spawn: spawnAgent pid tracking', () => {
     const result = await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000);
     expect(result.success).toBe(true);
   });
+
+  it('spawns a killable POSIX process group when a fence signal is passed', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+    try {
+      await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000, undefined, undefined, new AbortController().signal);
+      expect(mockExecFile.mock.calls.at(-1)?.[2]).toMatchObject({ detached: true });
+      await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000);
+      expect(mockExecFile.mock.calls.at(-1)?.[2]).toMatchObject({ detached: false });
+    } finally {
+      platformSpy.mockRestore();
+    }
+  });
 });
 
 describe('agent-spawn: Copilot usage capture', () => {

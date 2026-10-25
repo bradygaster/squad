@@ -867,7 +867,8 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   const { resolveExecutorIdentity, DEFAULT_CLAIM_TTL_MS, DEFAULT_CLAIM_SKEW_MARGIN_MS } =
     await import('@bradygaster/squad-sdk/ralph/claims');
   const { createWatchClaimProvider, describeClaimProvider, resolveWorkRepo } = await import('./claims.js');
-  const executor = resolveExecutorIdentity({ capabilities, actor: config.authUser });
+  // Hostname fallback is pseudonymized, salted with the (unpublished) team root path.
+  const executor = resolveExecutorIdentity({ capabilities, actor: config.authUser, hostnameSalt: path.resolve(teamRoot) });
   const claimTiming = {
     ttlMs: config.claims?.ttlMs ?? DEFAULT_CLAIM_TTL_MS,
     skewMarginMs: config.claims?.skewMarginMs ?? DEFAULT_CLAIM_SKEW_MARGIN_MS,

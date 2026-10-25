@@ -7,6 +7,11 @@
 import path from 'node:path';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import type { SquadStateContext, StateBackendType } from '@bradygaster/squad-sdk';
+import {
+  DEFAULT_CLAIM_SKEW_MARGIN_MS,
+  DEFAULT_CLAIM_TTL_MS,
+  claimTimingError,
+} from '@bradygaster/squad-sdk/ralph/claims';
 
 const storage = new FSStorageProvider();
 
@@ -43,11 +48,16 @@ export function isWatchClaimProviderName(value: unknown): value is WatchClaimPro
   return typeof value === 'string' && (WATCH_CLAIM_PROVIDERS as readonly string[]).includes(value);
 }
 
+const WATCH_CLAIMS_KEYS = new Set(['provider', 'ttlMs', 'skewMarginMs', 'remote', 'refPrefix']);
+
 /**
  * Parse a raw `watch.claims` value. Returns an error string instead of
- * silently falling back, so a typo never quietly disables claims.
+ * silently falling back, so a typo never quietly disables claims. Lease
+ * timing must satisfy `claimTimingError` (30 s ≤ ttlMs ≤ 24 h,
+ * skewMarginMs ≤ 1 h, ttlMs > 2 × skewMarginMs, defaults filled in). Unknown
+ * keys are reported in `warnings` and ignored.
  */
-export function parseWatchClaimsConfig(raw: unknown): { config?: WatchClaimsConfig; error?: string } {
+export function parseWatchClaimsConfig(raw: unknown): { config?: WatchClaimsConfig; error?: string; warnings?: string[] } {
   if (raw === undefined || raw === null) return {};
   if (typeof raw === 'string') {
     return isWatchClaimProviderName(raw)
@@ -76,6 +86,13 @@ export function parseWatchClaimsConfig(raw: unknown): { config?: WatchClaimsConf
     }
     config.skewMarginMs = skew;
   }
+  if (config.ttlMs !== undefined || config.skewMarginMs !== undefined) {
+    const timing = claimTimingError({
+      ttlMs: config.ttlMs ?? DEFAULT_CLAIM_TTL_MS,
+      skewMarginMs: config.skewMarginMs ?? DEFAULT_CLAIM_SKEW_MARGIN_MS,
+    });
+    if (timing) return { error: timing };
+  }
   for (const field of ['remote', 'refPrefix'] as const) {
     if (obj[field] === undefined) continue;
     const value = obj[field];
@@ -84,7 +101,10 @@ export function parseWatchClaimsConfig(raw: unknown): { config?: WatchClaimsConf
     }
     config[field] = value;
   }
-  return { config };
+  const unknown = Object.keys(obj).filter(k => !WATCH_CLAIMS_KEYS.has(k));
+  return unknown.length > 0
+    ? { config, warnings: unknown.map(k => `unknown key "${k}" ignored (valid: ${[...WATCH_CLAIMS_KEYS].join(', ')})`) }
+    : { config };
 }
 
 /** Merge file and CLI claim settings: the CLI provider wins; file tuning is kept. */
@@ -147,28 +167,41 @@ const DEFAULTS: WatchConfig = {
 /**
  * Load watch config from `.squad/config.json` then merge CLI overrides.
  *
+ * A missing config file means defaults. A config file that exists but is not
+ * valid JSON throws {@link WatchConfigError} (fail closed: a typo must not
+ * silently drop `watch.claims` and run without exclusion).
+ *
  * @param teamRoot   - Root directory containing `.squad/`.
  * @param cliOverrides - Values from CLI flag parsing (only set keys win).
+ * @param opts.warn  - Receives non-fatal config warnings. Default `console.warn`.
  */
 export function loadWatchConfig(
   teamRoot: string,
   cliOverrides: Partial<WatchConfig>,
+  opts: { warn?: (message: string) => void } = {},
 ): WatchConfig {
   let fileConfig: Partial<WatchConfig> = {};
-  let rawWatchConfig: Record<string, unknown> | undefined;
+  const warn = opts.warn ?? ((message: string) => console.warn(message));
 
+  const configPath = path.join(teamRoot, '.squad', 'config.json');
+  let raw: string | undefined;
   try {
-    const configPath = path.join(teamRoot, '.squad', 'config.json');
-    const raw = storage.readSync(configPath);
-    if (raw) {
-      const parsed = JSON.parse(raw) as { watch?: Record<string, unknown> };
-      rawWatchConfig = parsed.watch;
-    }
-  } catch (err) {
-    if (err instanceof WatchConfigError) throw err;
-    // No config file or parse error — use defaults
+    raw = storage.readSync(configPath) ?? undefined;
+  } catch {
+    // No readable config file — use defaults
   }
-  if (rawWatchConfig) fileConfig = normalizeFileConfig(rawWatchConfig);
+  if (raw) {
+    let parsed: { watch?: Record<string, unknown> } | null;
+    try {
+      parsed = JSON.parse(raw.replace(/^\uFEFF/, '')) as { watch?: Record<string, unknown> } | null;
+    } catch (err) {
+      throw new WatchConfigError(`.squad/config.json is not valid JSON: ${(err as Error).message}`);
+    }
+    const watch = parsed?.watch;
+    if (watch && typeof watch === 'object' && !Array.isArray(watch)) {
+      fileConfig = normalizeFileConfig(watch, warn);
+    }
+  }
 
   // Merge: defaults < file < CLI
   const merged: WatchConfig = {
@@ -208,7 +241,7 @@ export function loadWatchConfig(
 }
 
 /** Normalise the raw JSON "watch" object into a typed Partial<WatchConfig>. */
-function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig> {
+function normalizeFileConfig(raw: Record<string, unknown>, warn: (message: string) => void): Partial<WatchConfig> {
   const result: Partial<WatchConfig> = {};
 
   if (typeof raw['interval'] === 'number') result.interval = raw['interval'];
@@ -256,6 +289,7 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
     if (parsed.error) {
       throw new WatchConfigError(`.squad/config.json watch.claims: ${parsed.error}`);
     }
+    for (const w of parsed.warnings ?? []) warn(`⚠️ .squad/config.json watch.claims: ${w}`);
     if (parsed.config) result.claims = parsed.config;
   }
 

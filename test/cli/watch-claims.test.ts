@@ -31,10 +31,17 @@ import {
   WatchConfigError,
 } from '../../packages/squad-cli/src/cli/commands/watch/config.js';
 import {
+  acquireClaims,
   createWatchClaimProvider,
   describeClaimProvider,
+  holdClaimsWhile,
   workKeyFor,
 } from '../../packages/squad-cli/src/cli/commands/watch/claims.js';
+import {
+  agentProcessGroupOptions,
+  killProcessTree,
+  spawnAgent,
+} from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
 
 const ROOT = path.resolve('.evidence-tmp', `watch-claims-${randomUUID().slice(0, 8)}`);
 const RECORD_SCRIPT = path.join(ROOT, 'record.cjs');
@@ -609,6 +616,44 @@ describe('watch claims: config and flag precedence', () => {
     }
   });
 
+  it('rejects lease timing that would turn renewals into a push loop', () => {
+    const HOUR = 60 * 60_000;
+    const bad: Array<[Record<string, unknown>, RegExp]> = [
+      [{ ttlMs: 60_000, skewMarginMs: 30_000 }, /greater than twice/],
+      [{ ttlMs: 200_000 }, /greater than twice/], // default skew 2m
+      [{ ttlMs: 10_000, skewMarginMs: 0 }, /at least 30000/],
+      [{ ttlMs: 25 * HOUR }, /at most 86400000/],
+      [{ ttlMs: 3 * 2 ** 31 }, /at most 86400000/], // ttl/3 would overflow setTimeout
+      [{ ttlMs: 24 * HOUR, skewMarginMs: 2 * HOUR }, /skewMarginMs must be at most/],
+    ];
+    for (const [tuning, why] of bad) {
+      const root = withConfig(`cfg-timing-${randomUUID().slice(0, 6)}`, { claims: { provider: 'git-ref', ...tuning } });
+      expect(() => loadWatchConfig(root, {}), JSON.stringify(tuning)).toThrow(why);
+    }
+    const ok = withConfig('cfg-timing-ok', { claims: { provider: 'git-ref', ttlMs: 30_000, skewMarginMs: 10_000 } });
+    expect(loadWatchConfig(ok, {}).claims).toEqual({ provider: 'git-ref', ttlMs: 30_000, skewMarginMs: 10_000 });
+  });
+
+  it('fails closed when .squad/config.json exists but is not valid JSON', () => {
+    const root = teamDir('cfg-malformed');
+    fs.writeFileSync(path.join(root, '.squad', 'config.json'), '{ "watch": { "claims": "git-ref", } ');
+    expect(() => loadWatchConfig(root, {})).toThrow(WatchConfigError);
+    expect(() => loadWatchConfig(root, {})).toThrow(/not valid JSON/);
+    const bom = teamDir('cfg-bom');
+    fs.writeFileSync(path.join(bom, '.squad', 'config.json'), `\uFEFF${JSON.stringify({ watch: { claims: 'git-ref' } })}`);
+    expect(loadWatchConfig(bom, {}).claims).toEqual({ provider: 'git-ref' });
+  });
+
+  it('warns about unknown watch.claims keys and keeps the known ones', () => {
+    const root = withConfig('cfg-unknown-key', { claims: { provider: 'git-ref', ttl: 600_000, remote: 'upstream' } });
+    const warnings: string[] = [];
+    const config = loadWatchConfig(root, {}, { warn: m => warnings.push(m) });
+    expect(config.claims).toEqual({ provider: 'git-ref', remote: 'upstream' });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toMatch(/watch\.claims: unknown key "ttl" ignored/);
+    expect(parseWatchClaimsConfig({ provider: 'none' }).warnings).toBeUndefined();
+  });
+
   it('parse and merge helpers', () => {
     expect(parseWatchClaimsConfig(undefined)).toEqual({});
     expect(parseWatchClaimsConfig('none')).toEqual({ config: { provider: 'none' } });
@@ -641,4 +686,114 @@ describe('watch claims: config and flag precedence', () => {
     expect(workKeyFor(ctx, { number: 8 })).toEqual({ platform: 'github', repo: 'Fallback/Repo', id: '8' });
     expect(workKeyFor({ ...ctx, workRepo: undefined }, { number: 9 })).toBeNull();
   });
+});
+
+describe('watch claims: unsafe lease timing never reaches the renew timer', () => {
+  const key: WorkKey = { platform: 'github', repo: 'acme/widgets', id: '1' };
+  const silent = { debug: () => {}, warn: () => {} };
+
+  for (const [label, timing] of [
+    ['ttlMs <= 2 * skewMarginMs', { ttlMs: 1_000, skewMarginMs: 1_000 }],
+    ['ttlMs beyond 24h (setTimeout overflow)', { ttlMs: 30 * 24 * 60 * 60_000, skewMarginMs: 0 }],
+  ] as const) {
+    it(`holdClaimsWhile refuses ${label}: no work, no renewals, claims released`, async () => {
+      const provider = new InMemoryClaimProvider({ identity: identity('A') });
+      const acquired = await provider.acquire(key, { ttlMs: 1_000 });
+      if (acquired.status !== 'acquired') throw new Error(acquired.status);
+      const renew = vi.spyOn(provider, 'renew');
+      const release = vi.spyOn(provider, 'release');
+      const work = vi.fn(() => new Promise<string>(r => setTimeout(() => r('done'), 200)));
+      const ctx = makeContext(ROOT, { claims: provider, claimTiming: { ...timing } });
+
+      await expect(holdClaimsWhile(ctx, [acquired.claim], work, () => 'completed', silent))
+        .rejects.toThrow(/invalid claim timing/);
+      expect(work).not.toHaveBeenCalled();
+      expect(renew).not.toHaveBeenCalled();
+      expect(release).toHaveBeenCalledWith(expect.objectContaining({ handle: acquired.claim.handle }), 'cancelled');
+      expect(provider.store.size).toBe(0);
+    });
+  }
+
+  it('acquireClaims reports every item unavailable under unsafe timing (fail closed)', async () => {
+    const provider = new InMemoryClaimProvider({ identity: identity('A') });
+    const acquire = vi.spyOn(provider, 'acquire');
+    const warns: string[] = [];
+    const ctx = makeContext(ROOT, { claims: provider, claimTiming: { ttlMs: 1_000, skewMarginMs: 1_000 } });
+    const result = await acquireClaims(ctx, [{ number: 1 }, { number: 2 }], { debug: () => {}, warn: m => warns.push(m) });
+    expect(result.won).toEqual([]);
+    expect(result.unavailable.map(u => u.item.number)).toEqual([1, 2]);
+    expect(acquire).not.toHaveBeenCalled();
+    expect(warns.join('\n')).toMatch(/invalid claim timing/);
+  });
+});
+
+describe('watch claims: fence kill reaches the whole process tree', () => {
+  const fakeChild = (patch: Record<string, unknown> = {}) => ({
+    pid: 424242,
+    exitCode: null as number | null,
+    signalCode: null as string | null,
+    kill: vi.fn(() => true),
+    ...patch,
+  });
+
+  it('POSIX agents are spawned as process-group leaders', () => {
+    expect(agentProcessGroupOptions('linux')).toEqual({ detached: true });
+    expect(agentProcessGroupOptions('darwin')).toEqual({ detached: true });
+    expect(agentProcessGroupOptions('win32')).toEqual({ detached: false });
+  });
+
+  it('POSIX: kills the process group (-pid), not just the direct child', () => {
+    const kill = vi.spyOn(process, 'kill').mockImplementation((() => true) as typeof process.kill);
+    try {
+      const child = fakeChild();
+      killProcessTree(child, 'linux');
+      expect(kill).toHaveBeenCalledWith(-424242, 'SIGKILL');
+      expect(child.kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it('POSIX: falls back to the direct child when it does not lead a group (ESRCH)', () => {
+    const kill = vi.spyOn(process, 'kill').mockImplementation((() => {
+      throw Object.assign(new Error('kill ESRCH'), { code: 'ESRCH' });
+    }) as typeof process.kill);
+    try {
+      const child = fakeChild();
+      killProcessTree(child, 'linux');
+      expect(child.kill).toHaveBeenCalledWith('SIGKILL');
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it('does nothing once the child has exited (its PID may already be reused)', () => {
+    const kill = vi.spyOn(process, 'kill').mockImplementation((() => true) as typeof process.kill);
+    try {
+      for (const exited of [fakeChild({ exitCode: 0 }), fakeChild({ signalCode: 'SIGTERM' })]) {
+        killProcessTree(exited, 'linux');
+        expect(exited.kill).not.toHaveBeenCalled();
+      }
+      expect(kill).not.toHaveBeenCalled();
+    } finally {
+      kill.mockRestore();
+    }
+  });
+
+  it.skipIf(process.platform === 'win32')('abort kills a grandchild the agent forked (real process group)', async () => {
+    const dir = teamDir('group-kill');
+    const pidFile = path.join(dir, 'grandchild.pid');
+    const controller = new AbortController();
+    const run = spawnAgent('sh', ['-c', `sleep 30 & echo $! > '${pidFile}'; wait`], dir, 20_000, undefined, undefined, controller.signal);
+    const deadline = Date.now() + 10_000;
+    while (!fs.existsSync(pidFile) || !fs.readFileSync(pidFile, 'utf8').trim()) {
+      if (Date.now() > deadline) throw new Error('grandchild never started');
+      await new Promise(r => setTimeout(r, 25));
+    }
+    const grandchild = Number(fs.readFileSync(pidFile, 'utf8').trim());
+    controller.abort(new Error('claim fenced'));
+    const result = await run;
+    expect(result.cancelled).toBe(true);
+    expect(await waitForDeath(grandchild)).toBe(true);
+  }, 30_000);
 });

@@ -104,10 +104,14 @@ export class PidTracker {
       if (process.platform === 'win32') {
         execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { stdio: 'ignore', timeout: 5000 });
       } else {
-        // Note: We only kill the direct PID. Grandchild cleanup requires
-        // spawning with detached:true, which is controlled by the Execute
-        // capability. For now, direct PID kill is the honest approach.
-        process.kill(pid, 'SIGKILL');
+        // Agents are spawned as process-group leaders (detached) so the
+        // whole tree can be killed; fall back to the PID for processes that
+        // do not lead a group.
+        try {
+          process.kill(-pid, 'SIGKILL');
+        } catch {
+          process.kill(pid, 'SIGKILL');
+        }
       }
       return true;
     } catch {

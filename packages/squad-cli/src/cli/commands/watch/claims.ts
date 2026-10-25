@@ -11,6 +11,7 @@ import {
   DEFAULT_CLAIM_SKEW_MARGIN_MS,
   DEFAULT_CLAIM_TTL_MS,
   NoopClaimProvider,
+  claimTimingError,
 } from '@bradygaster/squad-sdk/ralph/claims';
 import type {
   ClaimRecord,
@@ -68,6 +69,18 @@ export function claimTimingFor(context: WatchContext): ClaimTiming {
     skewMarginMs: context.claimTiming?.skewMarginMs ?? DEFAULT_CLAIM_SKEW_MARGIN_MS,
     now: context.claimTiming?.now ?? Date.now,
   };
+}
+
+/**
+ * Why `timing` cannot drive a renewal schedule, or null. This is the
+ * structural check (`ttlMs > 2 * skewMarginMs`, `ttlMs <= 24h`,
+ * `skewMarginMs <= 1h`); the 30 s floor is enforced where users configure
+ * timing (`parseWatchClaimsConfig`). Violations would make the renew delay
+ * non-positive or overflow `setTimeout`, both of which turn the renew timer
+ * into a back-to-back push loop.
+ */
+export function unsafeClaimTiming(timing: Pick<ClaimTiming, 'ttlMs' | 'skewMarginMs'>): string | null {
+  return claimTimingError(timing, { minTtlMs: 0 });
 }
 
 /**
@@ -158,8 +171,17 @@ export async function acquireClaims<T extends { number: number; url?: string }>(
   log: ClaimLogger,
 ): Promise<ClaimAcquisition<T>> {
   const provider = claimProviderFor(context);
-  const { ttlMs } = claimTimingFor(context);
+  const timing = claimTimingFor(context);
+  const { ttlMs } = timing;
   const result: ClaimAcquisition<T> = { won: [], held: [], unavailable: [] };
+
+  const badTiming = provider.guarantees.leases ? unsafeClaimTiming(timing) : null;
+  if (badTiming) {
+    const reason = `invalid claim timing: ${badTiming}`;
+    log.warn(`claims unavailable: ${reason} — skipping ${items.length} issue(s)`);
+    for (const item of items) result.unavailable.push({ item, reason });
+    return result;
+  }
 
   for (const item of items) {
     let key = workKeyFor(context, item);
@@ -212,6 +234,9 @@ export interface HoldResult<R> {
  * passed signal when a renewal is fenced or keeps failing until
  * `expiresAt - skewMarginMs`, then release every claim with the outcome from
  * `outcomeOf`. Release and renewal errors are logged, never thrown.
+ *
+ * @throws Error (after releasing every claim, without running `work`) when a
+ *   leasing provider is paired with timing rejected by {@link unsafeClaimTiming}.
  */
 export async function holdClaimsWhile<R>(
   context: WatchContext,
@@ -278,7 +303,21 @@ export async function holdClaimsWhile<R>(
     timer.unref?.();
   };
 
-  if (provider.guarantees.leases && current.length > 0) schedule();
+  if (provider.guarantees.leases && current.length > 0) {
+    const badTiming = unsafeClaimTiming(timing);
+    if (badTiming) {
+      // Fail closed: never run work under a renew schedule that would spin.
+      await Promise.all(current.map(async c => {
+        try {
+          await provider.release(c, 'cancelled');
+        } catch (e) {
+          log.warn(`claim ${label(c)} release failed (cancelled): ${(e as Error).message}`);
+        }
+      }));
+      throw new Error(`invalid claim timing: ${badTiming}`);
+    }
+    schedule();
+  }
 
   let result: R | undefined;
   try {

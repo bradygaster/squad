@@ -15,7 +15,7 @@ import { tmpdir } from 'node:os';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import type { DispatchMode } from '../config.js';
-import { killProcessTree } from '../agent-spawn.js';
+import { agentProcessGroupOptions, killProcessTree, trackAgentProcessGroup } from '../agent-spawn.js';
 import { createVerboseLogger } from '../verbose.js';
 import {
   acquireClaims,
@@ -112,6 +112,7 @@ const invokeFleet: FleetInvoker = (prompt, cwd, timeoutMs, signal) => {
       cwd,
       timeout: timeoutMs,
       encoding: 'utf-8',
+      ...(signal ? agentProcessGroupOptions() : {}),
     }, (err, stdout, stderr) => {
       if (onAbort) signal?.removeEventListener('abort', onAbort);
       cleanupPromptFile();
@@ -130,6 +131,7 @@ const invokeFleet: FleetInvoker = (prompt, cwd, timeoutMs, signal) => {
       resolve({ success: true, output: String(stdout) });
     });
     if (signal) {
+      trackAgentProcessGroup(child);
       onAbort = () => killProcessTree(child);
       if (signal.aborted) onAbort();
       else signal.addEventListener('abort', onAbort, { once: true });
