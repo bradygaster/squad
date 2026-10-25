@@ -39,7 +39,6 @@ import path from 'node:path';
 import { promisify } from 'node:util';
 import { parse as tomlParse } from 'smol-toml';
 import { parse as yamlParse } from 'yaml';
-import { selfUpgradeCli, selfUpgradeCommand } from '../packages/squad-cli/src/cli/core/upgrade.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -125,8 +124,9 @@ const CLIENT_IDS = ['copilot', 'claude', 'kiro', 'opencode', 'cursor', 'codex', 
 const WORKFLOW_PATH = path.join(ROOT, '.github', 'workflows', 'squad-upgrade-matrix.yml');
 const FS_HOOK = path.join(ROOT, 'test', 'fixtures', 'upgrade-matrix', 'fs-access-log.cjs');
 
-describe('preview self-upgrade registry-state harness', () => {
+describe.skipIf(ENABLED)('preview self-upgrade registry-state harness', () => {
   it('resolves a prerelease through insider and executes the insider command when the candidate is published there', async () => {
+    const { selfUpgradeCli, selfUpgradeCommand } = await import('../packages/squad-cli/src/cli/core/upgrade.js');
     for (const packageManager of ['npm', 'pnpm', 'yarn'] as const) {
       const resolved: string[] = [];
       const executed: string[] = [];
@@ -148,6 +148,7 @@ describe('preview self-upgrade registry-state harness', () => {
   });
 
   it('resolves a prerelease through insider and refuses a downgrade before exec when the candidate is not published there', async () => {
+    const { selfUpgradeCli } = await import('../packages/squad-cli/src/cli/core/upgrade.js');
     for (const packageManager of ['npm', 'pnpm', 'yarn'] as const) {
       const resolved: string[] = [];
       const executed: string[] = [];
