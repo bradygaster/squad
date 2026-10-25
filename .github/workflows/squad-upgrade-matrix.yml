@@ -179,6 +179,25 @@ jobs:
             echo "Retry $i/3 — npm install failed, retrying in 5s..."; sleep 5
           done
           [ "$success" = true ] || { echo "::error::npm install failed after 3 attempts"; exit 1; }
+      - name: Capture exact target registry state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p preview-tarball-matrix-results
+          node scripts/release/registry-preflight.mjs \
+            --cli-tarball "$SQUAD_PREVIEW_CLI_TARBALL" \
+            --sdk-tarball "$SQUAD_PREVIEW_SDK_TARBALL" \
+            --registry https://registry.npmjs.org/ \
+            --repository "$GITHUB_REPOSITORY" \
+            --out preview-tarball-matrix-results/registry-preflight.json
+          target_version="$(node -p 'require("./preview-tarball-matrix-results/registry-preflight.json").version')"
+          registry_state="$(node -p 'require("./preview-tarball-matrix-results/registry-preflight.json").aggregate.versionState')"
+          insider_version="$(node -p 'require("./preview-tarball-matrix-results/registry-preflight.json").packages["@bradygaster/squad-cli"].distTags.values.insider || ""')"
+          echo "SQUAD_PREVIEW_EXPECTED_VERSION=$target_version" >> "$GITHUB_ENV"
+          echo "SQUAD_PREVIEW_TARGET_REGISTRY_STATE=$registry_state" >> "$GITHUB_ENV"
+          echo "SQUAD_PREVIEW_INSIDER_VERSION=$insider_version" >> "$GITHUB_ENV"
       - name: Run exact preview-tarball matrix
         shell: bash
         run: npx vitest run test/squad-20-preview-tarball-matrix.test.ts --reporter=default
@@ -189,7 +208,6 @@ jobs:
           SQUAD_PREVIEW_TARGET_SHA: ${{ inputs.target_sha }}
           SQUAD_PREVIEW_CLI_SHA256: ${{ inputs.cli_sha256 }}
           SQUAD_PREVIEW_SDK_SHA256: ${{ inputs.sdk_sha256 }}
-          SQUAD_PREVIEW_EXPECTED_VERSION: '2.0.0-preview.1'
           SQUAD_PREVIEW_EVIDENCE_RUN_ID: ${{ inputs.evidence_run_id }}
           SQUAD_PREVIEW_EVIDENCE_ARTIFACT: ${{ inputs.evidence_artifact }}
           GITHUB_TOKEN: ${{ github.token }}

@@ -2,6 +2,7 @@
  * Policy gate `changeset-drain` is event-aware:
  *  - release path (`--mode=release`, squad-release-verify.yml called from squad-release.yml):
  *    any pending `.changeset/*.md` fragment FAILS the gate (drain enforced);
+ *  - workflow_dispatch / workflow_call (`--mode=release`): the same drain is enforced;
  *  - pull_request (`--mode=ci`): pending fragments are expected and PASS as long as they are
  *    well-formed (allowlisted package, patch|minor|major, non-empty summary); malformed ones FAIL.
  * The workflow must pick the mode from the triggering event, never hard-code release mode.
@@ -84,7 +85,7 @@ describe('policy gate changeset-drain is branch/event-aware', () => {
 
   it('squad-release-verify.yml derives the mode from the event instead of hard-coding release', () => {
     const wf = readFileSync(join(ROOT, '.github', 'workflows', 'squad-release-verify.yml'), 'utf8');
-    expect(wf).toMatch(/POLICY_MODE: \$\{\{ inputs\.source_sha != '' && 'release' \|\| 'ci' \}\}/);
+    expect(wf).toMatch(/POLICY_MODE: \$\{\{ \(inputs\.source_sha != '' \|\| inputs\.sha != ''\) && 'release' \|\| 'ci' \}\}/);
     expect(wf).toMatch(/policy-gates\.mjs "--mode=\$POLICY_MODE"/);
     expect(wf).not.toMatch(/policy-gates\.mjs --mode=release/);
   });

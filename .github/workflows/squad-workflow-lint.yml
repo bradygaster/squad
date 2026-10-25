@@ -9,6 +9,12 @@ name: Workflow Lint
 # scrutiny as live workflows.
 
 on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: 'Full lowercase 40-hex commit SHA to lint'
+        required: true
+        type: string
   pull_request:
     branches: [dev, preview, main]
     paths:
@@ -43,7 +49,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Validate requested SHA
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SOURCE_SHA: ${{ inputs.sha }}
+        run: |
+          [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full lowercase 40-hex SHA, got '$SOURCE_SHA'"; exit 1; }
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        if: github.event_name != 'workflow_dispatch'
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+
+      - name: Assert checkout is exactly the requested SHA
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SOURCE_SHA: ${{ inputs.sha }}
+        run: |
+          head="$(git rev-parse HEAD)"
+          test "$head" = "$SOURCE_SHA" || { echo "::error::checkout HEAD $head != requested $SOURCE_SHA"; exit 1; }
 
       - name: Install actionlint 1.7.12 and shellcheck 0.10.0
         shell: bash
