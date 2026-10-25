@@ -96,8 +96,10 @@ Real `provider=copilot` support is unavailable unless a concrete callable Copilo
 exists in the installed SDK/tooling. Squad does not invent endpoints or fake a remote memory
 service. The only current bridge is explicitly named `hostInjectedCopilotAdapter`; it is
 opt-in and only works when a host supplies a client. Otherwise provider-backed writes fail
-closed after auditing the rejected attempt. Forbidden content is classified and rejected
-before any provider call.
+closed after auditing the rejected attempt. Searches skip the adapter, still return local
+results, and audit a `provider-error` entry. Neither the `squad` CLI nor the `squad_state`
+MCP server supplies a client, so enabling the adapter there only produces these rejections.
+Forbidden content is classified and rejected before any provider call.
 
 The installed Copilot SDK/CLI currently exposes memory as an agent capability/permission
 concept, not as a documented SDK storage client for write/search/delete. Config files may

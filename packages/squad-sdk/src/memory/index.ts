@@ -408,7 +408,7 @@ function evictOldest<T extends { createdAt: number }>(entries: Map<string, T>, m
   }
 }
 
-function safeProviderErrorReason(provider: MemoryProvider, operation: 'write' | 'search', error: unknown): string {
+function safeProviderErrorReason(provider: Pick<MemoryProvider, 'name'>, operation: 'write' | 'search', error: unknown): string {
   const errorName = error instanceof Error ? error.name : 'UnknownError';
   return `${provider.name} provider ${operation} failed (${errorName}); raw provider error text omitted`;
 }
@@ -452,6 +452,9 @@ function normalizeLoadGuidance(value: string | undefined, fallback: MemoryLoadGu
 export const REAL_COPILOT_UNAVAILABLE_REASON =
   'Real Copilot Memory API unavailable: no concrete callable API was found in installed @github/copilot SDK/tooling. Squad will not fake provider=copilot; use hostInjectedCopilotAdapter only when a host supplies a client.';
 
+const HOST_INJECTED_CLIENT_MISSING_REASON =
+  'hostInjectedCopilotAdapter is enabled, but no host-injected Copilot memory client was supplied. This is not real provider=copilot persistence.';
+
 function isRealCopilotProviderSelected(config: MemoryGovernanceConfig): boolean {
   return config.defaultProvider === 'copilot';
 }
@@ -481,9 +484,7 @@ export class HostInjectedCopilotMemoryAdapter {
 
   private requireClient(): CopilotMemoryProviderClient {
     if (!this.client) {
-      throw new Error(
-        'hostInjectedCopilotAdapter is enabled, but no host-injected Copilot memory client was supplied. This is not real provider=copilot persistence.',
-      );
+      throw new Error(HOST_INJECTED_CLIENT_MISSING_REASON);
     }
     return this.client;
   }
@@ -909,22 +910,45 @@ export class LocalMemoryStore {
         provider: 'local',
       });
     }
+    // The host-injected adapter is optional semantic memory. Like registeredProviders
+    // below, a missing or failing client must not take down local governed search:
+    // skip the adapter, audit a content-free provider-error, and keep local results.
     if (isHostInjectedCopilotAdapterConfigured(config)) {
-      const activeCopilotIds = new Set(index
-        .filter(item => item.status === 'active' && item.class === 'COPILOT_MEMORY')
-        .map(item => item.id));
-      const externalResults = await this.copilotProvider.search(query);
-      for (const result of externalResults) {
-        if (!activeCopilotIds.has(result.id)) continue;
-        results.push({
-          id: result.id,
+      if (!this.copilotProvider.isAvailable()) {
+        await this.audit({
+          action: 'provider-error',
           class: 'COPILOT_MEMORY',
-          loadGuidance: 'ON-DEMAND',
-          title: result.title,
-          path: result.path ?? `host-injected-copilot-adapter:${result.id}`,
-          snippet: result.snippet.slice(0, 240),
+          title: 'Host-injected Copilot adapter search skipped',
+          reason: HOST_INJECTED_CLIENT_MISSING_REASON,
           provider: 'hostInjectedCopilotAdapter',
         });
+      } else {
+        const activeCopilotIds = new Set(index
+          .filter(item => item.status === 'active' && item.class === 'COPILOT_MEMORY')
+          .map(item => item.id));
+        try {
+          const externalResults = await this.copilotProvider.search(query);
+          for (const result of externalResults) {
+            if (!activeCopilotIds.has(result.id)) continue;
+            results.push({
+              id: result.id,
+              class: 'COPILOT_MEMORY',
+              loadGuidance: 'ON-DEMAND',
+              title: result.title,
+              path: result.path ?? `host-injected-copilot-adapter:${result.id}`,
+              snippet: result.snippet.slice(0, 240),
+              provider: 'hostInjectedCopilotAdapter',
+            });
+          }
+        } catch (error) {
+          await this.audit({
+            action: 'provider-error',
+            class: 'COPILOT_MEMORY',
+            title: 'Host-injected Copilot adapter search failed',
+            reason: safeProviderErrorReason({ name: 'hostInjectedCopilotAdapter' }, 'search', error),
+            provider: 'hostInjectedCopilotAdapter',
+          });
+        }
       }
     }
 

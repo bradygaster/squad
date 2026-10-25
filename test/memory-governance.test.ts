@@ -342,6 +342,57 @@ describe('LocalMemoryStore', () => {
     expect(JSON.stringify(await store.auditLog())).not.toContain('Semantic memory should be sent');
   });
 
+  it('keeps local search working when hostInjectedCopilotAdapter is enabled without a host client', async () => {
+    const root = testRoot('memory-provider-missing-client-search');
+    const store = new LocalMemoryStore(new FSStorageProvider(), root);
+    await store.write({ content: 'Use Vitest for SDK regression tests.', title: 'Test runner', requestedClass: 'LOCAL' });
+    await store.configureHostInjectedCopilotAdapter({ enabled: true });
+
+    const results = await store.search('vitest');
+
+    expect(results.map(r => r.title)).toEqual(['Test runner']);
+    const audit = await store.auditLog();
+    expect(audit).toContainEqual(expect.objectContaining({
+      action: 'provider-error',
+      class: 'COPILOT_MEMORY',
+      title: 'Host-injected Copilot adapter search skipped',
+      provider: 'hostInjectedCopilotAdapter',
+    }));
+    expect(audit.at(-1)).toMatchObject({ action: 'search', reason: 'Search returned 1 result(s)' });
+    expect(JSON.stringify(audit)).not.toContain('vitest');
+  });
+
+  it('keeps local search working when the host-injected client search throws', async () => {
+    const root = testRoot('memory-provider-client-search-throws');
+    const client: CopilotMemoryProviderClient = {
+      async write() {
+        return { id: 'unused' };
+      },
+      async search() {
+        throw new Error('raw client failure mentioning vitest');
+      },
+      async delete() {
+        return false;
+      },
+    };
+    const store = new LocalMemoryStore(new FSStorageProvider(), root, { hostInjectedCopilotAdapterClient: client });
+    await store.write({ content: 'Use Vitest for SDK regression tests.', title: 'Test runner', requestedClass: 'LOCAL' });
+    await store.configureHostInjectedCopilotAdapter({ enabled: true });
+
+    const results = await store.search('vitest');
+
+    expect(results.map(r => r.title)).toEqual(['Test runner']);
+    const auditLog = await store.auditLog();
+    expect(auditLog).toContainEqual(expect.objectContaining({
+      action: 'provider-error',
+      title: 'Host-injected Copilot adapter search failed',
+      provider: 'hostInjectedCopilotAdapter',
+    }));
+    const auditJson = JSON.stringify(auditLog);
+    expect(auditJson).toContain('hostInjectedCopilotAdapter provider search failed (Error); raw provider error text omitted');
+    expect(auditJson).not.toContain('raw client failure');
+  });
+
   it('rejects provider=copilot because no real Copilot Memory API exists locally', async () => {
     const root = testRoot('memory-provider-real-copilot-unavailable');
     const store = new LocalMemoryStore(new FSStorageProvider(), root);
