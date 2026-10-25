@@ -362,7 +362,7 @@ function loadKnownRoutingAgentKeys(squadDir: string): Set<string> {
   );
   for (const agent of team.agents) {
     const key = normalizeAgentRef(agent.name);
-    if (key.startsWith('@')) keys.add(key);
+    if (key) keys.add(key);
   }
   // Built-ins are legitimate routing targets only while their installed charter exists. A route
   // to an unavailable built-in is a real configuration inconsistency and must fail health.
@@ -401,14 +401,23 @@ function checkRouting(squadDir: string): HealthCheckItem {
 
     const unresolved = new Set<string>();
     const referenced = new Set<string>();
-    const workTypes = new Set<string>();
-    const duplicates = new Set<string>();
+    const routeGroups = new Map<
+      string,
+      { display: string; routes: Map<string, { agents: string[]; count: number }> }
+    >();
 
     for (const rule of parsed.rules) {
       const workType = rule.workType.trim().toLowerCase();
-      if (workTypes.has(workType)) duplicates.add(rule.workType);
-      workTypes.add(workType);
-
+      const normalizedAgents = rule.agents.map(normalizeAgentRef);
+      const routeKey = normalizedAgents.join('\u0000');
+      const group = routeGroups.get(workType) ?? {
+        display: rule.workType,
+        routes: new Map(),
+      };
+      const route = group.routes.get(routeKey);
+      if (route) route.count++;
+      else group.routes.set(routeKey, { agents: [...rule.agents], count: 1 });
+      routeGroups.set(workType, group);
     }
 
     const agentReferences =
@@ -423,19 +432,37 @@ function checkRouting(squadDir: string): HealthCheckItem {
       }
     }
 
-    const diagnostics = [
-      ...[...duplicates]
+    const routeDiagnostics = [...routeGroups.values()]
+      .filter(
+        ({ routes }) =>
+          routes.size > 1 ||
+          [...routes.values()].some(({ count }) => count > 1),
+      )
+      .sort((a, b) => a.display.localeCompare(b.display))
+      .map(({ display, routes }) => {
+        const rendered = [...routes.values()]
+          .sort((a, b) => a.agents.join(', ').localeCompare(b.agents.join(', ')))
+          .map(({ agents, count }) =>
+            `${agents.join(', ')}${count > 1 ? ` (${count} rows)` : ''}`,
+          )
+          .join(' | ');
+        return `${routes.size > 1 ? 'conflicting' : 'duplicate'} route: ${display} -> ${rendered}`;
+      });
+    const unresolvedDiagnostics = [...unresolved]
         .sort((a, b) => a.localeCompare(b))
-        .map((workType) => `duplicate work type: ${workType}`),
-      ...[...unresolved]
-        .sort((a, b) => a.localeCompare(b))
-        .map((agent) => `unknown agent: ${agent}`),
-    ];
-    if (diagnostics.length > 0) {
+        .map((agent) => `unknown agent: ${agent}`);
+    if (unresolvedDiagnostics.length > 0) {
       return fail(
         'routing',
         'routing.md contains invalid or unresolved references',
-        diagnostics,
+        [...routeDiagnostics, ...unresolvedDiagnostics],
+      );
+    }
+    if (routeDiagnostics.length > 0) {
+      return warnItem(
+        'routing',
+        `routing.md has ${parsed.rules.length} rules with duplicate or conflicting work types`,
+        routeDiagnostics,
       );
     }
 
