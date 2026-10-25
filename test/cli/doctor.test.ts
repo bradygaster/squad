@@ -18,6 +18,7 @@ import {
   checkNodeVersion,
   checkGitSyncHooks,
   checkSquadStateBridge,
+  checkHistoryArchiveIntegrity,
 } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 import { FSStorageProvider, OrphanBranchBackend } from '@bradygaster/squad-sdk';
@@ -51,6 +52,11 @@ async function scaffold(root: string): Promise<void> {
   await writeFile(join(root, '.github', 'agents', 'squad.agent.md'), '# Squad Agent\n');
 }
 
+function initTestGit(root: string): void {
+  execFileSync('git', ['init', '-q'], { cwd: root });
+  execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: root });
+}
+
 describe('squad doctor', () => {
   beforeEach(async () => {
     if (existsSync(TEST_ROOT)) {
@@ -80,6 +86,105 @@ describe('squad doctor', () => {
     // ESM checks return 'warn' (not fail) when node_modules absent from test dir
     expect(checks.some((c: DoctorCheck) => c.name === 'vscode-jsonrpc exports field')).toBe(true);
     expect(checks.some((c: DoctorCheck) => c.name === 'copilot-sdk session.js ESM patch')).toBe(true);
+  });
+
+  it('fails doctor and names the history when an archive pointer is dangling', async () => {
+    await scaffold(TEST_ROOT);
+    initTestGit(TEST_ROOT);
+    await writeFile(
+      join(TEST_ROOT, '.squad', 'agents', 'edie', 'history.md'),
+      '# History\n\nFull pre-summary history archived at .squad/agents/edie/history-archive-2026-10-25.md\n',
+    );
+
+    const checks = await runDoctor(TEST_ROOT);
+    const check = checks.find(result => result.name === 'history archive integrity');
+
+    expect(check).toMatchObject({ status: 'fail' });
+    expect(check?.message).toContain('agents/edie/history.md');
+    expect(check?.message).toContain('history-archive-2026-10-25.md');
+  }, 10_000);
+
+  it('fails when a referenced archive exists but is not tracked', async () => {
+    await scaffold(TEST_ROOT);
+    initTestGit(TEST_ROOT);
+    const history = join(TEST_ROOT, '.squad', 'agents', 'edie', 'history.md');
+    const archive = join(TEST_ROOT, '.squad', 'agents', 'edie', 'history-archive.md');
+    await writeFile(history, '# History\n\nPrior archive at `.squad/agents/edie/history-archive.md`\n');
+    await writeFile(archive, '# Archived history\n');
+    execFileSync('git', ['add', '--', '.squad/agents/edie/history.md'], { cwd: TEST_ROOT });
+
+    const check = checkHistoryArchiveIntegrity(join(TEST_ROOT, '.squad'));
+
+    expect(check.status).toBe('fail');
+    expect(check.message).toContain('history-archive.md exists but is not tracked');
+  });
+
+  it('warns when a tracked archive has unstaged changes', async () => {
+    await scaffold(TEST_ROOT);
+    initTestGit(TEST_ROOT);
+    const history = join(TEST_ROOT, '.squad', 'agents', 'edie', 'history.md');
+    const archive = join(TEST_ROOT, '.squad', 'agents', 'edie', 'history-archive.md');
+    await writeFile(history, '# History\n\nPrior archive at .squad/agents/edie/history-archive.md\n');
+    await writeFile(archive, '# Archived history\n');
+    execFileSync('git', ['add', '--', '.squad/agents/edie/history.md', '.squad/agents/edie/history-archive.md'], { cwd: TEST_ROOT });
+    await writeFile(archive, '# Incomplete archive\n');
+
+    const check = checkHistoryArchiveIntegrity(join(TEST_ROOT, '.squad'));
+
+    expect(check.status).toBe('warn');
+    expect(check.message).toContain('differs from its staged Git blob');
+  });
+
+  it.each(['orphan', 'two-layer'] as const)('skips Git archive checks for the %s backend', async (backend) => {
+    await scaffold(TEST_ROOT);
+    initTestGit(TEST_ROOT);
+    const squadDir = join(TEST_ROOT, '.squad');
+    await writeFile(join(squadDir, 'config.json'), JSON.stringify({ stateBackend: backend }));
+    await writeFile(
+      join(squadDir, 'agents', 'edie', 'history.md'),
+      '# History\n\nPrior archive at .squad/agents/edie/history-archive.md\n',
+    );
+
+    const check = checkHistoryArchiveIntegrity(squadDir, TEST_ROOT, squadDir);
+
+    expect(check).toMatchObject({ status: 'warn' });
+    expect(check.message).toContain(`'${backend}' state backend`);
+  });
+
+  it('skips Git archive checks when state is external to the worktree', async () => {
+    await scaffold(TEST_ROOT);
+    initTestGit(TEST_ROOT);
+    const externalStateDir = `${TEST_ROOT}-external`;
+    try {
+      await mkdir(join(externalStateDir, 'agents', 'edie'), { recursive: true });
+      await writeFile(
+        join(externalStateDir, 'agents', 'edie', 'history.md'),
+        '# History\n\nPrior archive at history-archive.md\n',
+      );
+
+      const check = checkHistoryArchiveIntegrity(externalStateDir, TEST_ROOT, join(TEST_ROOT, '.squad'));
+
+      expect(check).toMatchObject({ status: 'warn' });
+      expect(check.message).toContain('outside the Git worktree');
+    } finally {
+      await rm(externalStateDir, { recursive: true, force: true });
+    }
+  });
+
+  it('passes for tracked archives matching their staged Git blob', async () => {
+    await scaffold(TEST_ROOT);
+    initTestGit(TEST_ROOT);
+    await writeFile(
+      join(TEST_ROOT, '.squad', 'agents', 'edie', 'history.md'),
+      '# History\n\nPrior archive at `.squad/agents/edie/history-archive.md`\n',
+    );
+    await writeFile(join(TEST_ROOT, '.squad', 'agents', 'edie', 'history-archive.md'), '# Archived history\n');
+    execFileSync('git', ['add', '--', '.squad/agents/edie/history.md', '.squad/agents/edie/history-archive.md'], { cwd: TEST_ROOT });
+
+    const check = checkHistoryArchiveIntegrity(join(TEST_ROOT, '.squad'));
+
+    expect(check).toMatchObject({ status: 'pass' });
+    expect(check.message).toContain('verified 1 tracked history archive reference');
   });
 
   it('performs a real initialize/tools/health handshake and accepts the running package version', async () => {

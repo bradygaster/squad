@@ -11,6 +11,7 @@
  */
 
 import path from 'node:path';
+import { lstatSync, readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { exec, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
 import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
@@ -861,6 +862,200 @@ export function checkWorktreeEol(cwd: string): DoctorCheck | undefined {
   };
 }
 
+interface HistoryArchivePointer {
+  source: string;
+  target: string;
+}
+
+const HISTORY_ARCHIVE_POINTER = /(?:Full pre-summary history archived at|Prior archive at)\s+(?:`([^`]+)`|<([^>]+)>|\[([^\]]+)\]|([^\s`<>]+))/gi;
+
+function findHistoryArchivePointers(squadDir: string): { pointers: HistoryArchivePointer[]; unreadable?: string } {
+  const pointers: HistoryArchivePointer[] = [];
+  const pending = [squadDir];
+
+  while (pending.length > 0) {
+    const directory = pending.pop()!;
+    let entries: Dirent[];
+    try {
+      entries = readdirSync(directory, { withFileTypes: true });
+    } catch {
+      return { pointers, unreadable: directory };
+    }
+
+    for (const entry of entries) {
+      const filePath = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(filePath);
+      } else if (entry.isFile() && path.extname(entry.name).toLowerCase() === '.md') {
+        let contents: string;
+        try {
+          contents = readFileSync(filePath, 'utf8');
+        } catch {
+          return { pointers, unreadable: filePath };
+        }
+
+        let inFence = false;
+        for (const line of contents.split(/\r?\n/)) {
+          if (/^\s*(`{3,}|~{3,})/.test(line)) {
+            inFence = !inFence;
+            continue;
+          }
+          if (inFence) continue;
+
+          for (const match of line.matchAll(HISTORY_ARCHIVE_POINTER)) {
+            const target = (match[1] ?? match[2] ?? match[3] ?? match[4] ?? '').replace(/[),.;:]+$/, '');
+            if (target) pointers.push({ source: filePath, target });
+          }
+        }
+      }
+    }
+  }
+
+  return { pointers };
+}
+
+/**
+ * Verify that every referenced archive exists and is tracked by Git. A worktree
+ * blob that differs from the staged blob is reported as a warning because
+ * `squad nap` may append to a valid archive before the user stages it.
+ */
+export function checkHistoryArchiveIntegrity(
+  stateDir: string,
+  cwd = path.dirname(stateDir),
+  backendConfigDir = stateDir,
+): DoctorCheck {
+  const stateBackend = configuredStateBackend(backendConfigDir);
+  if (stateBackend === 'orphan' || stateBackend === 'two-layer') {
+    return {
+      name: 'history archive integrity',
+      status: 'warn',
+      message: `Git worktree archive checks are not applicable to the '${stateBackend}' state backend`,
+    };
+  }
+
+  const scan = findHistoryArchivePointers(stateDir);
+  if (scan.unreadable) {
+    return {
+      name: 'history archive integrity',
+      status: 'warn',
+      message: `could not scan ${path.relative(stateDir, scan.unreadable) || '.'}`,
+    };
+  }
+
+  if (scan.pointers.length === 0) {
+    return { name: 'history archive integrity', status: 'pass', message: 'no history archive references found' };
+  }
+
+  let repoRoot: string;
+  try {
+    repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }).trim();
+  } catch {
+    return {
+      name: 'history archive integrity',
+      status: 'warn',
+      message: 'Git is unavailable, so archive tracking could not be verified',
+    };
+  }
+
+  const relativeStateDir = path.relative(repoRoot, path.resolve(stateDir));
+  if (
+    relativeStateDir === '..' ||
+    relativeStateDir.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeStateDir)
+  ) {
+    return {
+      name: 'history archive integrity',
+      status: 'warn',
+      message: 'state directory is outside the Git worktree, so archive tracking could not be verified',
+    };
+  }
+
+  const failures: string[] = [];
+  const warnings: string[] = [];
+  for (const pointer of scan.pointers) {
+    const source = path.relative(repoRoot, pointer.source).split(path.sep).join('/');
+    const normalizedTarget = pointer.target.replace(/\\/g, '/').replace(/^\.\//, '');
+    const targetPath = normalizedTarget.startsWith('.squad/')
+      ? path.resolve(repoRoot, normalizedTarget)
+      : path.resolve(stateDir, normalizedTarget);
+    const relativeTarget = path.relative(repoRoot, targetPath).split(path.sep).join('/');
+    const displayTarget = relativeTarget || normalizedTarget;
+
+    if (!relativeTarget || relativeTarget === '..' || relativeTarget.startsWith('../') || path.isAbsolute(relativeTarget)) {
+      failures.push(`${source} points outside the repository: ${pointer.target}`);
+      continue;
+    }
+
+    try {
+      if (!lstatSync(targetPath).isFile()) {
+        failures.push(`${source} -> ${displayTarget} is not a regular file`);
+        continue;
+      }
+    } catch {
+      failures.push(`${source} -> ${displayTarget} is missing on disk`);
+      continue;
+    }
+
+    let indexRecord: string;
+    try {
+      indexRecord = execFileSync('git', ['ls-files', '--stage', '--error-unmatch', '-z', '--', relativeTarget], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch {
+      failures.push(`${source} -> ${displayTarget} exists but is not tracked by Git`);
+      continue;
+    }
+
+    const stageZero = indexRecord.split('\0').find(record => /^\d+ [0-9a-f]+ 0\t/.test(record));
+    if (!stageZero) {
+      failures.push(`${source} -> ${displayTarget} has no resolved Git index entry`);
+      continue;
+    }
+    const indexBlob = /^\d+ ([0-9a-f]+) 0\t/.exec(stageZero)?.[1];
+
+    try {
+      const worktreeBlob = execFileSync('git', ['hash-object', `--path=${relativeTarget}`, '--', targetPath], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'pipe'],
+      }).trim();
+      if (worktreeBlob !== indexBlob) {
+        warnings.push(`${source} -> ${displayTarget} differs from its staged Git blob`);
+      }
+    } catch {
+      failures.push(`${source} -> ${displayTarget} could not be verified against Git`);
+    }
+  }
+
+  if (failures.length > 0) {
+    return {
+      name: 'history archive integrity',
+      status: 'fail',
+      message: failures.slice(0, 5).join('; ') + (failures.length > 5 ? `; and ${failures.length - 5} more` : ''),
+    };
+  }
+
+  if (warnings.length > 0) {
+    return {
+      name: 'history archive integrity',
+      status: 'warn',
+      message: warnings.slice(0, 5).join('; ') + (warnings.length > 5 ? `; and ${warnings.length - 5} more` : ''),
+    };
+  }
+
+  return {
+    name: 'history archive integrity',
+    status: 'pass',
+    message: `verified ${scan.pointers.length} tracked history archive reference(s)`,
+  };
+}
+
 // ── public API ──────────────────────────────────────────────────────
 
 /**
@@ -921,12 +1116,13 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     // roots — mirrors the dual-root resolver used by `squad cast`/`squad status`
     // so linked (remote-mode) projects are validated against the team root's
     // .squad/ instead of the local stub that only holds config.json (#2056).
-    const { stateDir } = effectiveSquadDir(resolvedCwd);
+    const { stateDir, backendConfigDir } = effectiveSquadDir(resolvedCwd);
     checks.push(checkTeamMd(stateDir));
     checks.push(checkRoutingMd(stateDir));
     checks.push(checkAgentsDir(stateDir));
     checks.push(checkCastingRegistry(stateDir));
     checks.push(checkDecisionsMd(resolvedCwd, squadDir, stateDir));
+    checks.push(checkHistoryArchiveIntegrity(stateDir, resolvedCwd, backendConfigDir));
     const rateLimitCheck = checkRateLimitStatus(squadDir);
     if (rateLimitCheck) checks.push(rateLimitCheck);
 
