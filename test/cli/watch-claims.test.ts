@@ -54,7 +54,8 @@ beforeAll(() => {
     "const spill = prompt.match(/instructions are in the file (\\S+?) - read/);",
     "if (spill) { try { prompt = fs.readFileSync(spill[1], 'utf8'); } catch {} }",
     'const nums = [...prompt.matchAll(/- #(\\d+):/g)].map(m => Number(m[1]));',
-    "fs.appendFileSync(recordFile, JSON.stringify({ tag, nums }) + '\\n');",
+    "const claimedContract = prompt.includes('CLAIMED WORK:');",
+    "fs.appendFileSync(recordFile, JSON.stringify({ tag, nums, claimedContract }) + '\\n');",
     'setTimeout(() => {}, 300);',
   ].join('\n'));
   // Writes its pid, then sleeps long enough that only a kill ends it in time.
@@ -124,6 +125,15 @@ function readRecords(recordFile: string): Map<string, number[]> {
     byTag.set(tag, [...(byTag.get(tag) ?? []), ...nums]);
   }
   return byTag;
+}
+
+/** Whether each recorded prompt for `tag` carried the claimed-work contract. */
+function readContractFlags(recordFile: string, tag: string): boolean[] {
+  if (!fs.existsSync(recordFile)) return [];
+  return fs.readFileSync(recordFile, 'utf8').split('\n').filter(Boolean)
+    .map(line => JSON.parse(line) as { tag: string; claimedContract: boolean })
+    .filter(r => r.tag === tag)
+    .map(r => r.claimedContract);
 }
 
 const identity = (machineId: string): ExecutorIdentity => ({ machineId, instanceId: `${machineId}-instance` });
@@ -498,6 +508,60 @@ describe('watch claims: hybrid same-round dedupe', () => {
     } finally {
       log.mockRestore();
     }
+  });
+});
+
+describe('watch claims: claimed-work prompt contract', () => {
+  async function executePrompt(name: string, claims?: WorkClaimProvider): Promise<boolean[]> {
+    const root = teamDir(name);
+    const recordFile = path.join(root, 'dispatched.jsonl');
+    const executor = identity(`machine-${name}`);
+    const result = await new ExecuteCapability().execute(makeContext(root, {
+      executor,
+      ...(claims ? { claims } : {}),
+      agentCmd: recorderCmd(recordFile, 'p'),
+    }));
+    expect(result.success, result.summary).toBe(true);
+    return readContractFlags(recordFile, 'p');
+  }
+
+  async function fleetPrompt(name: string, claims?: WorkClaimProvider): Promise<string> {
+    const prompts: string[] = [];
+    const cap = new FleetDispatchCapability({
+      invoke: async (prompt) => {
+        prompts.push(prompt);
+        return { success: true };
+      },
+    });
+    const result = await cap.execute(makeContext(teamDir(name), {
+      adapter: fakeAdapter([issue(20, 'Research auth flow')]),
+      ...(claims ? { claims } : {}),
+      config: { timeout: 1, dispatchMode: 'hybrid' },
+    }));
+    expect(result.success, result.summary).toBe(true);
+    expect(prompts).toHaveLength(1);
+    return prompts[0]!;
+  }
+
+  it('execute tells the agent to work only its claimed issues under an exclusive provider', async () => {
+    const provider = new InMemoryClaimProvider({ identity: identity('contract'), store: new InMemoryClaimStore() });
+    expect(await executePrompt('contract-exclusive', provider)).toEqual([true]);
+  }, 30_000);
+
+  it('execute keeps today\'s prompt with no provider or the none provider', async () => {
+    expect(await executePrompt('contract-default')).toEqual([false]);
+    expect(await executePrompt('contract-noop', new NoopClaimProvider({ identity: identity('noop') }))).toEqual([false]);
+  }, 30_000);
+
+  it('fleet-dispatch adds the claimed-work rule only under an exclusive provider', async () => {
+    const provider = new InMemoryClaimProvider({ identity: identity('fleet-contract'), store: new InMemoryClaimStore() });
+    const claimed = await fleetPrompt('fleet-contract-exclusive', provider);
+    expect(claimed).toContain('Claimed work: these issues are claimed for this session. Analyze ONLY these issues');
+    expect(claimed).toContain('do not pick up, self-assign, or take over any other issue');
+
+    const legacy = await fleetPrompt('fleet-contract-default');
+    expect(legacy).not.toContain('Claimed work');
+    expect(legacy.trimEnd().endsWith('Rules: All tracks READ-ONLY. Write findings as issue comments. Run in parallel.')).toBe(true);
   });
 });
 

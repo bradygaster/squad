@@ -20,6 +20,7 @@ import { createVerboseLogger } from '../verbose.js';
 import {
   acquireClaims,
   claimProviderFor,
+  claimsAreExclusive,
   claimSummary,
   excludeDispatchedThisRound,
   holdClaimsWhile,
@@ -49,6 +50,7 @@ function agentForIssue(
 function buildFleetPrompt(
   issues: ExecutableWorkItem[],
   roster: WatchContext['roster'],
+  claimsActive = false,
 ): string {
   const tracks = issues.map((issue, idx) => {
     const agent = agentForIssue(issue, roster);
@@ -66,6 +68,9 @@ function buildFleetPrompt(
     ...tracks,
     '',
     'Rules: All tracks READ-ONLY. Write findings as issue comments. Run in parallel.',
+    ...(claimsActive
+      ? ['Claimed work: these issues are claimed for this session. Analyze ONLY these issues; do not pick up, self-assign, or take over any other issue. If a track cannot finish, stop it — the watcher releases the claim when this session ends.']
+      : []),
   ].join('\n');
 }
 
@@ -216,7 +221,7 @@ export class FleetDispatchCapability implements WatchCapability {
       markDispatchedThisRound(context, claimed);
 
       // Build and invoke fleet prompt
-      const prompt = buildFleetPrompt(claimed, context.roster);
+      const prompt = buildFleetPrompt(claimed, context.roster, claimsAreExclusive(provider));
       const fleetTimeout = Math.max(timeoutMs, 300_000); // at least 5 min for fleet
       const { result, fencedReason } = await holdClaimsWhile(
         context,

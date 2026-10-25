@@ -52,6 +52,20 @@ MAXIMIZE PARALLELISM — spawn agents for ALL actionable issues simultaneously.
 Work on every open, unblocked, unassigned issue labeled `squad` or `squad:{member}`.
 Skip issues that are assigned to a human, blocked, or marked `status:on-hold`.
 
+### Claimed Work
+
+When `squad watch` runs with a claim provider (for example `--claims git-ref`), the
+issues listed in your prompt are claimed for this session (ADR-002):
+- Work ONLY on the claimed issues in your prompt. Do not pick up other issues, even if
+  they look actionable.
+- Claims are authoritative; assignees and labels are informational mirrors. Do not
+  self-assign or take over issues claimed or assigned elsewhere.
+- If you cannot complete a claimed issue, stop and comment why. The watcher releases
+  the claim when your session ends.
+
+With `--claims none` (the default) there is no cross-watcher exclusion and Issue
+Selection above applies as written.
+
 ### Post-Task Actions
 
 <!-- Uncomment and customize to add post-task hooks, e.g. Teams notifications:

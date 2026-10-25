@@ -20,6 +20,7 @@ import { YELLOW, RESET } from '../../../core/output.js';
 import {
   acquireClaims,
   claimProviderFor,
+  claimsAreExclusive,
   claimSummary,
   excludeDispatchedThisRound,
   holdClaimsWhile,
@@ -118,12 +119,30 @@ function formatIssueList(issues: ExecutableWorkItem[]): string {
 }
 
 /**
+ * Claimed-work contract (ADR-002). Included only when an exclusive claim
+ * provider is active: the listed issues are exactly the ones this watcher
+ * won, so the agent must not widen its scope or take over others' work.
+ */
+export const CLAIMED_WORK_CONTRACT = [
+  'CLAIMED WORK: This watcher holds work claims for exactly the issues listed below — they are claimed for you.',
+  '- Work ONLY on these claimed issues. Do not pick up, start, or spawn agents for any other issue, even if it looks actionable.',
+  '- Do not self-assign, relabel, or take over issues assigned to or claimed by someone else. Assignees and labels are informational mirrors; the claim is authoritative.',
+  '- If you cannot complete a claimed issue, stop working on it and comment why. Do not hand it off; the watcher releases the claim when this session ends.',
+].join('\n');
+
+/** Options for {@link buildAgentPrompt}. */
+export interface AgentPromptOptions {
+  /** An exclusive claim provider (exclusion !== 'none') won every listed issue. */
+  claimsActive?: boolean;
+}
+
+/**
  * Build the rich agent prompt matching PS1 ralph-watch design.
  *
  * `issues` is exactly the set this session holds claims for (ADR-002); the
- * caller never passes issues it did not win. Wording that tells the agent to
- * work only on these claimed issues is owned by the Ralph prompt contract
- * (`ralph-instructions.md`) and is intentionally not changed here.
+ * caller never passes issues it did not win. When `options.claimsActive` is
+ * set, the prompt carries {@link CLAIMED_WORK_CONTRACT} and scopes every
+ * instruction to the claimed issues; otherwise today's wording is unchanged.
  *
  * `stateDir` — where to look for ralph-instructions.md — defaults to
  * `{teamRoot}/.squad` when omitted; pass the effective state dir directly
@@ -133,9 +152,32 @@ export function buildAgentPrompt(
   issues: ExecutableWorkItem[],
   teamRoot: string,
   stateDir?: string,
+  options: AgentPromptOptions = {},
 ): string {
   const issueList = formatIssueList(issues);
   const hasInstructions = existsSync(path.join(stateDir ?? path.join(teamRoot, '.squad'), 'ralph-instructions.md'));
+
+  if (options.claimsActive) {
+    const intro = hasInstructions
+      ? 'Ralph, Go! Read .squad/ralph-instructions.md for your full instructions. Follow ALL sections there. MAXIMIZE PARALLELISM — spawn agents for ALL claimed issues simultaneously.'
+      : 'You are Ralph, the autonomous work monitor. Work on every actionable issue claimed for you below. Skip claimed issues that are blocked or waiting on external input.';
+    const task = hasInstructions
+      ? 'Task: Read the issues, follow your instructions in .squad/ralph-instructions.md, and work on the claimed issues only.'
+      : 'Task: Work on the unblocked claimed issues only, create branches and PRs.';
+    return [
+      intro,
+      '',
+      CLAIMED_WORK_CONTRACT,
+      '',
+      'Here are the issues claimed for you (work ONLY these):',
+      issueList,
+      '',
+      task,
+      'WHY: Keep the squad pipeline moving without two agents doing the same work.',
+      'Success: Claimed issues get branches, PRs, and progress.',
+      'Escalation: If blocked on a claimed issue, comment on it, stop work on it, and move to the next claimed issue.',
+    ].join('\n');
+  }
 
   if (hasInstructions) {
     return [
@@ -171,8 +213,9 @@ async function executeAll(
   context: WatchContext,
   timeoutMs: number,
   signal?: AbortSignal,
+  claimsActive = false,
 ): Promise<AgentSpawnResult> {
-  const prompt = buildAgentPrompt(issues, context.teamRoot, context.stateRoot);
+  const prompt = buildAgentPrompt(issues, context.teamRoot, context.stateRoot, { claimsActive });
 
   // Load Ralph's charter to give the spawned session full specialist context.
   let charterPrefix = '';
@@ -329,7 +372,7 @@ export class ExecuteCapability implements WatchCapability {
       const { result, fencedReason } = await holdClaimsWhile(
         context,
         acquisition.won.map(w => w.claim),
-        (signal) => executeAll(claimed, context, timeout, signal),
+        (signal) => executeAll(claimed, context, timeout, signal, claimsAreExclusive(provider)),
         (r, fenced) => outcomeForSpawn(r ?? { success: false }, fenced),
         claimLog,
       );

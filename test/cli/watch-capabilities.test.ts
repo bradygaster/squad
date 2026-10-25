@@ -80,6 +80,7 @@ vi.mock('node:fs', () => ({
 // ── Imports (resolved against mocks) ────────────────────────────────
 
 import {
+  CLAIMED_WORK_CONTRACT,
   ExecuteCapability,
   buildAgentPrompt,
   findExecutableIssues,
@@ -274,6 +275,43 @@ describe('Watch Capabilities', () => {
         const prompt = buildAgentPrompt(issues, '/fake');
         expect(prompt).toContain('squad:eecom, P1');
         expect(prompt).toContain('alice');
+      });
+
+      // ADR-002 prompt contract: an exclusive claim provider won every listed
+      // issue, so the agent must stay on them; `none` keeps today's wording.
+      describe('claimed-work contract', () => {
+        const issues: ExecutableWorkItem[] = [
+          { number: 7, title: 'Fix auth', labels: [{ name: 'squad' }], assignees: [] },
+        ];
+
+        it.each([
+          ['with ralph-instructions.md', true],
+          ['fallback prompt', false],
+        ])('%s: tells the agent to work ONLY its claimed issues when claims are active', (_name, hasInstructions) => {
+          mockFsExistsSync.mockReturnValue(hasInstructions);
+          const prompt = buildAgentPrompt(issues, '/fake/team', undefined, { claimsActive: true });
+          expect(prompt).toContain(CLAIMED_WORK_CONTRACT);
+          expect(prompt).toContain('Work ONLY on these claimed issues');
+          expect(prompt).toContain('Do not self-assign');
+          expect(prompt).toContain('the watcher releases the claim when this session ends');
+          expect(prompt).toContain('Here are the issues claimed for you (work ONLY these):');
+          expect(prompt).toContain('#7: Fix auth');
+          expect(prompt).not.toMatch(/already assigned|unblocked\/unassigned|work on what's actionable/);
+          expect(prompt.includes('Ralph, Go!')).toBe(hasInstructions);
+        });
+
+        it.each([
+          ['with ralph-instructions.md', true],
+          ['fallback prompt', false],
+        ])('%s: keeps today\'s wording when claims are not active', (_name, hasInstructions) => {
+          mockFsExistsSync.mockReturnValue(hasInstructions);
+          const legacy = buildAgentPrompt(issues, '/fake/team');
+          const explicitNone = buildAgentPrompt(issues, '/fake/team', undefined, { claimsActive: false });
+          expect(explicitNone).toBe(legacy);
+          expect(legacy).not.toContain('CLAIMED WORK');
+          expect(legacy).not.toContain('claimed for you');
+          expect(legacy).toContain('Here are the current open squad issues:');
+        });
       });
     });
 

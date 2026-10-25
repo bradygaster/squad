@@ -53,6 +53,15 @@ export function claimProviderFor(context: WatchContext): WorkClaimProvider {
   return context.claims ?? new NoopClaimProvider(context.executor ? { identity: context.executor } : {});
 }
 
+/**
+ * True when the provider actually excludes other executors (`local` or
+ * `distributed`), so dispatched issues are claimed for this agent and the
+ * prompt must carry the claimed-work contract. `none` keeps today's prompt.
+ */
+export function claimsAreExclusive(provider: WorkClaimProvider): boolean {
+  return provider.guarantees.exclusion !== 'none';
+}
+
 export function claimTimingFor(context: WatchContext): ClaimTiming {
   return {
     ttlMs: context.claimTiming?.ttlMs ?? DEFAULT_CLAIM_TTL_MS,
@@ -155,7 +164,7 @@ export async function acquireClaims<T extends { number: number; url?: string }>(
   for (const item of items) {
     let key = workKeyFor(context, item);
     if (!key) {
-      if (provider.guarantees.exclusion !== 'none') {
+      if (claimsAreExclusive(provider)) {
         const reason = 'no stable repository for the work key (set an origin remote)';
         result.unavailable.push({ item, reason });
         log.warn(`claim #${item.number} unavailable: ${reason} — skipping`);
