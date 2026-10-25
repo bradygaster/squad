@@ -93,12 +93,15 @@ same remote.
   "holder": { "machineId": "devbox-7", "instanceId": "1b4e…", "actor": "example-user" },
   "epoch": 1,
   "acquiredAt": 1793000000000,
-  "expiresAt": 1793000900000
+  "expiresAt": 1793000900000,
+  "nonce": "5f0c…"
 }
 ```
 
-Times are Unix milliseconds. The server's atomic ref update decides every
-race; wall-clock time only decides when takeover may be attempted.
+Times are Unix milliseconds. `nonce` is random per commit, so two writes by
+one holder at the same instant never produce the same commit SHA. The server's
+atomic ref update decides every race; wall-clock time only decides when
+takeover may be attempted.
 
 | Operation | Transport | Result on CAS rejection |
 |---|---|---|

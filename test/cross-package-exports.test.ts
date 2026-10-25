@@ -225,6 +225,21 @@ describe('cross-package exports — CLI → SDK', () => {
     });
   });
 
+  describe('@bradygaster/squad-sdk/ralph/claims-git', () => {
+    it('exports the Git-ref claim provider', async () => {
+      const mod = await import('@bradygaster/squad-sdk/ralph/claims-git');
+      expectExports(mod, [
+        'GitRefClaimProvider',
+        'GitClaimUnavailableError',
+        'createExecFileGitTransport',
+        'claimRefForKey',
+        'decodeClaimRecord',
+        'DEFAULT_CLAIM_REF_PREFIX',
+        'FALLBACK_CLAIM_REF_PREFIX',
+      ], '@bradygaster/squad-sdk/ralph/claims-git');
+    });
+  });
+
   // ─── Subpath: /runtime/* ───────────────────────────────────────────────
 
   describe('@bradygaster/squad-sdk/runtime/event-bus', () => {
