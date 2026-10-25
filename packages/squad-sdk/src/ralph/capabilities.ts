@@ -57,9 +57,11 @@ export function getDeploymentMode(): DeploymentMode {
 /**
  * Get the pod identifier from the `SQUAD_POD_ID` env var.
  * Returns `undefined` when unset.
+ *
+ * @param env - Environment to read; defaults to `process.env`.
  */
-export function getPodId(): string | undefined {
-  return process.env.SQUAD_POD_ID || undefined;
+export function getPodId(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  return env.SQUAD_POD_ID || undefined;
 }
 
 /**

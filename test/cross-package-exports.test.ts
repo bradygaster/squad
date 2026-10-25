@@ -210,6 +210,21 @@ describe('cross-package exports — CLI → SDK', () => {
     });
   });
 
+  describe('@bradygaster/squad-sdk/ralph/claims', () => {
+    it('exports the work claim contract', async () => {
+      const mod = await import('@bradygaster/squad-sdk/ralph/claims');
+      expectExports(mod, [
+        'workKeyToString',
+        'resolveExecutorIdentity',
+        'NoopClaimProvider',
+        'InMemoryClaimProvider',
+        'InMemoryClaimStore',
+        'DEFAULT_CLAIM_TTL_MS',
+        'DEFAULT_CLAIM_SKEW_MARGIN_MS',
+      ], '@bradygaster/squad-sdk/ralph/claims');
+    });
+  });
+
   // ─── Subpath: /runtime/* ───────────────────────────────────────────────
 
   describe('@bradygaster/squad-sdk/runtime/event-bus', () => {
