@@ -39,6 +39,13 @@ REST versus CLI transport, repository merge policy, or organization rulesets.
 - `integration` maps to the pull request merge commit or squash/rebase result.
 - `closure` maps to issue closed state with an explicit reason.
 
+> **Amendment (ADR-002, proposed):** `work.claim` maps to the claim ref
+> `refs/squad/claims/<sha1(work key)>` (fallback `refs/heads/squad-claims/*`)
+> defined in
+> [ADR 002](adr-002-work-claims-and-external-queues.md). A "claimed workspace"
+> in §4 means an unexpired claim ref held for the issue. Assignees and labels
+> that mirror a claim are informational only and never decide ownership.
+
 ## 3. Labels and references
 
 The binding reserves `squad` and `squad:{member-id}`. Implementations must
