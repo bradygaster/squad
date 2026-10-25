@@ -10,6 +10,39 @@ export type MemoryClass =
   | 'COPILOT_MEMORY'
   | 'FORBIDDEN';
 
+/** Every memory class, in its canonical upper-case spelling. */
+export const MEMORY_CLASSES: ReadonlyArray<MemoryClass> = [
+  'TRANSIENT',
+  'LOCAL',
+  'DECISION',
+  'POLICY',
+  'COPILOT_MEMORY',
+  'FORBIDDEN',
+];
+
+/** Thrown by {@link parseMemoryClass} for a value that names no memory class. */
+export class UnknownMemoryClassError extends Error {
+  override readonly name = 'UnknownMemoryClassError';
+}
+
+/**
+ * Parse a caller-supplied memory class. Case and surrounding whitespace are
+ * ignored, so `decision`, `Decision` and ` DECISION ` all mean `DECISION`.
+ * A missing or blank value returns undefined (let Squad classify the content).
+ * Any other value that is not a known class throws, so a typo is never stored
+ * under a made-up class.
+ */
+export function parseMemoryClass(value: unknown): MemoryClass | undefined {
+  if (value === undefined || value === null) return undefined;
+  const text = String(value).trim();
+  if (text === '') return undefined;
+  const memoryClass = MEMORY_CLASSES.find(candidate => candidate === text.toUpperCase());
+  if (!memoryClass) {
+    throw new UnknownMemoryClassError(`Unknown memory class ${JSON.stringify(value)}. Use one of: ${MEMORY_CLASSES.join(', ')}.`);
+  }
+  return memoryClass;
+}
+
 export type MemoryLoadGuidance = 'ALWAYS' | 'ON-DEMAND' | 'ARCHIVE' | 'NEVER';
 
 export interface MemoryGovernanceConfig {
@@ -605,7 +638,9 @@ export class LocalMemoryStore {
     }
 
     if (!classification) {
-      let memoryClass = request.requestedClass;
+      // requestedClass can come from an agent over MCP, which does not enforce
+      // the tool schema's enum. Normalize it before any class gate runs.
+      let memoryClass = parseMemoryClass(request.requestedClass);
       if (!memoryClass) {
         if (/\b(CI|PR|build)\s+(status|failed|passed|output|log)\b/i.test(content)) {
           memoryClass = 'TRANSIENT';
