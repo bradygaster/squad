@@ -87,7 +87,7 @@ Routing rules in `.squad/routing.md` define which agent handles which category o
 
 ### Scribe
 
-The Scribe is a silent agent that tracks decisions and logs sessions. Every team includes a Scribe. The Scribe runs in the background and merges decisions from all agents into `.squad/decisions.md`. You don't address the Scribe directly.
+The Scribe is a silent agent that merges accepted decisions. It does not write session logs or agent histories. Every team includes a Scribe. The Scribe runs in the background and merges decisions from all agents into `.squad/decisions.md`. You don't address the Scribe directly.
 
 ### Ralph
 

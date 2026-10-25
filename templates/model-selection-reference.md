@@ -70,7 +70,7 @@ Quality-sensitive work that is not code (architecture, research, verification, r
 | Copilot SDK Expert | Standard | Technical analysis that often touches code | Deep research → premium |
 | Designer / Visual | Premium | Vision-capable model required | — (never downgrade — vision is non-negotiable) |
 | DevRel / Writer | Standard | Language-heavy work benefits from a stronger model | Economy profile → fast |
-| Scribe / Logger | Fast | Mechanical file ops | — (never bump Scribe) |
+| Scribe | Fast | Mechanical decision merging | — (never bump Scribe) |
 | Git / Release | Fast | Mechanical ops — changelogs, tags, version bumps | — (never bump mechanical ops) |
 
 **Task complexity adjustments** (apply at most ONE — no cascading):
@@ -119,7 +119,7 @@ Every spawn acknowledgment names the resolved model, its source and a short rati
 
 🔧 Runtime Engineer ({model} · session) — refactoring auth module — session model inherited by this spawn
 🎨 Experience Engineer ({model} · task-auto) — designing color system — visual task needs vision → premium tier
-📋 Scribe ({model} · task-auto) — logging session — mechanical task → fast tier
+📋 Scribe ({model} · task-auto) — merging decisions — mechanical task → fast tier
 ⚡ Lead ({model} · config) — reviewing proposal — agentModelOverrides.lead in .squad/config.json
 📝 Docs Engineer ({model} · fallback) — updating docs — charter model unavailable; next in fast chain
 ```

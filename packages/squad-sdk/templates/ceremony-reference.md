@@ -56,6 +56,7 @@ RULES:
 - Follow the agenda in order.
 - For each agenda item, spawn relevant participants as sub-tasks to gather their input.
 - Synthesize participant input into clear decisions and action items.
+- Record each decision with `squad_decide` (one call per decision) so Scribe can merge it.
 - Keep to the time budget: {focused|extended}.
 - Output a structured summary at the end.
 
@@ -73,7 +74,7 @@ TASK CONTEXT:
    - `all-relevant` → agents routed to the current task
    - `all-involved` → agents that participated in the completed batch
    - Named agents → spawn only those specific agents
-6. **Scribe integration:** Spawn Scribe (background) at ceremony start to record decisions and action items.
+6. **Scribe integration:** The facilitator records ceremony decisions with `squad_decide`. Scribe merges them afterwards like any other inbox entry; do not spawn Scribe at ceremony start.
 7. **Output format:**
    ```
    📋 {CeremonyName} completed — facilitated by {Facilitator}.

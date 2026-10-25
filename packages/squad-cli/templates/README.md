@@ -29,7 +29,7 @@ of these — they are NOT loaded on every turn.
 | `mcp-config.md` | Coordinator | MCP server integration details |
 | `model-selection-reference.md` | Coordinator | Per-agent model and reasoning-effort selection |
 | `multi-agent-format.md` | Coordinator | Assembling multi-agent artifact output |
-| `orchestration-log.md` | Scribe | Writing per-agent orchestration log entries |
+| `orchestration-log.md` | Legacy (no default writer; not Scribe) | Format of per-agent orchestration log entries |
 | `plugin-marketplace.md` | Coordinator | Plugin marketplace discovery and install flow |
 | `prd-intake.md` | Coordinator | PRD Mode — ingesting a spec for decomposition |
 | `ralph-reference.md` | Coordinator | Ralph work-monitor lifecycle and board format |
