@@ -97,10 +97,12 @@ const claude: HostProjection = {
       kind: 'managed',
       path: '.claude/agents/squad.md',
       content:
+        // No `tools` allowlist: like the Copilot coordinator (`tools: ["*"]`), the Claude coordinator
+        // inherits every session tool, so MCP servers the user adds next to squad_state stay callable.
+        // An allowlist naming only mcp__squad_state hid them, and this managed file reverts hand edits.
         frontmatter([
           ['name', 'squad'],
           ['description', yamlString(DESCRIPTION)],
-          ['tools', 'Task, Read, Write, Edit, Bash, Glob, Grep, mcp__squad_state'],
         ]) +
         `${GENERATED_NOTE}\n\n${buildCoordinatorInstructions('claude', ctx.squadDir, ctx.root)}`,
     },
