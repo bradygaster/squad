@@ -24,6 +24,9 @@ import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   DEFAULT_CLAIM_SKEW_MARGIN_MS,
+  MAX_CLAIM_SKEW_MARGIN_MS,
+  assertClaimTtl,
+  claimRecordImplausibility,
   normalizeWorkKey,
   resolveExecutorIdentity,
   workKeyToString,
@@ -59,9 +62,21 @@ export const DEFAULT_CLAIM_CACHE_REF_PREFIX = 'refs/squad-claims-cache/';
 /** `schema` field of the JSON claim record stored in the commit message. */
 export const CLAIM_RECORD_SCHEMA = 'squad.claim/v1';
 
-const CLAIM_COMMITTER_NAME = 'squad-claims';
-const CLAIM_COMMITTER_EMAIL = 'squad-claims@localhost';
+/**
+ * Fixed author and committer of every claim commit, so no local git identity,
+ * `GIT_AUTHOR_*` / `GIT_COMMITTER_*` value, or time zone leaks into the shared remote.
+ */
+export const CLAIM_COMMITTER_NAME = 'squad-claims';
+export const CLAIM_COMMITTER_EMAIL = 'squad-claims@invalid';
 const MAX_ATTEMPTS = 3;
+
+/** Default cap on a git command's captured stdout: 1 MiB. */
+export const DEFAULT_GIT_MAX_OUTPUT_BYTES = 1024 * 1024;
+
+/** Largest claim commit (headers plus message) a provider reads: 64 KiB. Larger commits are implausible. */
+export const MAX_CLAIM_COMMIT_BYTES = 64 * 1024;
+
+const MAX_STDERR_BYTES = 64 * 1024;
 
 // --- Transport ---
 
@@ -70,6 +85,13 @@ export interface GitRunOptions {
   cwd: string;
   /** Written to the child's stdin, then stdin is closed. */
   input?: string;
+  /** Extra environment variables, layered over the transport's base environment. */
+  env?: Record<string, string>;
+  /**
+   * Kill git and report `outputLimitExceeded` once stdout exceeds this many
+   * bytes. Default: the transport's limit ({@link DEFAULT_GIT_MAX_OUTPUT_BYTES}).
+   */
+  maxOutputBytes?: number;
 }
 
 export interface GitRunResult {
@@ -77,6 +99,8 @@ export interface GitRunResult {
   exitCode: number;
   stdout: string;
   stderr: string;
+  /** True when git was killed because its stdout exceeded the output limit; `stdout` is then empty. */
+  outputLimitExceeded?: boolean;
 }
 
 /**
@@ -94,17 +118,22 @@ export interface ExecFileGitTransportOptions {
   timeoutMs?: number;
   /** Base environment; default `process.env`. `GIT_TERMINAL_PROMPT=0` is always set. */
   env?: NodeJS.ProcessEnv;
+  /** Default stdout cap per command. Default {@link DEFAULT_GIT_MAX_OUTPUT_BYTES}. */
+  maxOutputBytes?: number;
 }
 
 /**
  * Default transport: spawns `git` with an argument array (no shell), disables
- * interactive credential prompts, and never rejects.
+ * interactive credential prompts, caps captured output (claim refs are
+ * untrusted remote content), and never rejects.
  */
 export function createExecFileGitTransport(opts: ExecFileGitTransportOptions = {}): GitTransport {
   const gitPath = opts.gitPath ?? 'git';
   const timeoutMs = opts.timeoutMs ?? 60_000;
+  const defaultMaxOutput = opts.maxOutputBytes ?? DEFAULT_GIT_MAX_OUTPUT_BYTES;
   return {
-    run(args, { cwd, input }) {
+    run(args, { cwd, input, env, maxOutputBytes }) {
+      const maxOut = maxOutputBytes ?? defaultMaxOutput;
       return new Promise<GitRunResult>((resolve) => {
         let settled = false;
         const finish = (result: GitRunResult) => {
@@ -117,7 +146,7 @@ export function createExecFileGitTransport(opts: ExecFileGitTransportOptions = {
         try {
           child = spawn(gitPath, [...args], {
             cwd,
-            env: { ...(opts.env ?? process.env), GIT_TERMINAL_PROMPT: '0' },
+            env: { ...(opts.env ?? process.env), ...(env ?? {}), GIT_TERMINAL_PROMPT: '0' },
             shell: false,
             windowsHide: true,
             stdio: ['pipe', 'pipe', 'pipe'],
@@ -128,23 +157,53 @@ export function createExecFileGitTransport(opts: ExecFileGitTransportOptions = {
         }
         const out: Buffer[] = [];
         const errOut: Buffer[] = [];
+        let outBytes = 0;
+        let errBytes = 0;
+        const kill = () => {
+          try { child.kill(); } catch { /* already gone */ }
+        };
         const timer = setTimeout(() => {
-          child.kill();
+          kill();
           finish({ exitCode: -1, stdout: '', stderr: `git ${args[0] ?? ''} timed out after ${timeoutMs} ms` });
         }, timeoutMs);
-        child.stdout.on('data', (chunk: Buffer) => out.push(chunk));
-        child.stderr.on('data', (chunk: Buffer) => errOut.push(chunk));
+        child.stdout.on('data', (chunk: Buffer) => {
+          if (settled) return;
+          outBytes += chunk.length;
+          if (outBytes > maxOut) {
+            out.length = 0;
+            clearTimeout(timer);
+            kill();
+            finish({
+              exitCode: -1,
+              stdout: '',
+              stderr: `git ${args[0] ?? ''} output exceeded ${maxOut} bytes`,
+              outputLimitExceeded: true,
+            });
+            return;
+          }
+          out.push(chunk);
+        });
+        child.stderr.on('data', (chunk: Buffer) => {
+          if (errBytes >= MAX_STDERR_BYTES) return;
+          errBytes += chunk.length;
+          errOut.push(chunk);
+        });
         child.on('error', (err) => {
           clearTimeout(timer);
           finish({ exitCode: -1, stdout: '', stderr: err.message });
         });
         child.on('close', (code) => {
           clearTimeout(timer);
-          finish({
-            exitCode: code ?? -1,
-            stdout: Buffer.concat(out).toString('utf8'),
-            stderr: Buffer.concat(errOut).toString('utf8'),
-          });
+          if (settled) return;
+          try {
+            finish({
+              exitCode: code ?? -1,
+              stdout: Buffer.concat(out).toString('utf8'),
+              stderr: Buffer.concat(errOut).toString('utf8').slice(0, MAX_STDERR_BYTES),
+            });
+          } catch (err) {
+            finish({ exitCode: -1, stdout: '', stderr: `could not decode git output: ${(err as Error).message}` });
+          }
         });
         child.stdin.on('error', () => { /* reported through close/exit */ });
         child.stdin.end(input ?? '');
@@ -287,15 +346,33 @@ export interface GitRefClaimProviderOptions extends ClaimProviderOptions {
   skewMarginMs?: number;
   /** git runner. Default {@link createExecFileGitTransport}(). */
   transport?: GitTransport;
+  /**
+   * Receives operator-visible warnings, such as an implausible claim record
+   * being taken over. Default `console.warn`.
+   */
+  onWarning?: (message: string) => void;
 }
 
 interface RemoteClaim {
   sha: string;
-  /** `null` when the commit message is not a valid claim record. */
+  /** `null` when the commit is not a valid, plausible claim record. */
   record: ClaimRecord | null;
+  /**
+   * Set when the commit is structurally a claim commit gone wrong (oversized,
+   * non-empty tree, merge commit, or an impossible epoch or time). Such claims
+   * are taken over as if expired; `record` is then `null`.
+   */
+  implausible?: string;
 }
 
 type ReadResult = { ok: true; claim: RemoteClaim | null } | { ok: false; reason: string };
+
+interface LocalCommit {
+  sha: string;
+  tree: string;
+  parents: number;
+  message: string;
+}
 
 function describeFailure(op: string, result: GitRunResult): string {
   const detail = (result.stderr.trim() || result.stdout.trim()).split(/\r?\n/).slice(-3).join(' | ');
@@ -322,6 +399,7 @@ export class GitRefClaimProvider implements WorkClaimProvider {
   private readonly identity: ExecutorIdentity;
   private readonly now: () => number;
   private readonly transport: GitTransport;
+  private readonly warn: (message: string) => void;
   private emptyTree: string | undefined;
 
   constructor(opts: GitRefClaimProviderOptions = {}) {
@@ -338,11 +416,12 @@ export class GitRefClaimProvider implements WorkClaimProvider {
       throw new TypeError('cacheRefPrefix must differ from refPrefix');
     }
     const skew = opts.skewMarginMs ?? DEFAULT_CLAIM_SKEW_MARGIN_MS;
-    if (!Number.isFinite(skew) || skew < 0) {
-      throw new RangeError('skewMarginMs must be a non-negative finite number');
+    if (!Number.isFinite(skew) || skew < 0 || skew > MAX_CLAIM_SKEW_MARGIN_MS) {
+      throw new RangeError(`skewMarginMs must be a finite number in [0, ${MAX_CLAIM_SKEW_MARGIN_MS}]`);
     }
     this.skewMarginMs = skew;
     this.transport = opts.transport ?? createExecFileGitTransport();
+    this.warn = opts.onWarning ?? ((message) => console.warn(message));
   }
 
   /** Remote ref that holds the claim for `key`. */
@@ -351,7 +430,7 @@ export class GitRefClaimProvider implements WorkClaimProvider {
   }
 
   async acquire(key: WorkKey, o: ClaimOptions): Promise<AcquireResult> {
-    assertTtl(o);
+    assertClaimTtl(o);
     const normalized = normalizeWorkKey(key);
     const ref = this.refFor(normalized);
     try {
@@ -359,8 +438,11 @@ export class GitRefClaimProvider implements WorkClaimProvider {
       // "expected absent" (create a root claim).
       let observed: RemoteClaim | null = null;
       for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-        if (observed && !observed.record) {
+        if (observed && !observed.record && !observed.implausible) {
           return { status: 'unavailable', reason: `corrupt claim record at ${ref} (${observed.sha})` };
+        }
+        if (observed?.implausible) {
+          this.warn(`claim ${ref} (${observed.sha}) is implausible: ${observed.implausible} — taking it over as expired`);
         }
         if (observed?.record && observed.record.expiresAt + this.skewMarginMs >= this.now()) {
           return { status: 'held', by: observed.record };
@@ -394,7 +476,7 @@ export class GitRefClaimProvider implements WorkClaimProvider {
   }
 
   async renew(c: ClaimRecord, o: ClaimOptions): Promise<RenewResult> {
-    assertTtl(o);
+    assertClaimTtl(o);
     const key = normalizeWorkKey(c.key);
     const ref = this.refFor(key);
     if (!isSha(c.handle)) return this.fencedByCurrent(ref, key);
@@ -461,7 +543,11 @@ export class GitRefClaimProvider implements WorkClaimProvider {
     const ref = this.refFor(normalized);
     const current = await this.readOrThrow(ref, normalized);
     if (!current) return null;
-    if (!current.record) throw new GitClaimUnavailableError(`corrupt claim record at ${ref} (${current.sha})`);
+    if (!current.record) {
+      throw new GitClaimUnavailableError(current.implausible
+        ? `implausible claim record at ${ref} (${current.sha}): ${current.implausible}`
+        : `corrupt claim record at ${ref} (${current.sha})`);
+    }
     return current.record;
   }
 
@@ -471,8 +557,8 @@ export class GitRefClaimProvider implements WorkClaimProvider {
   //   acquire free key: commit-tree + push (1); contended: + fetch + cat-file (2)
   //   renew: commit-tree + push (1); release: push (1) + local cache-ref delete
 
-  private git(args: readonly string[], input?: string): Promise<GitRunResult> {
-    return this.transport.run(args, { cwd: this.cwd, input });
+  private git(args: readonly string[], input?: string, extra: Pick<GitRunOptions, 'env' | 'maxOutputBytes'> = {}): Promise<GitRunResult> {
+    return this.transport.run(args, { cwd: this.cwd, input, ...extra });
   }
 
   private async emptyTreeSha(): Promise<string> {
@@ -484,19 +570,28 @@ export class GitRefClaimProvider implements WorkClaimProvider {
     return sha;
   }
 
+  /** Fixed author/committer identity and a UTC date from the injected clock. */
+  private commitEnv(): Record<string, string> {
+    const date = `@${Math.max(0, Math.floor(this.now() / 1000))} +0000`;
+    return {
+      GIT_AUTHOR_NAME: CLAIM_COMMITTER_NAME,
+      GIT_AUTHOR_EMAIL: CLAIM_COMMITTER_EMAIL,
+      GIT_AUTHOR_DATE: date,
+      GIT_COMMITTER_NAME: CLAIM_COMMITTER_NAME,
+      GIT_COMMITTER_EMAIL: CLAIM_COMMITTER_EMAIL,
+      GIT_COMMITTER_DATE: date,
+    };
+  }
+
   private async writeCommit(record: Omit<ClaimRecord, 'handle'>, parent: string | undefined): Promise<string> {
     const tree = await this.emptyTreeSha();
-    const args = [
-      '-c', `user.name=${CLAIM_COMMITTER_NAME}`,
-      '-c', `user.email=${CLAIM_COMMITTER_EMAIL}`,
-      'commit-tree', '--no-gpg-sign', tree,
-    ];
+    const args = ['commit-tree', '--no-gpg-sign', tree];
     if (parent !== undefined) {
       if (!isSha(parent)) throw new Error(`invalid parent ${JSON.stringify(parent)}`);
       args.push('-p', parent);
     }
     args.push('-F', '-');
-    const result = await this.git(args, encodeClaimRecord(record));
+    const result = await this.git(args, encodeClaimRecord(record), { env: this.commitEnv() });
     const sha = result.stdout.trim();
     if (result.exitCode !== 0 || !isSha(sha)) throw new Error(describeFailure('commit-tree', result));
     return sha;
@@ -534,9 +629,14 @@ export class GitRefClaimProvider implements WorkClaimProvider {
     return this.cacheRefPrefix + ref.slice(this.refPrefix.length);
   }
 
-  /** Resolve `rev` locally to its SHA and commit message with one `cat-file --batch` call. */
-  private async readLocalCommit(rev: string): Promise<{ sha: string; message: string } | null> {
-    const result = await this.git(['cat-file', '--batch'], `${rev}\n`);
+  /**
+   * Resolve `rev` locally to its SHA, tree, parent count, and message with one
+   * capped `cat-file --batch` call. `'oversized'` when the commit exceeds
+   * {@link MAX_CLAIM_COMMIT_BYTES}.
+   */
+  private async readLocalCommit(rev: string): Promise<LocalCommit | 'oversized' | null> {
+    const result = await this.git(['cat-file', '--batch'], `${rev}\n`, { maxOutputBytes: MAX_CLAIM_COMMIT_BYTES });
+    if (result.outputLimitExceeded) return 'oversized';
     if (result.exitCode !== 0) return null;
     const newline = result.stdout.indexOf('\n');
     if (newline === -1) return null;
@@ -544,7 +644,26 @@ export class GitRefClaimProvider implements WorkClaimProvider {
     if (type !== 'commit' || !isSha(sha)) return null;
     const body = result.stdout.slice(newline + 1);
     const split = body.indexOf('\n\n');
-    return { sha, message: split === -1 ? '' : body.slice(split + 2) };
+    const headers = (split === -1 ? body : body.slice(0, split)).split('\n');
+    const tree = headers.find((h) => h.startsWith('tree '))?.slice(5) ?? '';
+    const parents = headers.filter((h) => h.startsWith('parent ')).length;
+    return { sha, tree, parents, message: split === -1 ? '' : body.slice(split + 2) };
+  }
+
+  /** Classify a fetched claim commit: valid record, implausible (takeover-eligible), or corrupt. */
+  private async classifyCommit(commit: LocalCommit, key: WorkKey): Promise<RemoteClaim> {
+    if (commit.tree !== await this.emptyTreeSha()) {
+      return { sha: commit.sha, record: null, implausible: 'claim commit tree is not the empty tree' };
+    }
+    if (commit.parents > 1) {
+      return { sha: commit.sha, record: null, implausible: `claim commit has ${commit.parents} parents` };
+    }
+    const record = decodeClaimRecord(commit.message, commit.sha);
+    if (record === null || workKeyToString(record.key) !== workKeyToString(key)) {
+      return { sha: commit.sha, record: null };
+    }
+    const implausible = claimRecordImplausibility(record, this.now());
+    return implausible ? { sha: commit.sha, record: null, implausible } : { sha: commit.sha, record };
   }
 
   /**
@@ -569,10 +688,21 @@ export class GitRefClaimProvider implements WorkClaimProvider {
         continue;
       }
       const commit = await this.readLocalCommit(cacheRef);
+      if (commit === 'oversized') {
+        const resolved = await this.git(['rev-parse', '--verify', '--quiet', `${cacheRef}^{commit}`]);
+        const sha = resolved.stdout.trim();
+        if (resolved.exitCode !== 0 || !isSha(sha)) continue;
+        return {
+          ok: true,
+          claim: { sha, record: null, implausible: `claim commit exceeds ${MAX_CLAIM_COMMIT_BYTES} bytes` },
+        };
+      }
       if (!commit) continue;
-      const record = decodeClaimRecord(commit.message, commit.sha);
-      const matches = record !== null && workKeyToString(record.key) === workKeyToString(key);
-      return { ok: true, claim: { sha: commit.sha, record: matches ? record : null } };
+      try {
+        return { ok: true, claim: await this.classifyCommit(commit, key) };
+      } catch (err) {
+        return { ok: false, reason: (err as Error).message };
+      }
     }
     return { ok: false, reason: lastReason };
   }
@@ -589,10 +719,4 @@ export class GitRefClaimProvider implements WorkClaimProvider {
 
 function fenced(current: RemoteClaim | null): RenewResult {
   return current?.record ? { status: 'fenced', by: current.record } : { status: 'fenced' };
-}
-
-function assertTtl(o: ClaimOptions): void {
-  if (!o || typeof o.ttlMs !== 'number' || !Number.isFinite(o.ttlMs) || o.ttlMs <= 0) {
-    throw new RangeError('ttlMs must be a positive finite number');
-  }
 }

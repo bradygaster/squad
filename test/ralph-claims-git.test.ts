@@ -32,10 +32,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  CLAIM_COMMITTER_EMAIL,
+  DEFAULT_GIT_MAX_OUTPUT_BYTES,
   GitClaimUnavailableError,
   GitRefClaimProvider,
   FALLBACK_CLAIM_REF_PREFIX,
   DEFAULT_CLAIM_REF_PREFIX,
+  MAX_CLAIM_COMMIT_BYTES,
   claimRefForKey,
   createExecFileGitTransport,
   decodeClaimRecord,
@@ -78,8 +81,10 @@ interface GitHarness {
   bare: string;
   clock: ReturnType<typeof manualClock>;
   skewMarginMs: number;
+  warnings: string[];
   provider(identity: ExecutorIdentity, extra?: Partial<ConstructorParameters<typeof GitRefClaimProvider>[0]>): GitRefClaimProvider;
   advance(ms: number): void;
+  plant(key: WorkKey, record: Omit<ClaimRecord, 'key' | 'handle'>): void;
   dispose(): Promise<void>;
 }
 
@@ -104,12 +109,14 @@ function createGitHarness(opts: { skewMarginMs?: number; transport?: GitTranspor
   fs.cpSync(tpl.bare, bare, { recursive: true });
   const clock = manualClock();
   const skewMarginMs = opts.skewMarginMs ?? 0;
+  const warnings: string[] = [];
   let n = 0;
   return {
     root,
     bare,
     clock,
     skewMarginMs,
+    warnings,
     provider(identity, extra = {}) {
       const dir = path.join(root, `executor-${n++}`);
       fs.cpSync(tpl.executor, dir, { recursive: true });
@@ -123,12 +130,32 @@ function createGitHarness(opts: { skewMarginMs?: number; transport?: GitTranspor
         cwd: dir,
         skewMarginMs,
         transport: opts.transport,
+        onWarning: (m) => warnings.push(m),
         ...extra,
       });
     },
     advance: clock.advance,
+    plant(key, record) {
+      plantCommit({ root, bare }, claimRefForKey(key), encodeClaimRecord({ ...record, key }));
+    },
     dispose: () => fs.promises.rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }),
   };
+}
+
+/** Write a commit straight into the bare remote and point `ref` at it (a forged or buggy holder). */
+function plantCommit(
+  h: { root: string; bare: string },
+  ref: string,
+  message: string,
+  opts: { tree?: string; parents?: string[] } = {},
+): string {
+  const tree = opts.tree ?? bareGit(h, ['mktree'], '');
+  const args = ['-c', 'user.name=x', '-c', 'user.email=x@x', 'commit-tree', tree];
+  for (const p of opts.parents ?? []) args.push('-p', p);
+  args.push('-F', '-');
+  const sha = bareGit(h, args, message);
+  bareGit(h, ['update-ref', ref, sha]);
+  return sha;
 }
 
 let keySeq = 0;
@@ -145,7 +172,14 @@ function acquired(result: Awaited<ReturnType<WorkClaimProvider['acquire']>>): Cl
 describe.skipIf(!hasGit)('GitRefClaimProvider', () => {
   describeClaimProviderContract('GitRefClaimProvider (local bare remote)', () => {
     const h = createGitHarness({ skewMarginMs: 30_000 });
-    return { provider: (id) => h.provider(id), advance: h.advance, skewMarginMs: h.skewMarginMs, dispose: h.dispose };
+    return {
+      provider: (id) => h.provider(id),
+      advance: h.advance,
+      now: h.clock.now,
+      plant: (key, record) => h.plant(key, record),
+      skewMarginMs: h.skewMarginMs,
+      dispose: h.dispose,
+    };
   }, { ttlMs, contenders: 6, timeoutMs: TIMEOUT });
 
   describe('git specifics', () => {
@@ -318,6 +352,88 @@ describe.skipIf(!hasGit)('GitRefClaimProvider', () => {
       }
     }, TIMEOUT);
 
+    it('implausible record (expiresAt 1e308): taken over by CAS on the observed sha, with a WARN naming the ref', async () => {
+      const b = h.provider(testIdentity(2));
+      const key = freshKey();
+      const ref = b.refFor(key);
+      h.plant(key, { holder: testIdentity(9), epoch: 1, acquiredAt: h.clock.now(), expiresAt: 1e308 });
+      const planted = bareGit(h, ['rev-parse', ref]);
+
+      await expect(b.inspect(key)).rejects.toThrow(/implausible claim record/);
+      const taken = acquired(await b.acquire(key, { ttlMs }));
+      expect(taken.epoch).toBe(1);
+      expect(bareGit(h, ['rev-parse', ref])).toBe(taken.handle);
+      expect(bareGit(h, ['rev-parse', `${taken.handle}^`])).toBe(planted);
+      expect(h.warnings.some((w) => w.includes(ref) && w.includes(planted) && /implausible/.test(w)), h.warnings.join('\n')).toBe(true);
+    }, TIMEOUT);
+
+    it('a claim commit whose tree is not the empty tree is implausible and taken over', async () => {
+      const key = freshKey();
+      const record = encodeClaimRecord({ key, holder: testIdentity(9), epoch: 1, acquiredAt: h.clock.now(), expiresAt: h.clock.now() + ttlMs });
+      const blob = bareGit(h, ['hash-object', '-w', '--stdin'], 'payload');
+      const tree = bareGit(h, ['mktree'], `100644 blob ${blob}\tpayload.txt\n`);
+      plantCommit(h, claimRefForKey(key), record, { tree });
+      const taken = acquired(await h.provider(testIdentity(2)).acquire(key, { ttlMs }));
+      expect(taken.holder).toEqual(testIdentity(2));
+      expect(h.warnings.join('\n')).toMatch(/not the empty tree/);
+    }, TIMEOUT);
+
+    it('a claim commit with more than one parent is implausible and taken over', async () => {
+      const key = freshKey();
+      const t = h.clock.now();
+      const record = encodeClaimRecord({ key, holder: testIdentity(9), epoch: 2, acquiredAt: t, expiresAt: t + ttlMs });
+      const p1 = plantCommit(h, 'refs/scratch/p1', 'one');
+      const p2 = plantCommit(h, 'refs/scratch/p2', 'two');
+      plantCommit(h, claimRefForKey(key), record, { parents: [p1, p2] });
+      const taken = acquired(await h.provider(testIdentity(2)).acquire(key, { ttlMs }));
+      expect(taken.holder).toEqual(testIdentity(2));
+      expect(h.warnings.join('\n')).toMatch(/2 parents/);
+    }, TIMEOUT);
+
+    it('an oversized claim commit (> 64 KiB) is never fully read: implausible and taken over', async () => {
+      const key = freshKey();
+      const t = h.clock.now();
+      // Valid, live record padded past the cap: only the size makes it implausible.
+      const record = encodeClaimRecord({ key, holder: testIdentity(9), epoch: 1, acquiredAt: t, expiresAt: t + ttlMs });
+      plantCommit(h, claimRefForKey(key), record + ' '.repeat(MAX_CLAIM_COMMIT_BYTES + 1));
+      const result = await h.provider(testIdentity(2)).acquire(key, { ttlMs });
+      expect(result.status, JSON.stringify(result)).toBe('acquired');
+      expect(h.warnings.join('\n')).toMatch(/exceeds 65536 bytes/);
+    }, TIMEOUT);
+
+    it('the default transport caps stdout, kills git, and reports outputLimitExceeded instead of throwing', async () => {
+      const transport = createExecFileGitTransport();
+      const capped = await transport.run(['--version'], { cwd: h.root, maxOutputBytes: 4 });
+      expect(capped).toMatchObject({ exitCode: -1, stdout: '', outputLimitExceeded: true });
+      expect(capped.stderr).toMatch(/exceeded 4 bytes/);
+      const full = await transport.run(['--version'], { cwd: h.root });
+      expect(full.exitCode).toBe(0);
+      expect(full.stdout).toMatch(/^git version/);
+      expect(full.outputLimitExceeded).toBeUndefined();
+      expect(DEFAULT_GIT_MAX_OUTPUT_BYTES).toBe(1024 * 1024);
+    }, TIMEOUT);
+
+    it('claim commits carry a fixed squad identity and a UTC date from the injected clock, never ambient git identity', async () => {
+      const leaky = createExecFileGitTransport({
+        env: {
+          ...process.env,
+          GIT_AUTHOR_NAME: 'Real Person',
+          GIT_AUTHOR_EMAIL: 'real.person@corp.example',
+          GIT_AUTHOR_DATE: '2001-01-01T00:00:00+05:30',
+          GIT_COMMITTER_NAME: 'Real Person',
+          GIT_COMMITTER_EMAIL: 'real.person@corp.example',
+          GIT_COMMITTER_DATE: '2001-01-01T00:00:00+05:30',
+          TZ: 'Asia/Kolkata',
+        },
+      });
+      const p = h.provider(testIdentity(1), { transport: leaky });
+      const claim = acquired(await p.acquire(freshKey(), { ttlMs }));
+      const secs = Math.floor(h.clock.now() / 1000);
+      expect(bareGit(h, ['log', '-1', '--date=raw', '--format=%an|%ae|%ad|%cn|%ce|%cd', claim.handle]))
+        .toBe(`squad-claims|squad-claims@invalid|${secs} +0000|squad-claims|squad-claims@invalid|${secs} +0000`);
+      expect(CLAIM_COMMITTER_EMAIL).toBe('squad-claims@invalid');
+    }, TIMEOUT);
+
     it('rejects option-like or malformed remotes and ref prefixes', () => {
       for (const remote of ['--upload-pack=evil', '-x', '', 'origin\nmain']) {
         expect(() => new GitRefClaimProvider({ identity: testIdentity(1), remote })).toThrow(TypeError);
@@ -327,6 +443,7 @@ describe.skipIf(!hasGit)('GitRefClaimProvider', () => {
       }
       expect(() => new GitRefClaimProvider({ identity: testIdentity(1), refPrefix: 'refs/squad-claims-cache/' })).toThrow(TypeError);
       expect(() => new GitRefClaimProvider({ identity: testIdentity(1), skewMarginMs: -1 })).toThrow(RangeError);
+      expect(() => new GitRefClaimProvider({ identity: testIdentity(1), skewMarginMs: 60 * 60 * 1000 + 1 })).toThrow(RangeError);
     });
   });
 

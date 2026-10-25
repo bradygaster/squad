@@ -18,7 +18,7 @@
  */
 
 import os from 'node:os';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { getPodId } from './capabilities.js';
 
 // --- Contract types (ADR 002) ---
@@ -71,7 +71,7 @@ export interface ReleaseResult {
 export type FinishOutcome = 'completed' | 'cancelled' | 'abandoned';
 
 export interface ClaimOptions {
-  /** Lease length in milliseconds; must be a positive finite number. */
+  /** Lease length in milliseconds; must be positive, finite, and at most {@link MAX_CLAIM_TTL_MS}. */
   ttlMs: number;
 }
 
@@ -107,6 +107,78 @@ export const DEFAULT_CLAIM_TTL_MS = 15 * 60 * 1000;
 
 /** Default clock-skew margin applied before takeover and self-fencing: 2 minutes. */
 export const DEFAULT_CLAIM_SKEW_MARGIN_MS = 2 * 60 * 1000;
+
+/** Shortest lease an executor may be configured with: 30 seconds. */
+export const MIN_CLAIM_TTL_MS = 30 * 1000;
+
+/** Longest lease any provider writes or honors: 24 hours. */
+export const MAX_CLAIM_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Largest skew margin an executor may be configured with, and the furthest a
+ * record's `acquiredAt` may lie in the observer's future before the record is
+ * implausible: 1 hour.
+ */
+export const MAX_CLAIM_SKEW_MARGIN_MS = 60 * 60 * 1000;
+
+/** Largest epoch a record may carry; beyond it `epoch + 1` would lose precision. */
+export const MAX_CLAIM_EPOCH = 2 ** 52;
+
+/**
+ * Check lease timing an executor will schedule renewals with. Returns a
+ * reason string, or `null` when the timing is safe: `skewMarginMs` in
+ * `[0, MAX_CLAIM_SKEW_MARGIN_MS]`, `ttlMs` in `[minTtlMs, MAX_CLAIM_TTL_MS]`,
+ * and `ttlMs > 2 * skewMarginMs` (so the renew delay `min(ttlMs / 3,
+ * ttlMs - skewMarginMs)` stays positive and below the `setTimeout` limit).
+ */
+export function claimTimingError(
+  timing: { ttlMs: number; skewMarginMs: number },
+  opts: { minTtlMs?: number } = {},
+): string | null {
+  const minTtlMs = opts.minTtlMs ?? MIN_CLAIM_TTL_MS;
+  const { ttlMs, skewMarginMs } = timing;
+  if (typeof skewMarginMs !== 'number' || !Number.isFinite(skewMarginMs) || skewMarginMs < 0) {
+    return 'skewMarginMs must be a non-negative number of milliseconds';
+  }
+  if (skewMarginMs > MAX_CLAIM_SKEW_MARGIN_MS) {
+    return `skewMarginMs must be at most ${MAX_CLAIM_SKEW_MARGIN_MS} (1 hour)`;
+  }
+  if (typeof ttlMs !== 'number' || !Number.isFinite(ttlMs) || ttlMs <= 0) {
+    return 'ttlMs must be a positive number of milliseconds';
+  }
+  if (ttlMs < minTtlMs) return `ttlMs must be at least ${minTtlMs}`;
+  if (ttlMs > MAX_CLAIM_TTL_MS) return `ttlMs must be at most ${MAX_CLAIM_TTL_MS} (24 hours)`;
+  if (ttlMs <= 2 * skewMarginMs) {
+    return `ttlMs (${ttlMs}) must be greater than twice skewMarginMs (${skewMarginMs})`;
+  }
+  return null;
+}
+
+/**
+ * Why a stored claim record cannot be honored, or `null` when it is
+ * plausible. A record is implausible when its `epoch` exceeds
+ * {@link MAX_CLAIM_EPOCH}, its `acquiredAt` lies more than
+ * {@link MAX_CLAIM_SKEW_MARGIN_MS} in the observer's future, or its
+ * `expiresAt` lies more than `MAX_CLAIM_TTL_MS + MAX_CLAIM_SKEW_MARGIN_MS`
+ * in the observer's future (no holder can have written it with a legal
+ * lease). Providers treat implausible records as expired: eligible for
+ * takeover with a compare-and-swap on the observed handle.
+ */
+export function claimRecordImplausibility(
+  record: Pick<ClaimRecord, 'epoch' | 'acquiredAt' | 'expiresAt'>,
+  now: number,
+): string | null {
+  if (!Number.isSafeInteger(record.epoch) || record.epoch < 1 || record.epoch > MAX_CLAIM_EPOCH) {
+    return `epoch ${record.epoch} is outside [1, 2^52]`;
+  }
+  if (!Number.isFinite(record.acquiredAt) || record.acquiredAt > now + MAX_CLAIM_SKEW_MARGIN_MS) {
+    return `acquiredAt ${record.acquiredAt} is more than ${MAX_CLAIM_SKEW_MARGIN_MS} ms in the future`;
+  }
+  if (!Number.isFinite(record.expiresAt) || record.expiresAt > now + MAX_CLAIM_TTL_MS + MAX_CLAIM_SKEW_MARGIN_MS) {
+    return `expiresAt ${record.expiresAt} is beyond the longest legal lease`;
+  }
+  return null;
+}
 
 // --- Work keys ---
 
@@ -157,6 +229,12 @@ export interface ResolveExecutorIdentityOptions {
   env?: NodeJS.ProcessEnv;
   /** Hostname source; defaults to `os.hostname`. Injectable for tests. */
   hostname?: () => string;
+  /**
+   * Salt for the hostname pseudonym (see {@link resolveExecutorIdentity}).
+   * Watch passes the absolute team root path, which is never published;
+   * defaults to `process.cwd()`.
+   */
+  hostnameSalt?: string;
   /** Override the per-process instance id. Injectable for tests. */
   instanceId?: string;
 }
@@ -172,18 +250,33 @@ function firstSet(...values: Array<string | undefined | null>): string | undefin
 }
 
 /**
+ * Published stand-in for a hostname: `h-` plus the first 12 hex digits of
+ * `sha256(hostname + "\0" + salt)`. Stable per machine and salt, so one
+ * machine's watchers agree, without publishing the hostname itself.
+ */
+export function hostnamePseudonym(hostname: string, salt: string): string {
+  return `h-${createHash('sha256').update(`${hostname}\0${salt}`, 'utf8').digest('hex').slice(0, 12)}`;
+}
+
+/**
  * Resolve this executor's claim identity.
  *
  * `machineId` is the first value set, in order: `SQUAD_MACHINE_ID`,
- * `capabilities.machine`, `SQUAD_POD_ID`, `os.hostname()`. `instanceId` is
- * generated once per process, so repeated calls agree and two watchers on one
- * machine are distinct holders.
+ * `capabilities.machine`, `SQUAD_POD_ID` (all used verbatim), then a
+ * {@link hostnamePseudonym} of `os.hostname()` salted with `hostnameSalt`,
+ * because claim records are readable by everyone who can fetch the remote.
+ * `instanceId` is generated once per process, so repeated calls agree and two
+ * watchers on one machine are distinct holders.
  */
 export function resolveExecutorIdentity(opts: ResolveExecutorIdentityOptions = {}): ExecutorIdentity {
   const env = opts.env ?? process.env;
   const hostname = opts.hostname ?? os.hostname;
-  const machineId =
-    firstSet(env.SQUAD_MACHINE_ID, opts.capabilities?.machine, getPodId(env), hostname()) ?? 'unknown-host';
+  const explicit = firstSet(env.SQUAD_MACHINE_ID, opts.capabilities?.machine, getPodId(env));
+  let machineId = explicit;
+  if (!machineId) {
+    const host = firstSet(hostname());
+    machineId = host ? hostnamePseudonym(host, opts.hostnameSalt ?? process.cwd()) : 'unknown-host';
+  }
   const instanceId = firstSet(opts.instanceId) ?? (processInstanceId ??= randomUUID());
   const actor = firstSet(opts.actor);
   return actor ? { machineId, instanceId, actor } : { machineId, instanceId };
@@ -191,9 +284,17 @@ export function resolveExecutorIdentity(opts: ResolveExecutorIdentityOptions = {
 
 // --- Shared helpers ---
 
-function assertTtl(o: ClaimOptions): void {
+/**
+ * @throws RangeError unless `o.ttlMs` is a positive finite number no larger
+ *   than {@link MAX_CLAIM_TTL_MS} (a provider never writes a lease it would
+ *   itself treat as implausible).
+ */
+export function assertClaimTtl(o: ClaimOptions): void {
   if (!o || typeof o.ttlMs !== 'number' || !Number.isFinite(o.ttlMs) || o.ttlMs <= 0) {
     throw new RangeError('ttlMs must be a positive finite number');
+  }
+  if (o.ttlMs > MAX_CLAIM_TTL_MS) {
+    throw new RangeError(`ttlMs must be at most ${MAX_CLAIM_TTL_MS} (24 hours)`);
   }
 }
 
@@ -232,7 +333,7 @@ export class NoopClaimProvider implements WorkClaimProvider {
   }
 
   async acquire(key: WorkKey, o: ClaimOptions): Promise<AcquireResult> {
-    assertTtl(o);
+    assertClaimTtl(o);
     const now = this.now();
     return {
       status: 'acquired',
@@ -248,7 +349,7 @@ export class NoopClaimProvider implements WorkClaimProvider {
   }
 
   async renew(c: ClaimRecord, o: ClaimOptions): Promise<RenewResult> {
-    assertTtl(o);
+    assertClaimTtl(o);
     const claim = cloneRecord(c);
     claim.handle = `noop:${randomUUID()}`;
     claim.epoch = c.epoch + 1;
@@ -324,26 +425,28 @@ export class InMemoryClaimProvider implements WorkClaimProvider {
     this.now = opts.now ?? Date.now;
     this.store = opts.store ?? new InMemoryClaimStore();
     const skew = opts.skewMarginMs ?? 0;
-    if (!Number.isFinite(skew) || skew < 0) {
-      throw new RangeError('skewMarginMs must be a non-negative finite number');
+    if (!Number.isFinite(skew) || skew < 0 || skew > MAX_CLAIM_SKEW_MARGIN_MS) {
+      throw new RangeError(`skewMarginMs must be a finite number in [0, ${MAX_CLAIM_SKEW_MARGIN_MS}]`);
     }
     this.skewMarginMs = skew;
   }
 
   async acquire(key: WorkKey, o: ClaimOptions): Promise<AcquireResult> {
-    assertTtl(o);
+    assertClaimTtl(o);
     const normalized = normalizeWorkKey(key);
     const id = workKeyToString(normalized);
     const now = this.now();
     const current = this.store.get(id);
-    if (current && current.expiresAt + this.skewMarginMs >= now) {
+    const plausible = current && claimRecordImplausibility(current, now) === null;
+    if (current && plausible && current.expiresAt + this.skewMarginMs >= now) {
       return { status: 'held', by: cloneRecord(current) };
     }
     const claim: ClaimRecord = {
       key: normalized,
       handle: randomUUID(),
       holder: { ...this.identity },
-      epoch: current ? current.epoch + 1 : 1,
+      // An implausible record is taken over as if expired, restarting at epoch 1.
+      epoch: current && plausible ? current.epoch + 1 : 1,
       acquiredAt: now,
       expiresAt: now + o.ttlMs,
     };
@@ -352,7 +455,7 @@ export class InMemoryClaimProvider implements WorkClaimProvider {
   }
 
   async renew(c: ClaimRecord, o: ClaimOptions): Promise<RenewResult> {
-    assertTtl(o);
+    assertClaimTtl(o);
     const id = workKeyToString(c.key);
     const current = this.store.get(id);
     if (!current) return { status: 'fenced' };

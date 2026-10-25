@@ -29,6 +29,13 @@ export interface ClaimProviderHarness {
   provider(identity: ExecutorIdentity): WorkClaimProvider | Promise<WorkClaimProvider>;
   /** Move the clock every provider of this harness reads. */
   advance(ms: number): void | Promise<void>;
+  /** Current harness clock (Unix ms); required for the plausibility checks. */
+  now?(): number;
+  /**
+   * Write `record` directly into the backend for `key`, bypassing the
+   * provider (models a forged or buggy holder). Enables the plausibility checks.
+   */
+  plant?(key: WorkKey, record: Omit<ClaimRecord, 'key' | 'handle'>): void | Promise<void>;
   /** Margin the provider waits past `expiresAt` before takeover. Default 0. */
   skewMarginMs?: number;
   /** Tear down backend resources (temp repos, servers). */
@@ -145,6 +152,10 @@ export function describeClaimProviderContract(
 
       it('rejects a non-positive ttl', async () => {
         await expect(a.acquire(freshKey(), { ttlMs: 0 })).rejects.toThrow(RangeError);
+      }, timeout);
+
+      it('rejects a ttl above 24 hours (it would write an implausible lease)', async () => {
+        await expect(a.acquire(freshKey(), { ttlMs: 24 * 60 * 60 * 1000 + 1 })).rejects.toThrow(RangeError);
       }, timeout);
     });
 
@@ -321,6 +332,43 @@ export function describeClaimProviderContract(
         const acquired = results.filter((r) => r.status === 'acquired');
         expect(acquired, JSON.stringify(results.map((r) => r.status))).toHaveLength(1);
         expect((acquired[0] as { claim: ClaimRecord }).claim.epoch).toBe(old.epoch + 1);
+      }, timeout);
+    });
+
+    describe('plausibility (implausible records are taken over as expired)', () => {
+      const DAY = 24 * 60 * 60 * 1000;
+      const HOUR = 60 * 60 * 1000;
+      const skipUnlessPlantable = () =>
+        !harness.plant || !harness.now || !a.guarantees.leases || a.guarantees.exclusion === 'none';
+      const forged = (n: number, patch: Partial<ClaimRecord>): Omit<ClaimRecord, 'key' | 'handle'> => {
+        const t = harness.now!();
+        return { holder: testIdentity(900 + n), epoch: 1, acquiredAt: t, expiresAt: t + ttlMs, ...patch };
+      };
+      const cases: Array<[string, (t: number) => Partial<ClaimRecord>]> = [
+        ['expiresAt beyond the longest legal lease (1e308)', () => ({ expiresAt: 1e308 })],
+        ['expiresAt more than 25h ahead', (t) => ({ expiresAt: t + DAY + HOUR + 60_000 })],
+        ['epoch beyond 2^52', () => ({ epoch: Number.MAX_SAFE_INTEGER })],
+        ['acquiredAt more than 1h in the future', (t) => ({ acquiredAt: t + HOUR + 60_000, expiresAt: t + HOUR + 60_000 + ttlMs })],
+      ];
+      for (const [label, patch] of cases) {
+        it(`takes over a record with ${label}`, async (ctx) => {
+          if (skipUnlessPlantable()) return ctx.skip();
+          const key = freshKey();
+          await harness.plant!(key, forged(1, patch(harness.now!())));
+          const taken = expectAcquired(await b.acquire(key, { ttlMs }));
+          expect(taken.holder.instanceId).toBe(idB.instanceId);
+          expect(taken.epoch).toBe(1);
+          expect((await a.acquire(key, { ttlMs })).status).toBe('held');
+        }, timeout);
+      }
+
+      it('still honors a plausible live record planted the same way', async (ctx) => {
+        if (skipUnlessPlantable()) return ctx.skip();
+        const key = freshKey();
+        await harness.plant!(key, forged(2, { epoch: 7 }));
+        const result = await b.acquire(key, { ttlMs });
+        expect(result.status).toBe('held');
+        if (result.status === 'held') expect(result.by.epoch).toBe(7);
       }, timeout);
     });
   });

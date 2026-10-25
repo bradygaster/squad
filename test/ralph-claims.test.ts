@@ -6,6 +6,13 @@ import {
   NoopClaimProvider,
   DEFAULT_CLAIM_SKEW_MARGIN_MS,
   DEFAULT_CLAIM_TTL_MS,
+  MAX_CLAIM_EPOCH,
+  MAX_CLAIM_SKEW_MARGIN_MS,
+  MAX_CLAIM_TTL_MS,
+  MIN_CLAIM_TTL_MS,
+  claimRecordImplausibility,
+  claimTimingError,
+  hostnamePseudonym,
   normalizeWorkKey,
   resolveExecutorIdentity,
   workKeyToString,
@@ -26,6 +33,10 @@ describeClaimProviderContract('InMemoryClaimProvider', () => {
   return {
     provider: (identity) => new InMemoryClaimProvider({ identity, now: clock.now, store }),
     advance: clock.advance,
+    now: clock.now,
+    plant: (key, record) => {
+      store.set(workKeyToString(key), { ...record, key: normalizeWorkKey(key), handle: `planted-${record.holder.instanceId}` });
+    },
   };
 });
 
@@ -36,6 +47,10 @@ describeClaimProviderContract('InMemoryClaimProvider (skew margin)', () => {
   return {
     provider: (identity) => new InMemoryClaimProvider({ identity, now: clock.now, store, skewMarginMs }),
     advance: clock.advance,
+    now: clock.now,
+    plant: (key, record) => {
+      store.set(workKeyToString(key), { ...record, key: normalizeWorkKey(key), handle: `planted-${record.holder.instanceId}` });
+    },
     skewMarginMs,
   };
 });
@@ -88,9 +103,20 @@ describe('resolveExecutorIdentity', () => {
     expect(resolveExecutorIdentity({ env: { SQUAD_POD_ID: 'pod-1' }, capabilities: {}, hostname }).machineId).toBe('pod-1');
   });
 
-  it('falls back to the hostname', () => {
-    expect(resolveExecutorIdentity({ env: {}, hostname }).machineId).toBe('host-from-os');
-    expect(resolveExecutorIdentity({ env: {} }).machineId).toBe(os.hostname() || 'unknown-host');
+  it('falls back to a salted hostname pseudonym, never the raw hostname', () => {
+    const id = resolveExecutorIdentity({ env: {}, hostname, hostnameSalt: '/repos/a' });
+    expect(id.machineId).toMatch(/^h-[0-9a-f]{12}$/);
+    expect(id.machineId).not.toContain('host-from-os');
+    expect(id.machineId).toBe(hostnamePseudonym('host-from-os', '/repos/a'));
+    expect(resolveExecutorIdentity({ env: {}, hostname, hostnameSalt: '/repos/a' }).machineId).toBe(id.machineId);
+    expect(resolveExecutorIdentity({ env: {}, hostname, hostnameSalt: '/repos/b' }).machineId).not.toBe(id.machineId);
+    expect(resolveExecutorIdentity({ env: {}, hostname }).machineId).toBe(hostnamePseudonym('host-from-os', process.cwd()));
+    const real = os.hostname();
+    if (real) expect(resolveExecutorIdentity({ env: {} }).machineId).not.toBe(real);
+  });
+
+  it('uses unknown-host when no hostname is available', () => {
+    expect(resolveExecutorIdentity({ env: {}, hostname: () => '' }).machineId).toBe('unknown-host');
   });
 
   it('treats empty and whitespace values as unset', () => {
@@ -98,8 +124,9 @@ describe('resolveExecutorIdentity', () => {
       env: { SQUAD_MACHINE_ID: '  ', SQUAD_POD_ID: '' },
       capabilities: { machine: '' },
       hostname,
+      hostnameSalt: 's',
     });
-    expect(id.machineId).toBe('host-from-os');
+    expect(id.machineId).toBe(hostnamePseudonym('host-from-os', 's'));
   });
 
   it('generates one instanceId per process', () => {
@@ -110,8 +137,8 @@ describe('resolveExecutorIdentity', () => {
   });
 
   it('accepts an injected instanceId and actor', () => {
-    const id = resolveExecutorIdentity({ env: {}, hostname, instanceId: 'fixed', actor: 'octocat' });
-    expect(id).toEqual({ machineId: 'host-from-os', instanceId: 'fixed', actor: 'octocat' });
+    const id = resolveExecutorIdentity({ env: { SQUAD_MACHINE_ID: 'm' }, hostname, instanceId: 'fixed', actor: 'octocat' });
+    expect(id).toEqual({ machineId: 'm', instanceId: 'fixed', actor: 'octocat' });
   });
 
   it('omits actor when not provided', () => {
@@ -123,6 +150,59 @@ describe('claim defaults', () => {
   it('match ADR 002 initial values', () => {
     expect(DEFAULT_CLAIM_TTL_MS).toBe(15 * 60 * 1000);
     expect(DEFAULT_CLAIM_SKEW_MARGIN_MS).toBe(2 * 60 * 1000);
+    expect(claimTimingError({ ttlMs: DEFAULT_CLAIM_TTL_MS, skewMarginMs: DEFAULT_CLAIM_SKEW_MARGIN_MS })).toBeNull();
+  });
+});
+
+describe('claimTimingError (lease bounds)', () => {
+  const HOUR = 60 * 60 * 1000;
+
+  it('rejects ttlMs <= 2 * skewMarginMs (non-positive renew delay)', () => {
+    expect(claimTimingError({ ttlMs: 60_000, skewMarginMs: 60_000 })).toMatch(/greater than twice/);
+    expect(claimTimingError({ ttlMs: 240_000, skewMarginMs: 120_000 })).toMatch(/greater than twice/);
+    expect(claimTimingError({ ttlMs: 240_001, skewMarginMs: 120_000 })).toBeNull();
+  });
+
+  it('rejects ttlMs below 30 s and above 24 h (setTimeout overflow)', () => {
+    expect(MIN_CLAIM_TTL_MS).toBe(30_000);
+    expect(MAX_CLAIM_TTL_MS).toBe(24 * HOUR);
+    expect(claimTimingError({ ttlMs: 29_999, skewMarginMs: 0 })).toMatch(/at least 30000/);
+    expect(claimTimingError({ ttlMs: 24 * HOUR + 1, skewMarginMs: 0 })).toMatch(/at most/);
+    expect(claimTimingError({ ttlMs: 3 * 2 ** 31, skewMarginMs: 0 })).toMatch(/at most/);
+    expect(claimTimingError({ ttlMs: 24 * HOUR, skewMarginMs: HOUR })).toBeNull();
+  });
+
+  it('caps skewMarginMs at 1 h and rejects non-finite values', () => {
+    expect(MAX_CLAIM_SKEW_MARGIN_MS).toBe(HOUR);
+    expect(claimTimingError({ ttlMs: 24 * HOUR, skewMarginMs: HOUR + 1 })).toMatch(/skewMarginMs must be at most/);
+    expect(claimTimingError({ ttlMs: Number.NaN, skewMarginMs: 0 })).toMatch(/positive/);
+    expect(claimTimingError({ ttlMs: 60_000, skewMarginMs: -1 })).toMatch(/non-negative/);
+    expect(claimTimingError({ ttlMs: Infinity, skewMarginMs: 0 })).toMatch(/positive/);
+  });
+
+  it('minTtlMs: 0 keeps only the structural checks', () => {
+    expect(claimTimingError({ ttlMs: 600, skewMarginMs: 0 }, { minTtlMs: 0 })).toBeNull();
+    expect(claimTimingError({ ttlMs: 600, skewMarginMs: 600 }, { minTtlMs: 0 })).toMatch(/greater than twice/);
+  });
+});
+
+describe('claimRecordImplausibility', () => {
+  const now = 1_793_000_000_000;
+  const ok = { epoch: 3, acquiredAt: now - 1_000, expiresAt: now + 60_000 };
+
+  it('accepts records any legal holder could have written, including long-renewed ones', () => {
+    expect(claimRecordImplausibility(ok, now)).toBeNull();
+    expect(claimRecordImplausibility({ ...ok, acquiredAt: now - 30 * 24 * 3600_000 }, now)).toBeNull();
+    expect(claimRecordImplausibility({ ...ok, expiresAt: now + MAX_CLAIM_TTL_MS + MAX_CLAIM_SKEW_MARGIN_MS }, now)).toBeNull();
+    expect(claimRecordImplausibility({ ...ok, epoch: MAX_CLAIM_EPOCH }, now)).toBeNull();
+  });
+
+  it('flags impossible epochs and times', () => {
+    expect(claimRecordImplausibility({ ...ok, expiresAt: 1e308 }, now)).toMatch(/expiresAt/);
+    expect(claimRecordImplausibility({ ...ok, expiresAt: now + MAX_CLAIM_TTL_MS + MAX_CLAIM_SKEW_MARGIN_MS + 1 }, now)).toMatch(/expiresAt/);
+    expect(claimRecordImplausibility({ ...ok, acquiredAt: now + MAX_CLAIM_SKEW_MARGIN_MS + 1 }, now)).toMatch(/acquiredAt/);
+    expect(claimRecordImplausibility({ ...ok, epoch: Number.MAX_SAFE_INTEGER }, now)).toMatch(/epoch/);
+    expect(claimRecordImplausibility({ ...ok, epoch: MAX_CLAIM_EPOCH + 1 }, now)).toMatch(/epoch/);
   });
 });
 
@@ -172,7 +252,8 @@ describe('InMemoryClaimProvider', () => {
     expect((await b.acquire(key, { ttlMs: 60_000 })).status).toBe('acquired');
   });
 
-  it('rejects a negative skew margin', () => {
+  it('rejects a negative or over-cap skew margin', () => {
     expect(() => new InMemoryClaimProvider({ skewMarginMs: -1 })).toThrow(RangeError);
+    expect(() => new InMemoryClaimProvider({ skewMarginMs: MAX_CLAIM_SKEW_MARGIN_MS + 1 })).toThrow(RangeError);
   });
 });
