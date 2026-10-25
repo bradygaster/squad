@@ -11,7 +11,7 @@
  */
 
 import path from 'node:path';
-import { execFile, execFileSync } from 'node:child_process';
+import { exec, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
 import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import { resolveSquad, resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
@@ -19,6 +19,11 @@ import { fatalNoSquad } from '../core/errors.js';
 import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
 import { resolveUpstreams } from '@bradygaster/squad-sdk/upstream';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
+import { getPackageVersion } from '../core/version.js';
+import {
+  probeSquadStateBridge,
+  resolveConfiguredSquadStateMcp,
+} from '../core/mcp-probe.js';
 
 const storage = new FSStorageProvider();
 
@@ -68,12 +73,14 @@ function detectMode(cwd: string): ModeInfo {
   const squadDir = path.join(cwd, '.squad');
   const configPath = path.join(squadDir, 'config.json');
 
-  // Remote mode: config.json exists with teamRoot
+  // Remote mode: config.json exists with a teamRoot that points OUTSIDE this project.
+  // A relative `".squad"` / `"."` (or an absolute path to this very project) is the local
+  // team root spelled out, not a link to another repository (#2299).
   if (fileExists(configPath)) {
     const cfg = tryReadJson(configPath);
     if (cfg && typeof cfg === 'object' && 'teamRoot' in cfg) {
       const raw = (cfg as Record<string, unknown>)['teamRoot'];
-      if (typeof raw === 'string' && raw.length > 0) {
+      if (typeof raw === 'string' && raw.length > 0 && !teamRootIsThisProject(cwd, raw)) {
         return { mode: 'remote', squadDir, teamRoot: raw };
       }
     }
@@ -86,6 +93,17 @@ function detectMode(cwd: string): ModeInfo {
 
   // Default: local
   return { mode: 'local', squadDir };
+}
+
+/** True when `teamRoot` resolves to this project (its root or its own `.squad/`). */
+export function teamRootIsThisProject(cwd: string, teamRoot: string): boolean {
+  const resolved = path.resolve(cwd, teamRoot);
+  const normalize = (p: string) => {
+    const n = path.resolve(p).replace(/[\\/]+$/, '');
+    return process.platform === 'win32' ? n.toLowerCase() : n;
+  };
+  const target = normalize(resolved);
+  return target === normalize(cwd) || target === normalize(path.join(cwd, '.squad'));
 }
 
 // ── individual checks ───────────────────────────────────────────────
@@ -571,11 +589,13 @@ function checkSquadAgentMd(cwd: string): DoctorCheck {
 
 /**
  * Check that the Copilot CLI is reachable (needed by watch capabilities).
- * Tests `copilot --version` with shell:true for Windows compatibility.
+ * Runs the fixed literal `copilot --version` through `exec` (a single command
+ * string) so Windows `.cmd` shims resolve without `execFile(..., { shell: true })`,
+ * which Node flags with DEP0190 (#2299, #2174).
  */
 function checkCopilotCli(): Promise<DoctorCheck> {
   return new Promise((resolve) => {
-    execFile('copilot', ['--version'], { shell: true, timeout: 5000 }, (err) => {
+    exec('copilot --version', { timeout: 5000, windowsHide: true }, (err) => {
       if (err) {
         resolve({
           name: 'Copilot CLI available',
@@ -593,6 +613,80 @@ function checkCopilotCli(): Promise<DoctorCheck> {
       }
     });
   });
+}
+
+export async function checkSquadStateBridge(cwd: string): Promise<DoctorCheck> {
+        const name = 'squad_state bridge';
+        const expectedVersion = getPackageVersion();
+        const configured = resolveConfiguredSquadStateMcp(cwd);
+        const fix = "Run 'squad upgrade --force' to rewrite the bridge declaration.";
+        if (!configured) {
+          return {
+            name,
+            status: 'warn',
+            message: `no squad_state declaration found in .mcp.json or the project-scoped user config. ${fix}`,
+          };
+        }
+
+        try {
+          const probe = await probeSquadStateBridge(cwd, configured);
+          if (probe.version !== expectedVersion) {
+            return {
+              name,
+              status: 'fail',
+              message: `version mismatch: configured bridge reports ${probe.version || 'unknown'}, running CLI is ${expectedVersion}. ${fix}`,
+            };
+          }
+          if (!probe.tools.includes('squad_state_health')) {
+            return {
+              name,
+              status: 'fail',
+              message: `bridge ${expectedVersion} exposes ${probe.tools.length} tool(s) but not squad_state_health. ${fix}`,
+            };
+          }
+
+          const expectedTeamDir = path.resolve(effectiveSquadDir(cwd).stateDir);
+          const healthVersion = `squad-state ${expectedVersion}`;
+          const teamLine = probe.healthText.match(/^Team squad dir:\s*(.+)$/m)?.[1]?.trim();
+          if (!probe.healthText.includes(healthVersion) || !teamLine) {
+            return {
+              name,
+              status: 'fail',
+              message: `bridge health is missing "${healthVersion}" or the resolved team directory. ${fix}`,
+            };
+          }
+          const reportedTeamDir = path.resolve(teamLine);
+          const sameTeamDir = process.platform === 'win32'
+            ? reportedTeamDir.toLowerCase() === expectedTeamDir.toLowerCase()
+            : reportedTeamDir === expectedTeamDir;
+          if (!sameTeamDir) {
+            return {
+              name,
+              status: 'fail',
+              message: `bridge resolved ${reportedTeamDir}, expected ${expectedTeamDir}. ${fix}`,
+            };
+          }
+
+          return {
+            name,
+            status: 'pass',
+            message: `${probe.version}; ${probe.tools.length} tools; ${configured.precedence} config ${configured.configPath}`,
+          };
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          if (/ETARGET|No matching version found/i.test(detail)) {
+            return {
+              name,
+              status: 'fail',
+              message: `registry mirror cannot resolve the configured dist-tag. Pin @bradygaster/squad-cli@${expectedVersion} exactly, or ${fix.toLowerCase()}`,
+            };
+          }
+          return {
+            name,
+            status: 'fail',
+            message: `unreachable: ${detail}. ${fix}`,
+          };
+        }
 }
 
 // ── git sync hooks check ─────────────────────────────────────────────
@@ -842,6 +936,7 @@ export async function runDoctor(cwd?: string): Promise<DoctorCheck[]> {
     const upstreamCheck = checkUpstreams(squadDir);
     if (upstreamCheck) checks.push(upstreamCheck);
 
+    checks.push(await checkSquadStateBridge(resolvedCwd));
 
     // Hook presence check (only for two-layer / orphan backends)
     const hookCheck = checkGitSyncHooks(resolvedCwd, squadDir);

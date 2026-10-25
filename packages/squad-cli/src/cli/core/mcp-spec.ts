@@ -1,97 +1,60 @@
 /**
- * Shared helper for resolving the `squad_state` MCP launch spec.
- *
- * Used by BOTH `squad init` and `squad upgrade` so the runtime-MCP fallback
- * behavior stays symmetric.
+ * Resolve the deterministic `squad_state` MCP launch spec shared by init and
+ * upgrade.
  *
  * Resolution order:
- *   0. If Squad is running from a standalone bundle (`SQUAD_STANDALONE_HOME`,
- *      exported by the bundle launcher) → spawn that bundle's launcher
- *      directly with an absolute path for machine-local use. Project config
- *      writers convert this to the host's portable PATH command through
- *      `projectSquadStateMcpSpec`. This tier short-circuits *before* any
- *      registry probe, so a machine that cannot reach registry.npmjs.org
- *      never makes a network call here and never writes an `npx` spec it
- *      cannot execute later (#1593).
- *   1. Else if `cliVersion` IS published on npm → `npx -y <pkg>@<version>
- *      state-mcp` (clean cross-machine UX, the steady-state happy path).
- *   2. Else → `npx -y <pkg>@insider state-mcp`. We do NOT probe the registry;
- *      the `@insider` dist-tag is kept fresh by the publish flow and tier-2
- *      is the de-facto fallback whenever a pinned preview version isn't yet
- *      published. If it really isn't reachable at runtime, `npx` will fail
- *      loudly — same observable behavior as pre-iter-5.
+ *   1. Standalone bundle launcher.
+ *   2. Direct `node <absolute dist/cli-entry.js> state-mcp` for npm global or
+ *      local installs.
+ *   3. Exact running package version through npx.
  *
- * Iter-6 had two additional tiers (a local-install path resolver and a hard
- * error) that the smoke data showed never fired in practice: `@insider` is
- * always current, so tier-2 always wins before tier-3 is reached. Deleted
- * in iter-7 per the "verify you didn't add code that's no longer needed"
- * mandate.
+ * Dist-tags are intentionally never written. Registry mirrors frequently omit
+ * `insider` and `preview`, while an installed entry point or exact version is
+ * deterministic.
  */
 
 import { existsSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 export interface SquadStateMcpSpec {
-  /** `npx`, a local absolute launcher, or a portable project PATH executable. */
   command: string;
-  /** Argv for the executable. */
   args: string[];
-  /** How the spec was resolved — useful for logging + tests. */
-  source: 'standalone' | 'pinned' | 'insider';
+  source: 'standalone' | 'local-entry' | 'pinned';
+  /** Portable exact-version fallback recorded beside machine-local specs. */
+  fallback?: {
+    command: 'npx';
+    args: string[];
+  };
 }
 
 const PACKAGE_NAME = '@bradygaster/squad-cli';
 
-/** Shared configs must resolve the installed CLI on each host, not this host. */
+/** Retained as the shared projection hook; direct local specs stay direct. */
 export function projectSquadStateMcpSpec(
   spec: SquadStateMcpSpec,
-  platform: NodeJS.Platform = process.platform,
+  _platform: NodeJS.Platform = process.platform,
 ): SquadStateMcpSpec {
-  return spec.source === 'standalone'
-    ? { command: platform === 'win32' ? 'squad.exe' : 'squad', args: ['state-mcp'], source: 'standalone' }
-    : spec;
+  return spec;
 }
 
-/**
- * Environment variable exported by the standalone bundle launchers
- * (`squad`, `squad.cmd`, `squad.ps1`) pointing at the bundle root.
- */
+/** Environment variable exported by standalone bundle launchers. */
 export const STANDALONE_HOME_ENV = 'SQUAD_STANDALONE_HOME';
 
 export interface ResolveSquadStateMcpSpecOptions {
-  /**
-   * Override the published-version check. Tests inject this to avoid real
-   * network traffic.
-   */
-  publishedCheck?: (version: string) => Promise<boolean>;
-  /**
-   * Override standalone-bundle detection. Returns the absolute path to the
-   * bundle launcher, or null when not running from a bundle. Tests inject
-   * this to avoid touching the filesystem or process env.
-   */
   standaloneCheck?: () => string | null;
+  localEntryCheck?: () => string | null;
 }
 
-/** Reset internal caches (test-only helper; retained for compat). */
+/** Reset internal caches (test-only compatibility helper). */
 export function _resetMcpSpecCache(): void {
-  // no caches in the resolver — kept as a no-op for backward compat
-  // with any test that still calls it.
+  // The resolver no longer probes or caches registry state.
 }
 
-/**
- * Locate the launcher of the standalone bundle this CLI is running from.
- *
- * Returns an absolute path, or null when not running from a bundle. The
- * absolute path supports machine-local launch contexts without PATH or
- * `SQUAD_STANDALONE_HOME`. Shared project config uses the portable mapper
- * instead; each MCP host must expose its own installed Squad on PATH.
- */
+/** Locate the launcher of the standalone bundle this CLI is running from. */
 export function detectStandaloneLauncher(): string | null {
   const home = process.env[STANDALONE_HOME_ENV];
   if (!home) return null;
-  // Order matters on Windows: prefer the real executable. Since the fix for
-  // CVE-2024-27980, Node refuses to spawn a `.cmd`/`.bat` without `shell:true`,
-  // so an MCP client that spawns the command directly would fail on squad.cmd.
   const candidates = process.platform === 'win32'
     ? ['squad.exe', 'squad.cmd', 'squad.ps1']
     : ['squad'];
@@ -103,55 +66,70 @@ export function detectStandaloneLauncher(): string | null {
 }
 
 /**
- * Resolve the squad_state MCP launch spec given the running CLI version.
+ * Locate the installed JavaScript entry point that launched this CLI.
  *
- * Always returns a spec. If the pinned version is unpublished we fall back
- * to `@insider`; if even that turns out to be unreachable at runtime, `npx`
- * will fail visibly when Copilot launches the MCP server — same behavior
- * as pre-iter-5.
+ * Source checkouts use their built `dist/cli-entry.js` when present. This
+ * keeps init/doctor fixtures and contributor builds offline-safe without
+ * teaching Node to execute the TypeScript entry directly.
  */
+export function detectInstalledCliEntry(): string | null {
+  const invoked = process.argv[1] ? path.resolve(process.argv[1]) : '';
+  if (
+    invoked &&
+    path.basename(invoked).toLowerCase() === 'cli-entry.js' &&
+    existsSync(invoked)
+  ) {
+    return invoked;
+  }
+
+  const currentFile = fileURLToPath(import.meta.url);
+  const moduleDir = path.dirname(currentFile);
+  const candidates = [
+    path.resolve(moduleDir, '..', '..', 'cli-entry.js'),
+    path.resolve(moduleDir, '..', '..', '..', 'dist', 'cli-entry.js'),
+  ];
+  return candidates.find(candidate => existsSync(candidate)) ?? null;
+}
+
+/** Resolve the squad_state launch spec for the running CLI version. */
 export async function resolveSquadStateMcpSpec(
   cliVersion: string,
   options: ResolveSquadStateMcpSpecOptions = {},
 ): Promise<SquadStateMcpSpec> {
-  // 0. Running from a standalone bundle — point at our own launcher and skip
-  //    the registry entirely. Deliberately first: writing an `npx` spec on a
-  //    machine installed from a bundle would leave squad_state unwired the
-  //    moment the npm registry is unreachable (#1593).
-  const detect = options.standaloneCheck ?? detectStandaloneLauncher;
-  const launcher = detect();
+  const fallback = exactVersionFallback(cliVersion);
+
+  const detectStandalone = options.standaloneCheck ?? detectStandaloneLauncher;
+  const launcher = detectStandalone();
   if (launcher) {
     return {
       command: launcher,
       args: ['state-mcp'],
       source: 'standalone',
+      fallback,
     };
   }
 
-  // 1. Try the pinned version on the public registry. Skip for placeholder
-  //    versions ('', '0.0.0') and local/dev builds with build metadata ('+')
-  //    — the registry will obviously not have them (#1204).
-  if (cliVersion && cliVersion !== '0.0.0' && !cliVersion.includes('+')) {
-    const probe = options.publishedCheck ?? defaultPublishedCheck;
-    const published = await probe(cliVersion);
-    if (published) {
-      return {
-        command: 'npx',
-        args: ['-y', `${PACKAGE_NAME}@${cliVersion}`, 'state-mcp'],
-        source: 'pinned',
-      };
-    }
+  const detectEntry = options.localEntryCheck ?? detectInstalledCliEntry;
+  const entry = detectEntry();
+  if (entry) {
+    return {
+      command: process.execPath,
+      args: [entry, 'state-mcp'],
+      source: 'local-entry',
+      fallback,
+    };
   }
 
-  // 2. Fall back to the @insider dist-tag — always returned, never probed.
   return {
-    command: 'npx',
-    args: ['-y', `${PACKAGE_NAME}@insider`, 'state-mcp'],
-    source: 'insider',
+    command: fallback.command,
+    args: [...fallback.args],
+    source: 'pinned',
   };
 }
 
-async function defaultPublishedCheck(version: string): Promise<boolean> {
-  const { isSquadCliVersionPublished } = await import('./npm-registry.js');
-  return await isSquadCliVersionPublished(version);
+function exactVersionFallback(version: string): { command: 'npx'; args: string[] } {
+  return {
+    command: 'npx',
+    args: ['-y', `${PACKAGE_NAME}@${version}`, 'state-mcp'],
+  };
 }

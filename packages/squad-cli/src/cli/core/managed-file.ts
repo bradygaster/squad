@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import fs, { readFileSync, writeFileSync, existsSync, copyFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 
 export const COPILOT_INSTRUCTIONS_START = '<!-- squad:copilot-instructions:start -->';
@@ -20,14 +21,43 @@ function readExisting(filePath: string): string | undefined {
   }
 }
 
+function managedTextUpdate(existing: string | undefined, content: string): string | undefined {
+  const normalize = (text: string) => text.replace(/\r\n?|\n/g, '\n');
+  if (existing !== undefined && normalize(existing) === normalize(content)) return undefined;
+  const eol = existing?.match(/\r\n|\n|\r/)?.[0];
+  return eol ? normalize(content).replace(/\n/g, eol) : content;
+}
+
 /** Keep destination newlines, and avoid rewriting a newline-only difference. */
 export function writeManagedText(filePath: string, content: string): boolean {
   const existing = readExisting(filePath);
-  const normalize = (text: string) => text.replace(/\r\n?|\n/g, '\n');
-  if (existing !== undefined && normalize(existing) === normalize(content)) return false;
-  const eol = existing?.match(/\r\n|\n|\r/)?.[0];
-  const next = eol ? normalize(content).replace(/\n/g, eol) : content;
+  const next = managedTextUpdate(existing, content);
+  if (next === undefined) return false;
   writeFileSync(filePath, next, 'utf8');
+  return true;
+}
+
+/** Write through a flushed sibling file, then atomically replace the destination. */
+export function writeManagedTextAtomic(filePath: string, content: string): boolean {
+  const existing = readExisting(filePath);
+  const next = managedTextUpdate(existing, content);
+  if (next === undefined) return false;
+
+  const tempPath = `${filePath}.squad-tmp-${process.pid}-${randomUUID()}`;
+  const mode = fs.existsSync(filePath) ? fs.statSync(filePath).mode : 0o666;
+  try {
+    const descriptor = fs.openSync(tempPath, 'wx', mode);
+    try {
+      fs.writeFileSync(descriptor, next, 'utf8');
+      fs.fsyncSync(descriptor);
+    } finally {
+      fs.closeSync(descriptor);
+    }
+    fs.renameSync(tempPath, filePath);
+  } catch (error) {
+    fs.rmSync(tempPath, { force: true });
+    throw error;
+  }
   return true;
 }
 
@@ -149,4 +179,3 @@ export function syncCopilotInstructionsFile(sourceTemplatePath: string, destinat
   }
   return writeManagedText(destinationPath, nextContent);
 }
-

@@ -83,6 +83,7 @@ export function createStateMcpToolRegistry(startDir: string): ToolRegistry {
   return new ToolRegistry(context.paths.teamSquadDir, undefined, context.storage, undefined, undefined, undefined, {
     backendName: context.backend.name,
     upstreamDir: context.paths.projectDir,
+    runtimeVersion: SERVER_INFO.version,
   });
 }
 
@@ -265,7 +266,44 @@ export async function runStateMcp(startDir = process.cwd(), options: StateMcpOpt
     return normalizeToolResult(result);
   });
 
-  await server.connect(new StdioServerTransport());
+  const transport = new StdioServerTransport();
+  let stopping = false;
+  let forceExit: NodeJS.Timeout | undefined;
+
+  const stop = async (): Promise<void> => {
+    if (stopping) return;
+    stopping = true;
+    forceExit = setTimeout(() => process.exit(0), 500);
+    try {
+      await server.close();
+    } catch {
+      // Transport teardown is best-effort; the grace timer guarantees exit.
+    }
+  };
+
+  const onStdinEnd = (): void => { void stop(); };
+  const onDisconnect = (): void => { void stop(); };
+  const onSigpipe = (): void => { void stop(); };
+  const onStdoutError = (error: NodeJS.ErrnoException): void => {
+    if (error.code === 'EPIPE') void stop();
+  };
+
+  process.stdin.once('end', onStdinEnd);
+  process.stdin.once('close', onStdinEnd);
+  process.once('disconnect', onDisconnect);
+  process.once('SIGPIPE', onSigpipe);
+  process.stdout.on('error', onStdoutError);
+
+  try {
+    await server.connect(transport);
+  } finally {
+    process.stdin.off('end', onStdinEnd);
+    process.stdin.off('close', onStdinEnd);
+    process.off('disconnect', onDisconnect);
+    process.off('SIGPIPE', onSigpipe);
+    process.stdout.off('error', onStdoutError);
+    if (forceExit && !stopping) clearTimeout(forceExit);
+  }
 }
 
 export function printStateMcpHelp(): void {

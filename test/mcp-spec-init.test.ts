@@ -1,49 +1,40 @@
 /**
  * Tests for the mcp-spec helper.
  *
- * Iter-7 simplified the resolver to 2 tiers:
- *   1. Pinned version published on npm  → npx -y <pkg>@<version>
- *   2. Anything else                     → npx -y <pkg>@insider
- *
- * The iter-6 local-install path and the hard-error fallback were deleted;
- * smoke data-30/data-32 confirmed `@insider` is always reachable in practice
- * and tier-3 never fired.
+ * The resolver prefers direct installed entry points and never emits a
+ * registry dist-tag. Source/dev fallback is the exact running version.
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { readFileSync, writeFileSync, mkdtempSync, copyFileSync, mkdirSync, rmSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-vi.mock(
-  '../packages/squad-cli/src/cli/core/npm-registry.js',
-  () => ({
-    isSquadCliVersionPublished: vi.fn(),
-  }),
-);
-
 import {
   resolveSquadStateMcpSpec,
   projectSquadStateMcpSpec,
+  detectInstalledCliEntry,
   detectStandaloneLauncher,
   STANDALONE_HOME_ENV,
   _resetMcpSpecCache,
 } from '../packages/squad-cli/src/cli/core/mcp-spec.js';
 import { describeMcpSpec } from '../packages/squad-cli/src/cli/core/upgrade.js';
-import { isSquadCliVersionPublished } from '../packages/squad-cli/src/cli/core/npm-registry.js';
-
-const mockIsPublished = vi.mocked(isSquadCliVersionPublished);
-
-describe('resolveSquadStateMcpSpec (iter-7: 2-tier resolver)', () => {
+describe('resolveSquadStateMcpSpec', () => {
   beforeEach(() => {
-    mockIsPublished.mockReset();
     _resetMcpSpecCache();
   });
 
-  it('returns a pinned npx spec when the version is published on npm', async () => {
+  it('detects the in-repo built cli entry for source-driven init and doctor runs', () => {
+    expect(detectInstalledCliEntry()).toBe(
+      path.resolve('packages/squad-cli/dist/cli-entry.js'),
+    );
+  });
+
+  it('returns an exact pinned npx fallback when no installed entry is available', async () => {
     const spec = await resolveSquadStateMcpSpec('0.9.6-preview.42', {
-      publishedCheck: async () => true,
+      standaloneCheck: () => null,
+      localEntryCheck: () => null,
     });
     expect(spec.source).toBe('pinned');
     expect(spec.command).toBe('npx');
@@ -54,63 +45,35 @@ describe('resolveSquadStateMcpSpec (iter-7: 2-tier resolver)', () => {
     ]);
   });
 
-  it('falls back to @insider when the version is NOT published', async () => {
-    const spec = await resolveSquadStateMcpSpec('0.9.6-preview.99999', {
-      publishedCheck: async () => false,
-    });
-    expect(spec.source).toBe('insider');
-    expect(spec.command).toBe('npx');
-    expect(spec.args).toEqual(['-y', '@bradygaster/squad-cli@insider', 'state-mcp']);
-  });
-
-  it('short-circuits the registry check for the placeholder 0.0.0 version (returns @insider)', async () => {
+  it('keeps placeholder versions deterministic and never substitutes a dist-tag', async () => {
     const spec = await resolveSquadStateMcpSpec('0.0.0', {
-      publishedCheck: async () => {
-        throw new Error('publishedCheck should not be called for 0.0.0');
+      standaloneCheck: () => null,
+      localEntryCheck: () => null,
+    });
+    expect(spec.source).toBe('pinned');
+    expect(spec.args[1]).toBe('@bradygaster/squad-cli@0.0.0');
+  });
+
+  it('uses the installed cli entry directly without npx or cmd wrappers', async () => {
+    const entry = path.resolve('node_modules/@bradygaster/squad-cli/dist/cli-entry.js');
+    const spec = await resolveSquadStateMcpSpec('2.0.0-preview.1', {
+      standaloneCheck: () => null,
+      localEntryCheck: () => entry,
+    });
+    expect(spec).toEqual({
+      command: process.execPath,
+      args: [entry, 'state-mcp'],
+      source: 'local-entry',
+      fallback: {
+        command: 'npx',
+        args: ['-y', '@bradygaster/squad-cli@2.0.0-preview.1', 'state-mcp'],
       },
     });
-    expect(spec.source).toBe('insider');
-    expect(spec.args[1]).toBe('@bradygaster/squad-cli@insider');
-  });
-
-  it('short-circuits the registry check for empty version (returns @insider)', async () => {
-    const spec = await resolveSquadStateMcpSpec('', {
-      publishedCheck: async () => {
-        throw new Error('publishedCheck should not be called for empty version');
-      },
-    });
-    expect(spec.source).toBe('insider');
-  });
-
-  it('never throws — always returns a usable spec (no hard-error tier in iter-7)', async () => {
-    const spec = await resolveSquadStateMcpSpec('0.9.6-preview.99999', {
-      publishedCheck: async () => false,
-    });
-    expect(spec).toBeDefined();
-    expect(spec.command).toBe('npx');
-  });
-
-  it('short-circuits for versions with build metadata (+ suffix) — returns @insider (#1204)', async () => {
-    const spec = await resolveSquadStateMcpSpec('0.10.0+local.1234', {
-      publishedCheck: async () => {
-        throw new Error('publishedCheck should not be called for build metadata version');
-      },
-    });
-    expect(spec.source).toBe('insider');
-    expect(spec.args[1]).toBe('@bradygaster/squad-cli@insider');
-  });
-
-  it('uses the real npm-registry probe by default when publishedCheck is not injected', async () => {
-    mockIsPublished.mockResolvedValue(false);
-    const spec = await resolveSquadStateMcpSpec('0.9.6-preview.99999');
-    expect(mockIsPublished).toHaveBeenCalledWith('0.9.6-preview.99999');
-    expect(spec.source).toBe('insider');
   });
 });
 
 describe('resolveSquadStateMcpSpec — standalone bundle tier (#1593)', () => {
   beforeEach(() => {
-    mockIsPublished.mockReset();
     _resetMcpSpecCache();
   });
 
@@ -129,27 +92,24 @@ describe('resolveSquadStateMcpSpec — standalone bundle tier (#1593)', () => {
     // registry.npmjs.org at all, so the probe must not fire.
     const spec = await resolveSquadStateMcpSpec('0.11.0', {
       standaloneCheck: () => '/opt/squad/squad',
-      publishedCheck: async () => {
-        throw new Error('publishedCheck must not run in standalone mode');
-      },
+      localEntryCheck: () => { throw new Error('local entry check must not run in standalone mode'); },
     });
     expect(spec.source).toBe('standalone');
-    expect(mockIsPublished).not.toHaveBeenCalled();
   });
 
-  it('takes precedence over a published pinned version', async () => {
+  it('takes precedence over a local installed entry', async () => {
     const spec = await resolveSquadStateMcpSpec('0.11.0', {
       standaloneCheck: () => '/opt/squad/squad',
-      publishedCheck: async () => true,
+      localEntryCheck: () => '/opt/npm/squad-cli/dist/cli-entry.js',
     });
     expect(spec.source).toBe('standalone');
     expect(spec.command).not.toBe('npx');
   });
 
-  it('falls through to the npx tiers when not running from a bundle', async () => {
+  it('falls through to the exact npx pin when no local entry is available', async () => {
     const spec = await resolveSquadStateMcpSpec('0.11.0', {
       standaloneCheck: () => null,
-      publishedCheck: async () => true,
+      localEntryCheck: () => null,
     });
     expect(spec.source).toBe('pinned');
     expect(spec.command).toBe('npx');
@@ -221,15 +181,9 @@ describe('describeMcpSpec — standalone specs (#1593)', () => {
 });
 
 describe('project MCP launch portability', () => {
-  it.each([
-    ['win32', 'squad.exe'],
-    ['linux', 'squad'],
-    ['darwin', 'squad'],
-  ] as const)('uses the supported PATH executable on %s without altering the local spec', (platform, command) => {
+  it.each(['win32', 'linux', 'darwin'] as const)('keeps the direct machine-local executable on %s', (platform) => {
     const local = { command: 'C:\\example\\bundle\\squad.exe', args: ['state-mcp'], source: 'standalone' as const };
-    expect(projectSquadStateMcpSpec(local, platform)).toEqual({
-      command, args: ['state-mcp'], source: 'standalone',
-    });
+    expect(projectSquadStateMcpSpec(local, platform)).toEqual(local);
     expect(local.command).toBe('C:\\example\\bundle\\squad.exe');
     expect(projectSquadStateMcpSpec({
       command: 'npx', args: ['-y', '@bradygaster/squad-cli@1.0.1', 'state-mcp'], source: 'pinned',

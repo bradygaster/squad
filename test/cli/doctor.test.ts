@@ -12,9 +12,16 @@ import { join, resolve } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { randomBytes } from 'crypto';
-import { runDoctor, getDoctorMode, checkNodeVersion, checkGitSyncHooks } from '@bradygaster/squad-cli/commands/doctor';
+import {
+  runDoctor,
+  getDoctorMode,
+  checkNodeVersion,
+  checkGitSyncHooks,
+  checkSquadStateBridge,
+} from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
 import { FSStorageProvider, OrphanBranchBackend } from '@bradygaster/squad-sdk';
+import { getPackageVersion } from '../../packages/squad-cli/src/cli/core/version.js';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
 
@@ -73,6 +80,62 @@ describe('squad doctor', () => {
     // ESM checks return 'warn' (not fail) when node_modules absent from test dir
     expect(checks.some((c: DoctorCheck) => c.name === 'vscode-jsonrpc exports field')).toBe(true);
     expect(checks.some((c: DoctorCheck) => c.name === 'copilot-sdk session.js ESM patch')).toBe(true);
+  });
+
+  it('performs a real initialize/tools/health handshake and accepts the running package version', async () => {
+    await scaffold(TEST_ROOT);
+    const version = getPackageVersion();
+    const teamDir = join(TEST_ROOT, '.squad');
+    const fixture = resolve('test', 'fixtures', 'fake-state-mcp.mjs');
+    await writeFile(join(TEST_ROOT, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        squad_state: {
+          command: process.execPath,
+          args: [fixture, version, teamDir],
+        },
+      },
+    }));
+
+    await expect(checkSquadStateBridge(TEST_ROOT)).resolves.toMatchObject({
+      status: 'pass',
+      message: expect.stringContaining(`${version}; 2 tools`),
+    });
+  });
+
+  it('fails a stale bridge version and gives the upgrade fix command', async () => {
+    await scaffold(TEST_ROOT);
+    const fixture = resolve('test', 'fixtures', 'fake-state-mcp.mjs');
+    await writeFile(join(TEST_ROOT, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        squad_state: {
+          command: process.execPath,
+          args: [fixture, '0.10.0', join(TEST_ROOT, '.squad')],
+        },
+      },
+    }));
+
+    const check = await checkSquadStateBridge(TEST_ROOT);
+    expect(check.status).toBe('fail');
+    expect(check.message).toContain('version mismatch');
+    expect(check.message).toContain("squad upgrade --force");
+  });
+
+  it('turns ETARGET into exact-version pin guidance', async () => {
+    await scaffold(TEST_ROOT);
+    const fixture = resolve('test', 'fixtures', 'fake-state-mcp.mjs');
+    await writeFile(join(TEST_ROOT, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        squad_state: {
+          command: process.execPath,
+          args: [fixture, 'unused', 'unused', 'etarget'],
+        },
+      },
+    }));
+
+    const check = await checkSquadStateBridge(TEST_ROOT);
+    expect(check.status).toBe('fail');
+    expect(check.message).toContain(`@bradygaster/squad-cli@${getPackageVersion()}`);
+    expect(check.message).toContain('dist-tag');
   });
 
   it('reports failures on an empty directory', async () => {

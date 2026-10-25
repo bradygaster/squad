@@ -14,13 +14,17 @@
  *     (bradygaster/squad#1893).
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 import {
   ensureSquadStateMcpInRoot,
+  getSquadStateUserConfigKey,
+  normalizeDriveLetter,
+  reconcileSquadStateUserConfig,
   tombstoneStaleSquadStateInProjectMcp,
   getProjectMcpJsonPath,
 } from '../packages/squad-cli/src/cli/core/mcp-root.js';
@@ -32,6 +36,23 @@ const PINNED_SPEC: SquadStateMcpSpec = {
   args: ['-y', '@bradygaster/squad-cli@0.9.6-preview.14', 'state-mcp'],
 };
 
+function legacySimpleHash(input: string): string {
+  let hash = 0;
+  for (let index = 0; index < input.length; index++) {
+    hash = ((hash << 5) - hash + input.charCodeAt(index)) | 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function legacySimpleKey(dest: string): string {
+  return `squad_state_${legacySimpleHash(path.resolve(dest))}`;
+}
+
+function legacySha256Key(dest: string): string {
+  const hash = createHash('sha256').update(path.resolve(dest)).digest('hex').slice(0, 8);
+  return `squad_state_${hash}`;
+}
+
 describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () => {
   let tmpProject: string;
 
@@ -40,6 +61,7 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     fs.rmSync(tmpProject, { recursive: true, force: true });
   });
 
@@ -54,6 +76,12 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
     expect(parsed.mcpServers.squad_state.args).toEqual(PINNED_SPEC.args);
     expect(parsed.mcpServers.squad_state.tools).toEqual(['*']);
     expect(parsed.mcpServers.squad_state.env).toEqual({});
+    expect(parsed.mcpServers.squad_state['x-squad']).toEqual({
+      managed: true,
+      version: '0.9.6-preview.14',
+      machineSpecific: false,
+      source: 'pinned',
+    });
   });
 
   it('preserves existing user mcpServers entries', () => {
@@ -190,14 +218,20 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
     const raw = fs.readFileSync(cfgPath, 'utf8');
     const parsed = JSON.parse(raw);
     expect(parsed.mcpServers.squad_state).toEqual({
-      command: process.platform === 'win32' ? 'squad.exe' : 'squad',
+      command: launcher,
       args: ['state-mcp'],
       env: { npm_config_registry: 'https://packagefeedproxy.microsoft.io/npm/' },
       tools: ['read_state'],
       timeout: 60000,
+      'x-squad': {
+        managed: true,
+        version: '1.0.1',
+        machineSpecific: true,
+        source: 'standalone',
+      },
     });
     expect(parsed.mcpServers.custom).toEqual(custom);
-    expect(raw).not.toContain('WinGet');
+    expect(raw).toContain('WinGet');
     expect(raw).not.toMatch(/(?<!\r)\n/);
     expect(ensureSquadStateMcpInRoot(tmpProject, '1.0.1', spec).written).toBe(false);
     expect(fs.readFileSync(cfgPath, 'utf8')).toBe(raw);
@@ -246,5 +280,197 @@ describe('iter-8 mcp-root: repo-root .mcp.json writer + project tombstone', () =
 
     const parsed = JSON.parse(fs.readFileSync(cfgPath, 'utf8'));
     expect(parsed.mcpServers.github).toEqual({ command: 'gh' });
+  });
+
+  it('removes only this project legacy hashed entry, backs up first, and preserves siblings', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-'));
+    try {
+      const configDir = path.join(home, '.copilot');
+      const configPath = path.join(configDir, 'mcp-config.json');
+      fs.mkdirSync(configDir, { recursive: true });
+      const key = getSquadStateUserConfigKey(tmpProject);
+      const legacyKeys = [legacySimpleKey(tmpProject), legacySha256Key(tmpProject)]
+        .filter(candidate => candidate !== key);
+      const otherKey = 'squad_state_deadbeef';
+      fs.writeFileSync(configPath, JSON.stringify({
+        mcpServers: {
+          [key]: {
+            command: 'npx',
+            args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+            env: {},
+            tools: ['*'],
+          },
+          ...Object.fromEntries(legacyKeys.map(legacyKey => [legacyKey, {
+            command: 'npx',
+            args: ['-y', '@bradygaster/squad-cli@0.9.6', 'state-mcp'],
+          }])),
+          [otherKey]: {
+            command: 'npx',
+            args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+          },
+          custom: { command: 'custom-mcp', args: [] },
+        },
+      }, null, 2) + '\n');
+
+      const result = reconcileSquadStateUserConfig(tmpProject, { homeDir: home });
+      expect(result.action).toBe('removed');
+      expect(fs.readFileSync(`${configPath}.squad-backup`, 'utf8')).toContain(`"${key}"`);
+      const next = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      expect(next.mcpServers[key]).toBeUndefined();
+      for (const legacyKey of legacyKeys) expect(next.mcpServers[legacyKey]).toBeUndefined();
+      expect(next.mcpServers[otherKey]).toBeDefined();
+      expect(next.mcpServers.custom).toEqual({ command: 'custom-mcp', args: [] });
+      expect(reconcileSquadStateUserConfig(tmpProject, { homeDir: home }).action).toBe('none');
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it.runIf(process.platform === 'win32')(
+    '[platform: win32] removes the legacy raw uppercase Windows drive hash while preserving unrelated entries',
+    () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-win-legacy-'));
+      try {
+        const configDir = path.join(home, '.copilot');
+        const configPath = path.join(configDir, 'mcp-config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        const resolved = path.resolve(tmpProject);
+        expect(resolved).toMatch(/^[A-Z]:\\/);
+        const legacyKey = legacySimpleKey(tmpProject);
+        expect(legacyKey).not.toBe(getSquadStateUserConfigKey(tmpProject));
+        const unrelatedKey = 'squad_state_deadbeef';
+        fs.writeFileSync(configPath, JSON.stringify({
+          mcpServers: {
+            [legacyKey]: {
+              command: 'npx',
+              args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+            },
+            [unrelatedKey]: {
+              command: 'npx',
+              args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+            },
+          },
+        }, null, 2) + '\n');
+
+        expect(reconcileSquadStateUserConfig(tmpProject, { homeDir: home }).action).toBe('removed');
+        const next = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        expect(next.mcpServers[legacyKey]).toBeUndefined();
+        expect(next.mcpServers[unrelatedKey]).toBeDefined();
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.runIf(process.platform !== 'win32')(
+    '[platform: non-win32] removes the legacy raw POSIX symlink hash while preserving unrelated entries',
+    () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-posix-legacy-'));
+      const links = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-links-posix-legacy-'));
+      try {
+        const linkedProject = path.join(links, 'project');
+        fs.symlinkSync(tmpProject, linkedProject, 'dir');
+        const configDir = path.join(home, '.copilot');
+        const configPath = path.join(configDir, 'mcp-config.json');
+        fs.mkdirSync(configDir, { recursive: true });
+        const legacyKey = legacySimpleKey(linkedProject);
+        expect(legacyKey).not.toBe(getSquadStateUserConfigKey(linkedProject));
+        const unrelatedKey = 'squad_state_deadbeef';
+        fs.writeFileSync(configPath, JSON.stringify({
+          mcpServers: {
+            [legacyKey]: {
+              command: 'npx',
+              args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+            },
+            [unrelatedKey]: {
+              command: 'npx',
+              args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+            },
+          },
+        }, null, 2) + '\n');
+
+        expect(reconcileSquadStateUserConfig(linkedProject, { homeDir: home }).action).toBe('removed');
+        const next = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+        expect(next.mcpServers[legacyKey]).toBeUndefined();
+        expect(next.mcpServers[unrelatedKey]).toBeDefined();
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+        fs.rmSync(links, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it('normalizes Windows drive-letter case before hashing project identities', () => {
+    expect(normalizeDriveLetter('C:\\Users\\Example\\Repo', 'win32'))
+      .toBe('c:\\Users\\Example\\Repo');
+    expect(normalizeDriveLetter('c:\\Users\\Example\\Repo', 'win32'))
+      .toBe('c:\\Users\\Example\\Repo');
+    expect(normalizeDriveLetter('/home/example/repo', 'linux'))
+      .toBe('/home/example/repo');
+  });
+
+  it('uses the real project path so equivalent paths dedupe to one registration key', () => {
+    const child = path.join(tmpProject, 'child');
+    fs.mkdirSync(child);
+    expect(getSquadStateUserConfigKey(path.join(child, '..')))
+      .toBe(getSquadStateUserConfigKey(tmpProject));
+  });
+
+  it('supports dry-run without changing or backing up the user config', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-dry-'));
+    try {
+      const configDir = path.join(home, '.copilot');
+      const configPath = path.join(configDir, 'mcp-config.json');
+      fs.mkdirSync(configDir, { recursive: true });
+      const key = getSquadStateUserConfigKey(tmpProject);
+      const original = JSON.stringify({
+        mcpServers: {
+          [key]: {
+            command: 'npx',
+            args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+          },
+        },
+      }, null, 2) + '\n';
+      fs.writeFileSync(configPath, original);
+
+      expect(reconcileSquadStateUserConfig(tmpProject, { homeDir: home, dryRun: true }).action)
+        .toBe('would-remove');
+      expect(fs.readFileSync(configPath, 'utf8')).toBe(original);
+      expect(fs.existsSync(`${configPath}.squad-backup`)).toBe(false);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  it('keeps the original user config parseable when atomic replacement fails', () => {
+    const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-home-atomic-'));
+    try {
+      const configDir = path.join(home, '.copilot');
+      const configPath = path.join(configDir, 'mcp-config.json');
+      fs.mkdirSync(configDir, { recursive: true });
+      const key = legacySimpleKey(tmpProject);
+      const original = JSON.stringify({
+        mcpServers: {
+          [key]: {
+            command: 'npx',
+            args: ['-y', '@bradygaster/squad-cli@0.10.0', 'state-mcp'],
+          },
+          custom: { command: 'custom-mcp', args: [] },
+        },
+      }, null, 2) + '\n';
+      fs.writeFileSync(configPath, original);
+      vi.spyOn(fs, 'renameSync').mockImplementationOnce(() => {
+        throw Object.assign(new Error('simulated atomic replace failure'), { code: 'EACCES' });
+      });
+
+      expect(() => reconcileSquadStateUserConfig(tmpProject, { homeDir: home }))
+        .toThrow(/simulated atomic replace failure/);
+      expect(fs.readFileSync(configPath, 'utf8')).toBe(original);
+      expect(JSON.parse(fs.readFileSync(configPath, 'utf8')).mcpServers[key]).toBeDefined();
+      expect(fs.readFileSync(`${configPath}.squad-backup`, 'utf8')).toBe(original);
+      expect(fs.readdirSync(configDir).some(file => file.includes('.squad-tmp-'))).toBe(false);
+    } finally {
+      fs.rmSync(home, { recursive: true, force: true });
+    }
   });
 });

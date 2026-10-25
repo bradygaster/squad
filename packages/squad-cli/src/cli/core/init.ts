@@ -15,10 +15,14 @@ import { initSquad as sdkInitSquad, cleanupOrphanInitPrompt, clearResolveSquadCa
 import { installGitHooks } from '../commands/install-hooks.js';
 import { liftInitMutableStateOntoOrphan } from '../commands/migrate-backend.js';
 import { projectSquadStateMcpSpec, resolveSquadStateMcpSpec } from './mcp-spec.js';
-import { describeMcpSpec, ensureUserOwnedTemplates } from './upgrade.js';
+import { describeMcpSpec, ensureUserOwnedTemplates, recordShippedFilesAfterInit } from './upgrade.js';
 import { syncCopilotInstructionsFile } from './managed-file.js';
 import { getTemplatesDir } from './templates.js';
-import { ensureSquadStateMcpInRoot, tombstoneStaleSquadStateInProjectMcp } from './mcp-root.js';
+import {
+  ensureSquadStateMcpInRoot,
+  reconcileSquadStateUserConfig,
+  tombstoneStaleSquadStateInProjectMcp,
+} from './mcp-root.js';
 import { applyClientProjectionsForInit, reportClientResults, type ClientId } from './clients.js';
 import {
   readTeamMd,
@@ -287,8 +291,8 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
         displayName: 'Ralph',
       },
       {
-        name: 'Rai',
-        role: 'Rai',
+        name: 'rai',
+        role: 'rai',
         displayName: 'Rai',
       },
       {
@@ -348,6 +352,8 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
   try {
     const templatesDir = getTemplatesDir();
     ensureUserOwnedTemplates(dest, templatesDir);
+    // Baseline for `squad upgrade`: hashes of every squad-owned file as shipped by this init.
+    recordShippedFilesAfterInit(dest, squadDir, templatesDir, version);
   } catch {
     // Non-fatal: if templates dir is not found (unusual install), skip silently.
   }
@@ -454,6 +460,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
           if (tomb.removed) {
             success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
           }
+          const userConfig = reconcileSquadStateUserConfig(dest);
+          if (userConfig.action === 'removed') {
+            success(`removed duplicate ${(userConfig.keys ?? [userConfig.key]).join(', ')} from ${userConfig.path} (.mcp.json takes precedence)`);
+            console.log(`${DIM}  backup: ${userConfig.backupPath}${RESET}`);
+          }
         } catch (err) {
           console.warn(`${YELLOW}⚠ Could not install squad_state MCP entry in .mcp.json: ${err instanceof Error ? err.message : err}${RESET}`);
         }
@@ -482,6 +493,11 @@ export async function runInit(dest: string, options: RunInitOptions = {}): Promi
     const tomb = tombstoneStaleSquadStateInProjectMcp(dest);
     if (tomb.removed) {
       success(`removed stale squad_state from ${tomb.path} (now lives in .mcp.json)`);
+    }
+    const userConfig = reconcileSquadStateUserConfig(dest);
+    if (userConfig.action === 'removed') {
+      success(`removed duplicate ${(userConfig.keys ?? [userConfig.key]).join(', ')} from ${userConfig.path} (.mcp.json takes precedence)`);
+      console.log(`${DIM}  backup: ${userConfig.backupPath}${RESET}`);
     }
   } catch {
     // best-effort: .mcp.json write failure does not block init

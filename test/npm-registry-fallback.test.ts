@@ -1,6 +1,5 @@
 /**
- * Tests for the npm-registry HEAD-check used to decide whether the squad_state
- * MCP launch spec should pin the current version or fall back to `@insider`.
+ * Legacy npm-registry probe tests plus the deterministic exact-pin fallback.
  *
  * These tests stub the global `fetch`-equivalent (https.request) by relying on
  * the cache mechanism: we directly seed the cache so we never actually hit
@@ -33,26 +32,20 @@ describe('npm-registry: isSquadCliVersionPublished', () => {
   });
 });
 
-describe('resolveSquadStateMcpSpec: chooses pinned or @insider fallback', () => {
+describe('resolveSquadStateMcpSpec: deterministic exact fallback', () => {
   beforeEach(() => {
     _resetNpmRegistryCache();
   });
 
-  it('falls back to @insider when version is empty / 0.0.0', async () => {
-    const spec = await resolveSquadStateMcpSpec('0.0.0');
-    expect(spec).toEqual({
-      command: 'npx',
-      args: ['-y', '@bradygaster/squad-cli@insider', 'state-mcp'],
-      source: 'insider',
+  it('pins the supplied version and never substitutes a dist-tag', async () => {
+    const spec = await resolveSquadStateMcpSpec('0.0.0', {
+      standaloneCheck: () => null,
+      localEntryCheck: () => null,
     });
-  });
-
-  it('falls back to @insider when version is not published on the registry', async () => {
-    const spec = await resolveSquadStateMcpSpec('999.999.999-not-a-real-version');
     expect(spec).toEqual({
       command: 'npx',
-      args: ['-y', '@bradygaster/squad-cli@insider', 'state-mcp'],
-      source: 'insider',
+      args: ['-y', '@bradygaster/squad-cli@0.0.0', 'state-mcp'],
+      source: 'pinned',
     });
   });
 });

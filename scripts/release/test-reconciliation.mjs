@@ -20,7 +20,7 @@
  *   unexplained  anything else, including tests with no terminal state
  *
  *   node scripts/release/test-reconciliation.mjs --report vitest.json --out evidence [--baseline prior.json]
- *        [--fail-on-unexplained]
+ *        [--platform <process.platform>] [--require-platform-executions] [--fail-on-unexplained]
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -37,6 +37,20 @@ export const CATEGORY_RULES = Object.freeze([
   { category: 'env-gated', file: /squad-20-real-clients-stdio\.e2e\.test\.ts$/, reason: 'SQUAD_REAL_CLI_TESTS=1 not set / host CLI binaries absent' },
   { category: 'env-gated', file: /squad-20-host-feature-matrix\.test\.ts$/, reason: 'live host evidence requires the real CLI binaries' },
   { category: 'env-gated', file: /mcp-spec-init\.test\.ts$/, title: /squad\.exe/, reason: 'it.runIf(win32): Windows-only PATH/.exe resolution' },
+  {
+    category: 'env-gated',
+    file: 'test/mcp-root-write.test.ts',
+    title: '[platform: win32] removes the legacy raw uppercase Windows drive hash while preserving unrelated entries',
+    runsOn: 'win32',
+    reason: "it.runIf(process.platform === 'win32'): Windows-only legacy drive-hash reconciliation",
+  },
+  {
+    category: 'env-gated',
+    file: 'test/mcp-root-write.test.ts',
+    title: '[platform: non-win32] removes the legacy raw POSIX symlink hash while preserving unrelated entries',
+    runsOn: 'non-win32',
+    reason: "it.runIf(process.platform !== 'win32'): POSIX-only legacy symlink-hash reconciliation",
+  },
   { category: 'env-gated', file: /profile-boundary\.test\.ts$/, reason: 'host lacks 8.3 short names or symlink/junction privilege' },
   { category: 'env-gated', file: /state-backend\.test\.ts$/, reason: 'platform-gated state backend case' },
   { category: 'env-gated', file: /docs-build\.test\.ts$/, reason: 'docs dependencies not installed' },
@@ -58,7 +72,26 @@ function relFile(name) {
   return i >= 0 ? norm.slice(i + 1) : norm;
 }
 
-export function reconcile(report, { baseline } = {}) {
+function matches(value, expected) {
+  return typeof expected === 'string' ? value === expected : expected.test(value);
+}
+
+function runsOnPlatform(rule, platform) {
+  return rule.runsOn === 'win32' ? platform === 'win32' : rule.runsOn === 'non-win32' ? platform !== 'win32' : true;
+}
+
+export function resolvePlatform(claimedPlatform, actualPlatform = process.platform) {
+  const platform = claimedPlatform ?? actualPlatform;
+  if (!['aix', 'darwin', 'freebsd', 'linux', 'openbsd', 'sunos', 'win32'].includes(platform)) {
+    throw new Error(`unsupported reconciliation platform '${platform}'`);
+  }
+  if (claimedPlatform && claimedPlatform !== actualPlatform) {
+    throw new Error(`claimed reconciliation platform '${claimedPlatform}' does not match execution platform '${actualPlatform}'`);
+  }
+  return platform;
+}
+
+export function reconcile(report, { baseline, platform = process.platform, requirePlatformExecutions = false } = {}) {
   const tests = [];
   const files = { total: report.testResults.length, byStatus: {} };
   for (const tr of report.testResults) {
@@ -84,10 +117,14 @@ export function reconcile(report, { baseline } = {}) {
     } else if (t.status === 'todo') { category = TODO_BLOCKERS.includes(t.title) ? 'todo-blocking' : 'todo'; reason = 'it.todo placeholder'; }
     else {
       for (const rule of CATEGORY_RULES) {
-        if (!rule.file.test(t.file)) continue;
+        if (!matches(t.file, rule.file)) continue;
         if (rule.status && rule.status !== t.status) continue;
-        if (rule.title && !rule.title.test(t.fullName) && !rule.title.test(t.title)) continue;
+        if (rule.title && !matches(t.title, rule.title) && !matches(t.fullName, rule.title)) continue;
         if (!rule.status && t.status === 'xfail') continue;
+        if (rule.runsOn && runsOnPlatform(rule, platform)) {
+          reason = `expected to execute on ${rule.runsOn}, but report status was '${t.status}'`;
+          break;
+        }
         category = rule.category; reason = rule.reason; break;
       }
       if (t.status === 'failed') { category = 'failed'; reason = t.failureMessages[0]?.split('\n')[0] ?? 'failed'; }
@@ -100,13 +137,26 @@ export function reconcile(report, { baseline } = {}) {
   const bucketSum = Object.values(byStatus).reduce((a, b) => a + b, 0);
   const listed = tests.length;
   const unexplainedTotal = report.numTotalTests - listed;
+  const requiredExecutions = requirePlatformExecutions
+    ? CATEGORY_RULES.filter((rule) => rule.runsOn && runsOnPlatform(rule, platform)).map((rule) => {
+      const test = tests.find((candidate) => matches(candidate.file, rule.file) && matches(candidate.title, rule.title));
+      return {
+        file: rule.file,
+        title: rule.title,
+        platform: rule.runsOn,
+        status: test?.status ?? 'missing',
+        ok: test?.status === 'passed',
+      };
+    })
+    : [];
   const summary = {
-    numTotalTests: report.numTotalTests, listed, bucketSum, byStatus, byCategory,
+    platform, numTotalTests: report.numTotalTests, listed, bucketSum, byStatus, byCategory,
     countsSum: bucketSum === listed && listed === report.numTotalTests,
     unlistedTests: unexplainedTotal,
+    requiredExecutions,
     files,
     skippedFiles: report.testResults.filter((tr) => tr.assertionResults.length > 0 && tr.assertionResults.every((a) => a.status === 'skipped' || a.status === 'todo')).map((tr) => relFile(tr.name)),
-    ok: report.numFailedTests === 0 && (byCategory.unexplained ?? 0) === 0 && (byCategory['todo-blocking'] ?? 0) === 0 && unexplainedTotal === 0 && bucketSum === report.numTotalTests,
+    ok: report.numFailedTests === 0 && (byCategory.unexplained ?? 0) === 0 && (byCategory['todo-blocking'] ?? 0) === 0 && unexplainedTotal === 0 && bucketSum === report.numTotalTests && requiredExecutions.every((entry) => entry.ok),
   };
   let diff = null;
   if (baseline) {
@@ -118,6 +168,11 @@ export function reconcile(report, { baseline } = {}) {
   return { generatedAt: new Date().toISOString(), summary, nonPassing: categorized.sort((a, b) => a.file.localeCompare(b.file) || a.fullName.localeCompare(b.fullName)), diffVsBaseline: diff };
 }
 
+export function shouldFail(result, { failOnUnexplained = false } = {}) {
+  const s = result.summary;
+  return failOnUnexplained ? !s.ok : (s.numTotalTests > 0 && (s.byStatus.failed ?? 0) > 0);
+}
+
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const arg = (k) => { const i = process.argv.indexOf(k); return i >= 0 ? process.argv[i + 1] : undefined; };
   const reportPath = path.resolve(arg('--report') ?? 'vitest-report.json');
@@ -125,13 +180,25 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   const outDir = path.resolve(arg('--out') ?? 'evidence');
   mkdirSync(outDir, { recursive: true });
   const baseline = arg('--baseline') ? JSON.parse(readFileSync(path.resolve(arg('--baseline')), 'utf8')) : undefined;
-  const result = reconcile(JSON.parse(readFileSync(reportPath, 'utf8')), { baseline });
+  let platform;
+  try {
+    platform = resolvePlatform(arg('--platform'));
+  } catch (error) {
+    console.error(`::error::${error.message}`);
+    process.exit(2);
+  }
+  const result = reconcile(JSON.parse(readFileSync(reportPath, 'utf8')), {
+    baseline,
+    platform,
+    requirePlatformExecutions: process.argv.includes('--require-platform-executions'),
+  });
   writeFileSync(path.join(outDir, 'test-reconciliation.json'), JSON.stringify(result, null, 2) + '\n');
   const s = result.summary;
-  console.log(`tests=${s.numTotalTests} listed=${s.listed} byStatus=${JSON.stringify(s.byStatus)} byCategory=${JSON.stringify(s.byCategory)} unlisted=${s.unlistedTests} skippedFiles=${s.skippedFiles.join(',') || '-'}`);
+  console.log(`platform=${s.platform} tests=${s.numTotalTests} listed=${s.listed} byStatus=${JSON.stringify(s.byStatus)} byCategory=${JSON.stringify(s.byCategory)} unlisted=${s.unlistedTests} skippedFiles=${s.skippedFiles.join(',') || '-'}`);
   for (const t of result.nonPassing.filter((t) => t.category === 'unexplained' || t.category === 'failed' || t.category === 'todo-blocking')) console.error(`::warning::${t.category}: ${t.file} :: ${t.fullName} [${t.status}]`);
+  for (const required of s.requiredExecutions.filter((entry) => !entry.ok)) console.error(`::error::required platform test did not pass: ${required.file} :: ${required.title} [${required.status}]`);
   if (!s.countsSum || s.unlistedTests !== 0) console.error(`::error::${s.unlistedTests} test(s) are counted in numTotalTests but have no listed result (never reached a terminal state); see ${path.join(outDir, 'test-reconciliation.json')}`);
-  const fail = process.argv.includes('--fail-on-unexplained') ? !s.ok : (s.numTotalTests > 0 && (s.byStatus.failed ?? 0) > 0);
+  const fail = shouldFail(result, { failOnUnexplained: process.argv.includes('--fail-on-unexplained') });
   console.log(`${s.ok ? '✅' : '⚠️'} reconciliation written to ${outDir}`);
   process.exit(fail ? 1 : 0);
 }

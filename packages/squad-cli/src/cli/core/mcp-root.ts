@@ -30,9 +30,11 @@
  */
 
 import path from 'node:path';
+import { realpathSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import { projectSquadStateMcpSpec, type SquadStateMcpSpec } from './mcp-spec.js';
-import { writeManagedText } from './managed-file.js';
+import { writeManagedText, writeManagedTextAtomic } from './managed-file.js';
 
 const storage = new FSStorageProvider();
 
@@ -46,6 +48,7 @@ interface McpServerEntry {
   args?: string[];
   env?: Record<string, string>;
   tools?: string[];
+  [k: string]: unknown;
 }
 
 interface McpConfigShape {
@@ -115,6 +118,13 @@ export function ensureSquadStateMcpInRoot(
     env: hasUsableEnv ? { ...existing!.env } : {},
     tools: Array.isArray(existing?.tools) && existing.tools.every(tool => typeof tool === 'string')
       ? [...existing.tools] : ['*'],
+    'x-squad': {
+      managed: true,
+      version: _cliVersion,
+      machineSpecific: projectSpec.source !== 'pinned',
+      source: projectSpec.source,
+      ...(projectSpec.fallback ? { fallback: projectSpec.fallback } : {}),
+    },
   };
 
   // User-owned fields are carried forward; only launch command/args are managed.
@@ -127,7 +137,8 @@ export function ensureSquadStateMcpInRoot(
     hasUsableEnv &&
     Array.isArray(existing.tools) &&
     existing.tools.length === desired.tools!.length &&
-    existing.tools.every((tool, index) => tool === desired.tools![index])
+    existing.tools.every((tool, index) => tool === desired.tools![index]) &&
+    JSON.stringify(existing['x-squad']) === JSON.stringify(desired['x-squad'])
   ) {
     return { written: false, key, path: cfgPath };
   }
@@ -197,8 +208,7 @@ export function ensureSquadStateMcpInUserConfig(
 
   const cfgPath = path.join(homedir, '.copilot', 'mcp-config.json');
   // Stable short hash of the project path for the key suffix
-  const hash = simpleHash(path.resolve(dest));
-  const key = `squad_state_${hash}`;
+  const key = getSquadStateUserConfigKey(dest);
 
   let parsed: McpConfigShape;
   if (storage.existsSync(cfgPath)) {
@@ -248,6 +258,109 @@ export function ensureSquadStateMcpInUserConfig(
 
   storage.writeSync(cfgPath, JSON.stringify(parsed, null, 2) + '\n');
   return { written: true, key, path: cfgPath };
+}
+
+export interface ReconcileUserMcpResult {
+  action: 'none' | 'removed' | 'would-remove';
+  key: string;
+  keys?: string[];
+  path: string;
+  backupPath?: string;
+}
+
+/**
+ * Repo `.mcp.json` has precedence. Remove only this project's legacy hashed
+ * user entry when it has the recognizable Squad-managed launch shape.
+ *
+ * The user config is backed up before mutation. Dry-run reports the action
+ * without writing either the backup or the config.
+ */
+export function reconcileSquadStateUserConfig(
+  dest: string,
+  options: { dryRun?: boolean; homeDir?: string } = {},
+): ReconcileUserMcpResult {
+  const homedir = options.homeDir ?? process.env.HOME ?? process.env.USERPROFILE ?? '';
+  const candidateKeys = getSquadStateUserConfigKeys(dest);
+  const key = candidateKeys[0]!;
+  if (!homedir) return { action: 'none', key, path: '' };
+
+  const cfgPath = path.join(homedir, '.copilot', 'mcp-config.json');
+  if (!storage.existsSync(cfgPath)) return { action: 'none', key, path: cfgPath };
+
+  const raw = storage.readSync(cfgPath) ?? '';
+  let parsed: McpConfigShape;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { action: 'none', key, path: cfgPath };
+    }
+    parsed = value as McpConfigShape;
+  } catch {
+    return { action: 'none', key, path: cfgPath };
+  }
+
+  const keys = candidateKeys.filter(candidate => {
+    const entry = parsed.mcpServers?.[candidate];
+    return !!entry && isSquadManagedHashedEntry(entry);
+  });
+  if (keys.length === 0) {
+    return { action: 'none', key, path: cfgPath };
+  }
+
+  if (options.dryRun) return { action: 'would-remove', key, keys, path: cfgPath };
+
+  const backupPath = `${cfgPath}.squad-backup`;
+  storage.writeSync(backupPath, raw);
+  for (const candidate of keys) delete parsed.mcpServers![candidate];
+  writeManagedTextAtomic(cfgPath, JSON.stringify(parsed, null, 2) + '\n');
+  return { action: 'removed', key, keys, path: cfgPath, backupPath };
+}
+
+export function getSquadStateUserConfigKey(dest: string): string {
+  return `squad_state_${simpleHash(normalizeSquadProjectPath(dest))}`;
+}
+
+export function getSquadStateUserConfigKeys(dest: string): string[] {
+  const resolved = path.resolve(dest);
+  const simpleHashPaths = [
+    normalizeSquadProjectPath(dest),
+    resolved,
+    normalizeDriveLetter(resolved),
+  ];
+  const keys = simpleHashPaths.map(value => `squad_state_${simpleHash(value)}`);
+
+  // iter-7 used the raw resolved path with an eight-character SHA-256 prefix.
+  keys.push(`squad_state_${createHash('sha256').update(resolved).digest('hex').slice(0, 8)}`);
+  return [...new Set(keys)];
+}
+
+export function normalizeSquadProjectPath(dest: string): string {
+  const resolved = path.resolve(dest);
+  let canonical = resolved;
+  try {
+    canonical = realpathSync.native(resolved);
+  } catch {
+    // Missing paths still get a deterministic resolved-path identity.
+  }
+  return normalizeDriveLetter(canonical);
+}
+
+export function normalizeDriveLetter(value: string, platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' && /^[A-Z]:/.test(value)
+    ? `${value[0]!.toLowerCase()}${value.slice(1)}`
+    : value;
+}
+
+function isSquadManagedHashedEntry(entry: McpServerEntry): boolean {
+  const args = Array.isArray(entry.args) ? entry.args : [];
+  if (args.at(-1) !== 'state-mcp') return false;
+  if (entry.command === 'npx') {
+    return args.some(arg => /^@bradygaster\/squad-cli(?:@.+)?$/.test(arg));
+  }
+  if (entry.command === process.execPath || path.basename(entry.command ?? '').toLowerCase() === 'node') {
+    return args.some(arg => /(?:^|[\\/])@bradygaster[\\/]squad-cli[\\/]dist[\\/]cli-entry\.js$/i.test(arg));
+  }
+  return /(?:^|[\\/])squad(?:\.exe|\.cmd|\.ps1)?$/i.test(entry.command ?? '');
 }
 
 /** Simple deterministic 8-char hex hash for path-based keys. */

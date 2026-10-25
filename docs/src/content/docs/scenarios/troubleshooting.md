@@ -117,6 +117,43 @@ If below v22.5, upgrade to the latest LTS:
 
 ---
 
+## `state-mcp` processes remain after Copilot sessions close
+
+**Problem:** Many `state-mcp` processes remain on a long-running development
+machine.
+
+**Cause:** Copilot host sessions can remain alive after their visible UI session
+closes. Every live host keeps its stdio MCP children alive. Older Squad
+installations also used `npx`/shell wrapper chains and duplicate hashed user
+declarations, which multiplied the process count.
+
+**Fix:**
+
+1. Run `squad upgrade --force`. The repository `.mcp.json` declaration takes
+   precedence, uses the installed CLI entry directly when available, and removes
+   only the matching legacy `squad_state_<hash>` user declaration after backing
+   up `~/.copilot/mcp-config.json`.
+2. Restart the affected Copilot sessions so they load the new declaration.
+3. If cleanup is still required, stop only confirmed parent-gone bridge PIDs.
+   Never kill processes by image/name:
+
+   ```powershell
+   $all = Get-CimInstance Win32_Process
+   $byPid = @{}
+   $all | ForEach-Object { $byPid[[int]$_.ProcessId] = $_ }
+   $orphans = $all | Where-Object {
+     $_.CommandLine -match 'state-mcp' -and
+     -not $byPid.ContainsKey([int]$_.ParentProcessId)
+   }
+   $orphans | Select-Object ProcessId, ParentProcessId, CommandLine
+   $orphans | ForEach-Object { Stop-Process -Id ([int]$_.ProcessId) }
+   ```
+
+   If the list is empty, do not kill anything. The live Copilot parent owns
+   those processes; close or restart that specific session instead.
+
+---
+
 ## Upgrade doesn't change anything
 
 **Problem:** Running `squad upgrade` completes but nothing changes.

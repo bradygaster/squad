@@ -64,6 +64,9 @@ const EXTENSION_HEADING = /^x-/i;
  * Scan charter Markdown using the profile's deterministic structural subset.
  */
 export function scanCharterMarkdown(markdown: string): CharterMarkdownScan {
+  // A UTF-8 BOM (written by many Windows editors) is not part of the first heading;
+  // without stripping it `# Name — Role` never matches H1 (#2298).
+  if (markdown.charCodeAt(0) === 0xfeff) markdown = markdown.slice(1);
   const lines = splitSourceLines(markdown);
   const sections: CharterMarkdownSection[] = [];
   const fields: CharterMarkdownField[] = [];
@@ -170,14 +173,24 @@ export function scanCharterMarkdown(markdown: string): CharterMarkdownScan {
     if (!currentSection) continue;
     const fieldMatch = text.match(FIELD);
     if (fieldMatch) {
-      fields.push({
-        name: fieldMatch[1]!.trim(),
-        value: fieldMatch[2]!,
-        line: sourceLine.line,
-        column: text.indexOf('**') + 1,
-        width: fieldMatch[1]!.trim().length + 5,
-        section: currentSection.name,
-      });
+      // Legacy one-line identity blocks join several fields with ` | `
+      // (`**Role:** X | **Expertise:** Y | **Style:** Z`); split them so each
+      // field is read on its own instead of Role swallowing the rest (#2298).
+      const segments = `**${fieldMatch[1]!}:** ${fieldMatch[2]!}`.split(/\s+\|\s+(?=\*\*[^*\r\n]+:\*\*)/);
+      let column = text.indexOf('**') + 1;
+      for (const segment of segments) {
+        const part = segment.match(/^\*\*([^*\r\n]+):\*\*[ \t]*(.*?)[ \t]*$/);
+        if (!part) continue;
+        fields.push({
+          name: part[1]!.trim(),
+          value: part[2]!,
+          line: sourceLine.line,
+          column,
+          width: part[1]!.trim().length + 5,
+          section: currentSection.name,
+        });
+        column += segment.length + 3;
+      }
     }
   }
 

@@ -1,7 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runInit } from '../../packages/squad-cli/src/cli/core/init.js';
 import { runUpgrade } from '../../packages/squad-cli/src/cli/core/upgrade.js';
 import { getPackageVersion } from '../../packages/squad-cli/src/cli/core/version.js';
@@ -9,10 +9,6 @@ import { STANDALONE_HOME_ENV } from '../../packages/squad-cli/src/cli/core/mcp-s
 import { getTemplatesDir } from '../../packages/squad-cli/src/cli/core/templates.js';
 import { copyManagedFile, writeManagedText } from '../../packages/squad-cli/src/cli/core/managed-file.js';
 import { TEAM_CAPABILITIES_BEGIN } from '@bradygaster/squad-sdk/config';
-
-vi.mock('../../packages/squad-cli/src/cli/core/npm-registry.js', () => ({
-  isSquadCliVersionPublished: vi.fn(async () => true),
-}));
 
 let root: string;
 const originalStandalone = process.env[STANDALONE_HOME_ENV];
@@ -47,7 +43,7 @@ afterEach(() => {
 });
 
 describe('upgrade portability and destination newlines', () => {
-  it.each(['packaged', 'npm'])('%s init and upgrade publish portable MCP specs and preserve other servers', async mode => {
+  it.each(['packaged', 'npm'])('%s init and upgrade publish deterministic MCP specs and preserve other servers', async mode => {
     if (mode === 'packaged') bundled();
     const custom = { command: 'node', args: ['./custom-server.js'], env: { MODE: 'user' } };
     write('.mcp.json', JSON.stringify({
@@ -58,12 +54,24 @@ describe('upgrade portability and destination newlines', () => {
       await operation();
       const raw = readFileSync(path.join(root, '.mcp.json'), 'utf8');
       const config = JSON.parse(raw);
+      const version = getPackageVersion();
+      const fallback = {
+        command: 'npx',
+        args: ['-y', `@bradygaster/squad-cli@${version}`, 'state-mcp'],
+      };
       expect(config.mcpServers.custom).toEqual(custom);
       expect(config.mcpServers.squad_state.env).toEqual({ EXTRA: 'keep' });
-      expect(config.mcpServers.squad_state.command).toBe(mode === 'packaged' ? portableCommand : 'npx');
+      expect(config.mcpServers.squad_state.command).toBe(mode === 'packaged'
+        ? path.join(root, 'example-bundle', portableCommand) : process.execPath);
       expect(config.mcpServers.squad_state.args).toEqual(mode === 'packaged'
-        ? ['state-mcp'] : ['-y', `@bradygaster/squad-cli@${getPackageVersion()}`, 'state-mcp']);
-      expect(raw).not.toContain('example-bundle');
+        ? ['state-mcp'] : [path.resolve('packages/squad-cli/dist/cli-entry.js'), 'state-mcp']);
+      expect(config.mcpServers.squad_state['x-squad']).toEqual({
+        managed: true,
+        version,
+        machineSpecific: true,
+        source: mode === 'packaged' ? 'standalone' : 'local-entry',
+        fallback,
+      });
       expect(raw).not.toMatch(/(?<!\r)\n/);
     }
   });

@@ -49,18 +49,50 @@ const COMMAND_HELP: Record<string, HelpPrinter> = {
   upgrade: (version) => {
     header('upgrade', version, 'Update Squad-owned files to the latest version');
     console.log(`Usage: squad upgrade [options]\n`);
-    console.log(`Overwrites Squad-owned files (squad.agent.md, .squad/templates/) while`);
-    console.log(`leaving your team state under .squad/ and .ai-team/ untouched.\n`);
-    console.log(`Local customizations to squad.agent.md are backed up automatically.`);
-    console.log(`Use --dry-run to preview changes before applying.\n`);
+    console.log(`Overwrites Squad-owned files after comparing content (line endings ignored):`);
+    console.log(`  .github/agents/squad.agent.md, .github/skills/*, .github/workflows/squad-*.yml,`);
+    console.log(`  .squad/templates/** and the flat .squad/casting-*.json template copies.`);
+    console.log(`A file you customized is written to <file>.local-backup (verified) before it`);
+    console.log(`is overwritten; files that match what Squad shipped are replaced silently.`);
+    console.log(`Never touched: team.md, routing.md, decisions, agents/*/history.md, the casting`);
+    console.log(`registry/history pair, config.json and .ai-team/. Missing .gitignore and`);
+    console.log(`.gitattributes entries are appended in the file's own line-ending style.\n`);
+    console.log(`Use --dry-run to preview: it writes nothing and reports only files that would change.\n`);
     console.log(`Options:`);
-    console.log(`  ${BOLD}--dry-run${RESET}                   Preview changes without writing`);
+    console.log(`  ${BOLD}--dry-run${RESET}                   Preview changes without writing (also with --self)`);
     console.log(`  ${BOLD}--migrate-directory${RESET}         Rename legacy .ai-team/ to .squad/`);
     console.log(`  ${BOLD}--state-backend <type>${RESET}      Migrate to a new backend (orphan|two-layer)`);
     console.log(`  ${BOLD}--client <list>${RESET}             Add client hosts (or "all"):`);
-    console.log(`  ${BOLD}--self${RESET}                      Upgrade the squad CLI package itself`);
-    console.log(`  ${BOLD}--insider${RESET}                   With --self, install the @insider tag`);
-    console.log(`  ${BOLD}--force${RESET}                     Overwrite files without prompting\n`);
+    console.log(`  ${BOLD}--self${RESET}                      Upgrade the squad CLI package itself, following the`);
+    console.log(`                              installed channel (prerelease → @insider, stable → @latest)`);
+    console.log(`  ${BOLD}--insider${RESET}                   With --self, force the @insider tag`);
+    console.log(`  ${BOLD}--force${RESET}                     Re-process all files when already current;`);
+    console.log(`                              with --self, allow installing an older version\n`);
+  },
+
+  client: (version) => {
+    header('client', version, 'Manage client host projections');
+    console.log(`Usage: squad client list [--json]`);
+    console.log(`       squad client add <list> [--dry-run]\n`);
+    console.log(`Lists the hosts configured in .squad/config.json (clients[]) and whether their`);
+    console.log(`projected files exist. An empty clients[] means only the default GitHub Copilot`);
+    console.log(`host (.github/agents/squad.agent.md + .mcp.json) is projected.\n`);
+    console.log(`Hosts: copilot, claude, kiro, opencode, cursor, codex, antigravity, or "all".\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--json${RESET}                      Emit structured JSON instead of text`);
+    console.log(`  ${BOLD}--dry-run${RESET}                   With add: show what would be projected, write nothing\n`);
+  },
+
+  roster: (version) => {
+    header('roster', version, 'Explicitly configure optional built-in agents');
+    console.log(`Usage: squad roster add <rai|fact-checker|all> [--dry-run]`);
+    console.log(`       squad roster remove <rai|fact-checker|all> [--dry-run]\n`);
+    console.log(`Prints the exact team.md diff before applying it. The first add writes a`);
+    console.log(`byte-exact verified backup and records provenance. Remove deletes only rows`);
+    console.log(`added by this command and restores the original bytes when no later edits exist.\n`);
+    console.log(`Options:`);
+    console.log(`  ${BOLD}--dry-run${RESET}                   Preview the exact diff without writing\n`);
+    console.log(`Aliases for remove: disable, uninstall.\n`);
   },
 
   'update-check': (version) => {

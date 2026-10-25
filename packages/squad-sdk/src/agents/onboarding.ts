@@ -183,7 +183,7 @@ ${context || 'Context will be provided by the team.'}
 - Loop until the board is clear, then idle
 `,
 
-  'Rai': (displayName: string, context?: string) => `# ${displayName} — Responsible AI Reviewer
+  'rai': (displayName: string, context?: string) => `# ${displayName} — Responsible AI Reviewer
 
 Background reviewer that checks contributions for responsible AI concerns before they merge.
 
