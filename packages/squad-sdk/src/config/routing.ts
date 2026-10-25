@@ -8,7 +8,7 @@
  */
 
 import type { RoutingConfig, RoutingRule, IssueRoutingRule } from '../runtime/config.js';
-import { normalizeEol } from '../utils/normalize-eol.js';
+import { parseRoutingRulesMarkdown } from './markdown-migration.js';
 
 /**
  * Compiled routing matcher with regex patterns.
@@ -112,81 +112,14 @@ export interface RoutingMatch {
  * @returns Parsed routing configuration
  */
 export function parseRoutingMarkdown(content: string): RoutingConfig {
-  content = normalizeEol(content);
-  const rules: RoutingRule[] = [];
-  const lines = content.split('\n');
-  
-  let inRoutingTable = false;
-  let headerPassed = false;
-  
-  for (const line of lines) {
-    const trimmed = line.trim();
-    
-    // Detect routing table section
-    if (trimmed.toLowerCase().includes('## routing table') || 
-        trimmed.toLowerCase().includes('##routing table')) {
-      inRoutingTable = true;
-      headerPassed = false;
-      continue;
-    }
-    
-    // Stop at next section
-    if (inRoutingTable && trimmed.startsWith('##') && !trimmed.toLowerCase().includes('routing table')) {
-      inRoutingTable = false;
-      continue;
-    }
-    
-    // Parse table rows
-    if (inRoutingTable && trimmed.startsWith('|')) {
-      // Skip header row
-      if (trimmed.toLowerCase().includes('work type') || trimmed.toLowerCase().includes('pattern')) {
-        headerPassed = true;
-        continue;
-      }
-      
-      // Skip separator row
-      if (trimmed.includes('---') || trimmed.includes('===')) {
-        continue;
-      }
-      
-      if (!headerPassed) {
-        continue;
-      }
-      
-      // Parse data row: | Work Type | Route To | Examples |
-      const cells = trimmed
-        .split('|')
-        .map(cell => cell.trim())
-        .filter(cell => cell.length > 0);
-      
-      if (cells.length >= 2) {
-        const workType = cells[0];
-        const routeTo = cells[1]!;
-        // Strip surrounding quotes (", ', `) so quoted and unquoted examples
-        // tokenize identically. Without this, a quoted example like "unit tests"
-        // keeps its quotes and compiles to patterns that never match, which made
-        // quoted routing examples silently route everything to fallback.
-        const examples = cells.length >= 3
-          ? cells[2]!
-              .split(',')
-              .map(ex => ex.trim().replace(/^["'`]+|["'`]+$/g, '').trim())
-              .filter(ex => ex.length > 0)
-          : undefined;
-        
-        // Parse agent names (may be comma-separated or single)
-        const agents = routeTo.split(',').map(a => a.trim()).filter(a => a.length > 0);
-        
-        if (workType && agents.length > 0) {
-          rules.push({
-            workType,
-            agents,
-            examples,
-            confidence: 'high'
-          });
-        }
-      }
-    }
-  }
+  const parsed = parseRoutingRulesMarkdown(content);
+  const rules: RoutingRule[] = parsed.rules.map((rule) => ({
+    ...rule,
+    examples: rule.examples?.map((example) =>
+      example.replace(/^["'`]+|["'`]+$/g, '').trim(),
+    ),
+    confidence: 'high',
+  }));
   
   return {
     rules,

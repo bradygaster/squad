@@ -582,7 +582,7 @@ describe('routing readiness', () => {
     ]);
   });
 
-  it('rejects duplicate work types', () => {
+  it('warns deterministically for duplicate work types', () => {
     writeSquad(
       'routing.md',
       ROUTING.replace(
@@ -593,8 +593,39 @@ describe('routing readiness', () => {
 
     const result = check(runSquadHealth(squadDir, repoRoot), 'routing');
 
-    expect(result.status).toBe('fail');
-    expect(result.diagnostics).toEqual(['duplicate work type: Feature']);
+    expect(result.status).toBe('warn');
+    expect(result.diagnostics).toEqual([
+      'duplicate route: feature -> Alpha (2 rows)',
+    ]);
+  });
+
+  it('warns deterministically for conflicting work types', () => {
+    writeSquad(
+      'routing.md',
+      ROUTING.replace(
+        '| feature | Alpha | New work |',
+        '| feature | Alpha | New work |\n| Feature | Beta | Other work |',
+      ),
+    );
+    const registryPath = path.join(squadDir, 'casting', 'registry.json');
+    const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+    registry.agents.beta = {
+      ...registry.agents.alpha,
+      display_name: 'Beta',
+      persistent_name: 'Beta',
+    };
+    writeFileSync(registryPath, JSON.stringify(registry), 'utf8');
+    writeSquad(
+      path.join('agents', 'beta', 'charter.md'),
+      CHARTER.replaceAll('Alpha', 'Beta'),
+    );
+
+    const result = check(runSquadHealth(squadDir, repoRoot), 'routing');
+
+    expect(result.status).toBe('warn');
+    expect(result.diagnostics).toEqual([
+      'conflicting route: feature -> Alpha | Beta',
+    ]);
   });
 
   it('validates agent references in module ownership', () => {

@@ -293,10 +293,15 @@ function parseTeamTable(lines: string[]): ParsedAgent[] {
 /**
  * Parses routing.md content into routing rules.
  *
- * Expected table format:
+ * Canonical table format:
  * | Work Type | Route To | Examples |
  * |-----------|----------|----------|
  * | feature-dev | Lead | New features |
+ *
+ * Compatible readers also accept historical `Pattern | Owner | Reason`,
+ * `Domain | Route to`, `Signal | Agent`, and
+ * `Work Type | Primary Agent | Fallback` column semantics. The table may
+ * appear under any heading, and recognized columns may appear in any order.
  *
  * @param content - Raw routing.md content
  * @returns Parsed routing rules and warnings
@@ -307,88 +312,87 @@ export function parseRoutingRulesMarkdown(
   rules: ParsedRoutingRule[];
   warnings: string[];
   agentReferences?: string[];
+  markdownTableCount: number;
+  routingTableCount: number;
 } {
   content = normalizeEol(content);
   const rules: ParsedRoutingRule[] = [];
   const warnings: string[] = [];
   const agentReferences: string[] = [];
+  const locatedRules: Array<{
+    rule: ParsedRoutingRule;
+    lineIndex: number;
+  }> = [];
+  const parsedRoutingLines = new Set<number>();
+  let markdownTableCount = 0;
+  let routingTableCount = 0;
 
   if (!content || !content.trim()) {
-    return { rules, warnings, agentReferences };
+    return {
+      rules,
+      warnings,
+      agentReferences,
+      markdownTableCount,
+      routingTableCount,
+    };
   }
 
   const lines = content.split('\n');
-  let inTable = false;
-  let headerColumns: string[] = [];
-  // Cells that only ever appear in header rows of routing-related tables.
-  const HEADER_CELL = /^(work\s*type|pattern|route\s*to|agents?|primary|secondary|owner|examples?|notes?|skills?|tier|label|action|who|when|why)$/i;
   // `{Name}` / `{example tasks}` placeholders copied from templates are not agent references.
   const PLACEHOLDER = /^\{[^}]*\}$/;
 
   for (let index = 0; index < lines.length; index++) {
-    const line = lines[index]!;
-    const trimmed = line.trim();
+    const headerLine = lines[index]!.trim();
+    const separatorLine = lines[index + 1]?.trim() ?? '';
+    if (!headerLine.startsWith('|') || !separatorLine.startsWith('|')) continue;
 
-    // Detect routing table section (also accepts "## Work Type → Agent" used by this project's routing.md)
-    if (/##\s*routing\s*table/i.test(trimmed) || /##\s*work\s*type\s*.{0,5}agent/i.test(trimmed)) {
-      inTable = true;
-      headerColumns = [];
+    const headerCells = parseMarkdownTableCells(headerLine);
+    const separatorCells = parseMarkdownTableCells(separatorLine);
+    if (
+      headerCells.length === 0 ||
+      separatorCells.length !== headerCells.length ||
+      !separatorCells.every((cell) => /^:?-{3,}:?$/.test(cell))
+    ) {
       continue;
     }
 
-    // New section ends the table
-    if (inTable && /^##\s+/.test(trimmed) && !/routing\s*table/i.test(trimmed) && !/work\s*type\s*.{0,5}agent/i.test(trimmed)) {
-      inTable = false;
-      continue;
+    markdownTableCount++;
+    const headerColumns = headerCells.map(normalizeRoutingHeader);
+    const workTypeIndex = headerColumns.findIndex(isRoutingWorkTypeHeader);
+    const agentIndexes = headerColumns
+      .map((column, columnIndex) =>
+        isRoutingAgentHeader(column) ? columnIndex : -1,
+      )
+      .filter((columnIndex) => columnIndex >= 0);
+    const examplesIndex = headerColumns.findIndex(isRoutingExamplesHeader);
+    const isRoutingTable = workTypeIndex >= 0 && agentIndexes.length > 0;
+    if (isRoutingTable) {
+      routingTableCount++;
+      parsedRoutingLines.add(index);
+      parsedRoutingLines.add(index + 1);
     }
 
-    if (inTable && !trimmed.startsWith('|')) {
-      // A blank/prose line ends the current table; the next `|` block needs its own header,
-      // otherwise a second table's header row is read as a routing rule (#2298).
-      headerColumns = [];
-      continue;
-    }
+    let rowIndex = index + 2;
+    for (; rowIndex < lines.length; rowIndex++) {
+      const rowLine = lines[rowIndex]!.trim();
+      if (!rowLine.startsWith('|')) break;
 
-    if (inTable && trimmed.startsWith('|')) {
-      const cells = parseMarkdownTableCells(trimmed);
-      const nextIsSeparator = (() => {
-        const next = lines[index + 1]?.trim() ?? '';
-        return next.startsWith('|') && parseMarkdownTableCells(next).every((cell) => /^[-:]+$/.test(cell));
-      })();
-      const looksLikeHeader = nextIsSeparator || (cells.length > 0 && cells.every((cell) => HEADER_CELL.test(cell)));
-      if (looksLikeHeader) {
-        // Only tables with a work-type/pattern column carry routing rules; others are skipped.
-        headerColumns = cells.some((cell) => /^(work\s*type|pattern)$/i.test(cell))
-          ? cells.map((cell) => cell.toLowerCase())
-          : [];
-        if (headerColumns.length === 0) {
-          // Skip the whole non-routing table so its rows are not misread under stale headers.
-          while (lines[index + 1]?.trim().startsWith('|')) index++;
-        }
-        continue;
-      }
-      if (cells.every((cell) => /^[-:]+$/.test(cell))) continue;
-      if (headerColumns.length === 0) continue;
+      const cells = parseMarkdownTableCells(rowLine);
+      if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+      if (!isRoutingTable) continue;
+      parsedRoutingLines.add(rowIndex);
 
-      const workTypeIndex = headerColumns.findIndex((column) =>
-        /^(work\s*type|pattern)$/.test(column),
-      );
-      const agentIndexes = headerColumns
-        .map((column, index) =>
-          /^(route\s*to|agent|primary|secondary|owner)$/.test(column)
-            ? index
-            : -1,
-        )
-        .filter((index) => index >= 0);
-      const examplesIndex = headerColumns.findIndex((column) =>
-        /^examples?$/.test(column),
-      );
       const workType = cells[workTypeIndex];
-      const agents = agentIndexes.flatMap((index) =>
-        (cells[index] ?? '')
-          .split(',')
+      const agents = agentIndexes.flatMap((columnIndex) =>
+        (cells[columnIndex] ?? '')
+          .split(/\s*(?:,|\+|\band\b)\s*/i)
           .map((agent) => agent.trim())
-          .filter((agent) => agent.length > 0 && !/^[—-]+$/.test(agent) && !PLACEHOLDER.test(agent)),
+          .filter(
+            (agent) =>
+              agent.length > 0 &&
+              !/^[—-]+$/.test(agent) &&
+              !PLACEHOLDER.test(agent),
+          ),
       );
       const parsedExamples =
         examplesIndex >= 0
@@ -402,11 +406,28 @@ export function parseRoutingRulesMarkdown(
           ? parsedExamples
           : undefined;
 
-      if (workType && agents.length > 0) {
-        rules.push({ workType, agents, examples });
-        agentReferences.push(...agents);
+      if (workType && !PLACEHOLDER.test(workType) && agents.length > 0) {
+        locatedRules.push({
+          rule: { workType, agents, examples },
+          lineIndex: rowIndex,
+        });
       }
     }
+
+    index = rowIndex - 1;
+  }
+
+  const flattened = parseFlattenedLegacyRoutingRules(
+    lines,
+    parsedRoutingLines,
+  );
+  routingTableCount += flattened.sectionCount;
+  locatedRules.push(...flattened.rules);
+
+  locatedRules.sort((left, right) => left.lineIndex - right.lineIndex);
+  for (const { rule } of locatedRules) {
+    rules.push(rule);
+    agentReferences.push(...rule.agents);
   }
 
   if (rules.length === 0) {
@@ -415,7 +436,157 @@ export function parseRoutingRulesMarkdown(
 
   agentReferences.push(...parseModuleOwnershipAgentReferences(lines));
 
-  return { rules, warnings, agentReferences };
+  return {
+    rules,
+    warnings,
+    agentReferences,
+    markdownTableCount,
+    routingTableCount,
+  };
+}
+
+function normalizeRoutingHeader(value: string): string {
+  return value
+    .replace(/[`*_~]/g, '')
+    .replace(/[→➜]/g, ' to ')
+    .replace(/[^a-z0-9]+/gi, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function isRoutingWorkTypeHeader(value: string): boolean {
+  return /^(work type|pattern|domain|signal|task type)$/.test(value);
+}
+
+function isRoutingAgentHeader(value: string): boolean {
+  return /^(route to|route|agent|agents|owner|primary|primary agent|secondary|secondary agent|fallback|fallback agent)$/.test(
+    value,
+  );
+}
+
+function isRoutingExamplesHeader(value: string): boolean {
+  return /^(example|examples|reason|notes)$/.test(value);
+}
+
+function parseFlattenedLegacyRoutingRules(
+  lines: string[],
+  parsedRoutingLines: ReadonlySet<number>,
+): {
+  rules: Array<{ rule: ParsedRoutingRule; lineIndex: number }>;
+  sectionCount: number;
+} {
+  const hasRoutingTableHeading = lines.some((line) =>
+    /^##\s+routing\s+table\s*$/i.test(line.trim()),
+  );
+  if (!hasRoutingTableHeading) return { rules: [], sectionCount: 0 };
+
+  const rules: Array<{ rule: ParsedRoutingRule; lineIndex: number }> = [];
+  let sectionCount = 0;
+
+  for (let headingIndex = 0; headingIndex < lines.length; headingIndex++) {
+    if (
+      !/^##\s+work\s+type\s*(?:→|->|to)\s*agent\s*$/i.test(
+        lines[headingIndex]!.trim(),
+      )
+    ) {
+      continue;
+    }
+
+    let sectionEnd = lines.length;
+    for (let index = headingIndex + 1; index < lines.length; index++) {
+      if (/^#{1,2}\s+/.test(lines[index]!.trim())) {
+        sectionEnd = index;
+        break;
+      }
+    }
+
+    const tableRows = lines
+      .slice(headingIndex + 1, sectionEnd)
+      .map((line, offset) => ({
+        cells: parseMarkdownTableCells(line.trim()),
+        lineIndex: headingIndex + 1 + offset,
+        isTableLine: line.trim().startsWith('|'),
+      }))
+      .filter(
+        ({ lineIndex, isTableLine }) =>
+          isTableLine && !parsedRoutingLines.has(lineIndex),
+      );
+    const hasKnownHeader = tableRows.some(({ cells }) => {
+      const normalized = cells.map(normalizeRoutingHeader);
+      return (
+        normalized.join('|') === 'work type|route to|examples' ||
+        normalized.join('|') === 'work type|primary|secondary'
+      );
+    });
+    const hasThreeColumnSeparator = tableRows.some(
+      ({ cells }) =>
+        cells.length === 3 &&
+        cells.every((cell) => /^:?-{3,}:?$/.test(cell)),
+    );
+    if (!hasKnownHeader || !hasThreeColumnSeparator) continue;
+
+    const sectionRules: Array<{
+      rule: ParsedRoutingRule;
+      lineIndex: number;
+    }> = [];
+    for (const { cells, lineIndex } of tableRows) {
+      if (cells.length !== 3) continue;
+      if (cells.every((cell) => /^:?-{3,}:?$/.test(cell))) continue;
+
+      const workType = cells[0]!;
+      const normalizedWorkType = normalizeRoutingHeader(workType);
+      if (
+        !workType ||
+        workType.includes('`') ||
+        /^(?:role|tier \d+|hot|cold|season|wiki|label|layer|file|event|task type|work type|status(?: .*)?|area(?: .*)?|needs(?: .*)?|squad(?: .*)?)$/.test(
+          normalizedWorkType,
+        )
+      ) {
+        continue;
+      }
+
+      const agents = parseLegacyAgentCell(cells[1] ?? '');
+      if (agents.length === 0) continue;
+      const examples = cells[2]?.trim()
+        ? cells[2]!.split(',').map((example) => example.trim()).filter(Boolean)
+        : undefined;
+      sectionRules.push({
+        rule: { workType, agents, examples },
+        lineIndex,
+      });
+    }
+    if (sectionRules.length > 0) {
+      sectionCount++;
+      rules.push(...sectionRules);
+    }
+  }
+
+  return { rules, sectionCount };
+}
+
+function parseLegacyAgentCell(value: string): string[] {
+  const agents = value
+    .split(/\s*(?:,|\+|\band\b)\s*/i)
+    .map((agent) => agent.trim())
+    .filter(Boolean);
+  if (agents.length === 0) return [];
+
+  for (const agent of agents) {
+    const normalized = agent
+      .replace(/[`*_~]/g, '')
+      .replace(/[^\x20-\x7e]/g, '')
+      .trim();
+    if (
+      !normalized ||
+      normalized.split(/\s+/).length > 4 ||
+      /[`/\\:.()]/.test(agent) ||
+      /^(?:yes|no|true|false)$/i.test(normalized) ||
+      !/^[A-Za-z@][A-Za-z0-9@' -]*$/.test(normalized)
+    ) {
+      return [];
+    }
+  }
+  return agents;
 }
 
 function parseModuleOwnershipAgentReferences(lines: string[]): string[] {

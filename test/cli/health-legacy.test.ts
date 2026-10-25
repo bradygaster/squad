@@ -12,7 +12,14 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { runSquadHealth, type HealthCheckId, type HealthReport } from '../../packages/squad-cli/src/cli/commands/health.js';
@@ -46,6 +53,40 @@ function check(report: HealthReport, id: HealthCheckId) {
   const item = report.checks.find((c) => c.id === id);
   if (!item) throw new Error(`missing ${id}`);
   return item;
+}
+
+function routingFixture(name: string): string {
+  return readFileSync(
+    path.join(process.cwd(), 'test', 'fixtures', name),
+    'utf8',
+  );
+}
+
+function configureRoster(
+  agents: Array<{ id: string; name: string; role: string }>,
+): void {
+  registry(
+    Object.fromEntries(
+      agents.map(({ id, name, role }) => [id, { name, role }]),
+    ),
+  );
+  writeSquad(
+    'team.md',
+    `# Team
+
+## Members
+
+| Name | Role | Charter | Status |
+|------|------|---------|--------|
+${agents.map(({ id, name, role }) => `| ${name} | ${role} | \`.squad/agents/${id}/charter.md\` | Active |`).join('\n')}
+`,
+  );
+  for (const { id, name, role } of agents) {
+    writeSquad(
+      `agents/${id}/charter.md`,
+      `# ${name} — ${role}\n\n## Identity\n\n- **Name:** ${name}\n- **Role:** ${role}\n`,
+    );
+  }
 }
 
 const TEAM = `# Team
@@ -116,7 +157,13 @@ describe('routing parsing never reports table headers or placeholders as agents 
     expect(refs).not.toContain('Write tests');
     expect(refs).not.toContain('gpu');
     expect(refs).toEqual(expect.arrayContaining(['Nick Fury', 'Alpha', 'Rai', 'Fact Checker']));
-    expect(parsed.rules.map((r) => r.workType)).toEqual(['feature', 'code review', 'rai review', 'verification']);
+    expect(parsed.rules.map((r) => r.workType)).toEqual([
+      'feature',
+      'code review',
+      'rai review',
+      'verification',
+      'escalation',
+    ]);
   });
 
   it('squad health routing passes: display names resolve, built-ins are known, headers are ignored', () => {
@@ -132,6 +179,189 @@ describe('routing parsing never reports table headers or placeholders as agents 
     const routing = check(runSquadHealth(path.join(repoRoot, '.squad'), repoRoot), 'routing');
     expect(routing.status).toBe('fail');
     expect(routing.diagnostics).toEqual(['unknown agent: Ghost']);
+  });
+});
+
+describe('legacy routing table compatibility (preview.2 INT-1)', () => {
+  it.each([
+    [
+      '| Domain | Route to | Notes |\n|--------|----------|-------|\n| infrastructure | Alpha | Cloud work |',
+      'infrastructure',
+      ['Alpha'],
+    ],
+    [
+      '| Signal | Agent |\n|--------|-------|\n| build failure | Alpha |',
+      'build failure',
+      ['Alpha'],
+    ],
+    [
+      '| Reason | Owner | Pattern |\n|--------|-------|---------|\n| UI work | Alpha | src/frontend/** |',
+      'src/frontend/**',
+      ['Alpha'],
+    ],
+    [
+      '| Work Type | Primary Agent | Fallback |\n|-----------|---------------|----------|\n| feature | Alpha | Nick Fury |',
+      'feature',
+      ['Alpha', 'Nick Fury'],
+    ],
+  ])(
+    'detects routing columns by meaning instead of heading or column order',
+    (table, workType, agents) => {
+      const parsed = parseRoutingRulesMarkdown(`# Routing\n\n${table}\n`);
+      expect(parsed.rules).toEqual([
+        expect.objectContaining({ workType, agents }),
+      ]);
+      expect(parsed.routingTableCount).toBe(1);
+    },
+  );
+
+  it('passes the squad-squad dogfood routing fixture', () => {
+    configureRoster([
+      { id: 'alpha', name: 'Alpha', role: 'Lead' },
+      { id: 'beta', name: 'Beta', role: 'Developer' },
+      { id: 'gamma', name: 'Gamma', role: 'Researcher' },
+      { id: 'scribe', name: 'Scribe', role: 'Historian' },
+    ]);
+    writeSquad(
+      'routing.md',
+      routingFixture('health-routing-squad-squad.md'),
+    );
+
+    const report = runSquadHealth(path.join(repoRoot, '.squad'), repoRoot);
+    expect(check(report, 'routing').status).toBe('pass');
+    expect(report.status).toBe('pass');
+  });
+
+  it('parses the sanitized flattened long-table dogfood shape without truncation', () => {
+    const content = routingFixture('health-routing-tamresearch1.md');
+    expect(Buffer.byteLength(content, 'utf8')).toBeGreaterThanOrEqual(
+      53 * 1024,
+    );
+    const parsed = parseRoutingRulesMarkdown(content);
+    expect(parsed.rules.length).toBeGreaterThan(0);
+    expect(parsed.markdownTableCount).toBeGreaterThan(0);
+    expect(parsed.routingTableCount).toBe(1);
+    configureRoster([
+      { id: 'alpha', name: 'Alpha', role: 'Lead' },
+      { id: 'beta', name: 'Beta', role: 'Developer' },
+      { id: 'gamma', name: 'Gamma', role: 'Researcher' },
+      { id: 'delta', name: 'Delta', role: 'Operator' },
+      { id: 'scribe', name: 'Scribe', role: 'Historian' },
+    ]);
+    writeSquad('routing.md', content);
+
+    const report = runSquadHealth(path.join(repoRoot, '.squad'), repoRoot);
+    const routing = check(report, 'routing');
+    expect(routing.status).toBe('warn');
+    expect(routing.diagnostics).toEqual([
+      'duplicate route: Release evidence and compatibility research -> Gamma (2 rows)',
+    ]);
+    expect(report.status).toBe('pass');
+  });
+
+  it('parses CRLF legacy routing tables', () => {
+    writeSquad('routing.md', routingFixture('health-routing-crlf.md'));
+    const routing = check(
+      runSquadHealth(path.join(repoRoot, '.squad'), repoRoot),
+      'routing',
+    );
+    expect(routing.status).toBe('pass');
+  });
+
+  it('fails for a malformed table with no matching header separator', () => {
+    writeSquad(
+      'routing.md',
+      routingFixture('health-routing-malformed.md'),
+    );
+    expect(
+      check(runSquadHealth(path.join(repoRoot, '.squad'), repoRoot), 'routing')
+        .status,
+    ).toBe('fail');
+  });
+
+  it('still fails when a parsed legacy routing row names an unknown agent', () => {
+    writeSquad(
+      'routing.md',
+      routingFixture('health-routing-unknown-agent.md'),
+    );
+
+    const routing = check(
+      runSquadHealth(path.join(repoRoot, '.squad'), repoRoot),
+      'routing',
+    );
+    expect(routing.status).toBe('fail');
+    expect(routing.diagnostics).toEqual(['unknown agent: Ghost']);
+  });
+
+  it('fails the whole check when one table is valid and another targets an unknown agent', () => {
+    writeSquad(
+      'routing.md',
+      routingFixture('health-routing-mixed-format.md'),
+    );
+    const routing = check(
+      runSquadHealth(path.join(repoRoot, '.squad'), repoRoot),
+      'routing',
+    );
+    expect(routing.status).toBe('fail');
+    expect(routing.diagnostics).toEqual(['unknown agent: Ghost']);
+  });
+
+  it('merges a flattened legacy section with an appended canonical table and fails for any unknown target', () => {
+    configureRoster([
+      { id: 'alpha', name: 'Alpha', role: 'Lead' },
+      { id: 'beta', name: 'Beta', role: 'Developer' },
+      { id: 'gamma', name: 'Gamma', role: 'Researcher' },
+      { id: 'delta', name: 'Delta', role: 'Operator' },
+      { id: 'scribe', name: 'Scribe', role: 'Historian' },
+    ]);
+    const flattened = routingFixture('health-routing-tamresearch1.md').replace(
+      '| Runtime build failures and dependency blockers | Beta | Skill: `build-diagnosis` |',
+      '| Runtime build failures and dependency blockers | Ghost | Skill: `build-diagnosis` |',
+    );
+    const mixed = `${flattened}
+
+## Canonical Routing
+
+| Work Type | Route To | Examples |
+|-----------|----------|----------|
+| documentation | Scribe | Release notes |
+`;
+    const parsed = parseRoutingRulesMarkdown(mixed);
+    expect(parsed.routingTableCount).toBe(2);
+    expect(parsed.rules).toHaveLength(6);
+    expect(parsed.rules).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          workType: 'Runtime build failures and dependency blockers',
+          agents: ['Ghost'],
+        }),
+        expect.objectContaining({
+          workType: 'documentation',
+          agents: ['Scribe'],
+        }),
+      ]),
+    );
+    writeSquad('routing.md', mixed);
+
+    const report = runSquadHealth(path.join(repoRoot, '.squad'), repoRoot);
+    const routing = check(report, 'routing');
+    expect(routing.status).toBe('fail');
+    expect(routing.diagnostics).toContain('unknown agent: Ghost');
+    expect(report.status).toBe('fail');
+  });
+
+  it.each([
+    ['empty', ''],
+    ['absent', undefined],
+  ])('still fails for an %s routing file', (_name, content) => {
+    const file = path.join(repoRoot, '.squad', 'routing.md');
+    if (content === undefined) unlinkSync(file);
+    else writeSquad('routing.md', content);
+
+    expect(
+      check(runSquadHealth(path.join(repoRoot, '.squad'), repoRoot), 'routing')
+        .status,
+    ).toBe('fail');
   });
 });
 
