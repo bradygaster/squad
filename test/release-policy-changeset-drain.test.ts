@@ -84,7 +84,7 @@ describe('policy gate changeset-drain is branch/event-aware', () => {
 
   it('squad-release-verify.yml derives the mode from the event instead of hard-coding release', () => {
     const wf = readFileSync(join(ROOT, '.github', 'workflows', 'squad-release-verify.yml'), 'utf8');
-    expect(wf).toMatch(/POLICY_MODE: \$\{\{ github\.event_name == 'pull_request' && 'ci' \|\| 'release' \}\}/);
+    expect(wf).toMatch(/POLICY_MODE: \$\{\{ inputs\.source_sha != '' && 'release' \|\| 'ci' \}\}/);
     expect(wf).toMatch(/policy-gates\.mjs "--mode=\$POLICY_MODE"/);
     expect(wf).not.toMatch(/policy-gates\.mjs --mode=release/);
   });
