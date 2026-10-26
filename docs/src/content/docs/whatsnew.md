@@ -6,6 +6,10 @@ Full release history for Squad — from beta through the v1 TypeScript replatfor
 
 ## v2.0.0 — Multi-Host Clients & Experimental Backend Contract
 
+### v2.0.0-preview.2 — upgrade safety and bridge reliability
+
+`v2.0.0-preview.2` keeps `insider` as the canonical npm channel and `preview` as its compatibility alias; `latest` remains on v1.1.0. It incorporates the preview.1 dogfood fixes: content-aware idempotent upgrades with verified backups, safe self-upgrade dry runs and downgrade refusal, resolvable versioned state bridges with bounded lifecycle cleanup, root-safe state operations, legacy charter/routing compatibility with fail-closed routing validation, INFO-only `available but not configured` notices for optional built-ins until users opt in with `squad roster add <rai|fact-checker|all>` (`squad upgrade` preserves `team.md`), fixed client and migration commands, optional charter Examples support, and improved skill frontmatter parsing.
+
 ### v2.0.0-preview.1 — insider channel with preview alias
 
 `v2.0.0-preview.1` is the first Squad 2.0 build. The canonical npm channel is `insider` (`squad upgrade --self --insider` or `npm install -g @bradygaster/squad-cli@insider`), with `preview` retained as a compatibility alias; `latest` stays at v1.1.0 until 2.0.0 ships stable. Before upgrading an existing project read [Upgrading to Squad 2.0](./scenarios/upgrading.md#upgrading-to-squad-20) and the [tested upgrade paths](./scenarios/upgrading.md#tested-upgrade-paths); the full list of breaking changes is in the [table below](#breaking--behavior-changes-v200).

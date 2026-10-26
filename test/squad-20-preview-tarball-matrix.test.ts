@@ -79,6 +79,8 @@ interface TarballAttestation { filename: string; sha256: string; size: number }
 interface Run {
   platform: string; arch: string; node: string; target: string;
   targetSha: string;
+  targetRegistryState: 'published' | 'unpublished' | 'UNKNOWN';
+  targetInsiderVersion: string | null;
   harnessHash: string;
   evidenceRunId: string; evidenceArtifact: string;
   tarballs: { cli: TarballAttestation; sdk: TarballAttestation };
@@ -94,6 +96,7 @@ interface Matrix {
   inapplicable: Inapplicable[];
   expectedFailures: ExpectedFailure[];
   findings: Finding[];
+  historicalRuns?: Run[];
   runs: Run[];
 }
 
@@ -121,6 +124,49 @@ const CLIENT_IDS = ['copilot', 'claude', 'kiro', 'opencode', 'cursor', 'codex', 
 const WORKFLOW_PATH = path.join(ROOT, '.github', 'workflows', 'squad-upgrade-matrix.yml');
 const FS_HOOK = path.join(ROOT, 'test', 'fixtures', 'upgrade-matrix', 'fs-access-log.cjs');
 
+describe.skipIf(ENABLED)('preview self-upgrade registry-state harness', () => {
+  it('resolves a prerelease through insider and executes the insider command when the candidate is published there', async () => {
+    const { selfUpgradeCli, selfUpgradeCommand } = await import('../packages/squad-cli/src/cli/core/upgrade.js');
+    for (const packageManager of ['npm', 'pnpm', 'yarn'] as const) {
+      const resolved: string[] = [];
+      const executed: string[] = [];
+      const result = await selfUpgradeCli({
+        packageManager,
+        currentVersion: '2.0.0-preview.2',
+        resolveTagVersion: async (tag) => {
+          resolved.push(tag);
+          return '2.0.0-preview.2';
+        },
+        exec: (command) => { executed.push(command); },
+      });
+      expect(resolved).toEqual(['insider']);
+      expect(executed).toEqual([selfUpgradeCommand(packageManager, 'insider')]);
+      expect(result).toMatchObject({ tag: 'insider', targetVersion: '2.0.0-preview.2', performed: true });
+      expect(selfUpgradeCommand(packageManager, 'latest')).toContain('@latest');
+      expect(selfUpgradeCommand(packageManager, 'insider')).toContain('@insider');
+    }
+  });
+
+  it('resolves a prerelease through insider and refuses a downgrade before exec when the candidate is not published there', async () => {
+    const { selfUpgradeCli } = await import('../packages/squad-cli/src/cli/core/upgrade.js');
+    for (const packageManager of ['npm', 'pnpm', 'yarn'] as const) {
+      const resolved: string[] = [];
+      const executed: string[] = [];
+      await expect(selfUpgradeCli({
+        packageManager,
+        currentVersion: '2.0.0-preview.2',
+        resolveTagVersion: async (tag) => {
+          resolved.push(tag);
+          return '2.0.0-preview.1';
+        },
+        exec: (command) => { executed.push(command); },
+      })).rejects.toMatchObject({ code: 'EDOWNGRADE' });
+      expect(resolved).toEqual(['insider']);
+      expect(executed).toEqual([]);
+    }
+  });
+});
+
 /**
  * Why a producer × shape cell cannot be exercised, derived from the producers' capabilities.
  * The fixture's `inapplicable` list must match this exactly (asserted below), so every skip the
@@ -128,7 +174,7 @@ const FS_HOOK = path.join(ROOT, 'test', 'fixtures', 'upgrade-matrix', 'fs-access
  */
 function structuralSkip(spec: ProducerSpec, shape: string): string | null {
   if ((shape === 'orphan' || shape === 'two-layer') && !spec.supports.stateBackend) return `producer ${spec.version} has no --state-backend flag`;
-  if (shape === 'upstream' && spec.source !== 'pack') return `upstream inheritance is a Squad 2.0 feature; producer ${spec.version} cannot declare upstream.json`;
+  if (shape === 'upstream' && spec.source !== 'pack' && spec.version !== '2.0.0-preview.1') return `upstream inheritance is a Squad 2.0 feature; producer ${spec.version} cannot declare upstream.json`;
   return null;
 }
 
@@ -157,8 +203,9 @@ function harnessHash(): string {
     .map((match) => match[0]).join('\n');
   if (!previewBlocks) throw new Error('preview workflow attestation blocks are missing');
   const fixture = JSON.parse(text(MATRIX_PATH)) as Matrix;
-  const { runs: _runs, ...rest } = fixture;
+  const { runs: _runs, historicalRuns: _historicalRuns, ...rest } = fixture;
   void _runs;
+  void _historicalRuns;
   return createHash('sha256')
     .update(text(__filename)).update('\0')
     .update(previewBlocks).update('\0')
@@ -185,7 +232,7 @@ describe('upgrade-matrix.json integrity', () => {
     for (const id of ['target-tarballs-verified', 'target-version-smoke', 'target-exports-resolve', 'self-upgrade-resolution',
       'producer-init', 'upgrade-plain', 'coordinator-is-new-template', 'user-state-preserved', 'casting-pair-valid',
       'state-backend-preserved', 'ai-team-migrated', 'team-root-absent', 'profile-untouched', 'idempotent-second-upgrade',
-      'clients-projected', 'user-config-preserved', 'doctor', 'projection-uninstall-byte-exact', 'downgrade-probe']) {
+      'clients-projected', 'user-config-preserved', 'health', 'doctor', 'projection-uninstall-byte-exact', 'downgrade-probe']) {
       expect(CHECK_IDS, `check ${id} must be declared`).toContain(id);
     }
     expect(CHECK_IDS, 'uninstallClients restores host projections; it is not a rollback — the check must not be called one').not.toContain('rollback-byte-exact');
@@ -257,6 +304,8 @@ describe('upgrade-matrix.json integrity', () => {
     for (const run of matrix.runs) {
       expect(run.platform).toMatch(/^(win32|linux|darwin)$/);
       expect(run.targetSha, `${run.platform}: targetSha`).toMatch(/^[0-9a-f]{40}$/);
+      expect(['published', 'unpublished', 'UNKNOWN']).toContain(run.targetRegistryState);
+      expect(run.targetInsiderVersion === null || typeof run.targetInsiderVersion === 'string').toBe(true);
       expect(run.harnessHash, `${run.platform}: recorded run executed with a different preview harness than the one committed`).toBe(hash);
       expect(run.evidenceRunId).toMatch(/^\d+$/);
       expect(run.evidenceArtifact.length).toBeGreaterThan(0);
@@ -431,6 +480,15 @@ function tail(s: string, n = 3): string {
   return s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean).slice(-n).join(' | ');
 }
 
+function addMarkdownTableRow(content: string, heading: string, row: string): string {
+  const lines = content.split(/\r?\n/);
+  const headingIndex = lines.findIndex((line) => line.trim() === heading);
+  const separatorIndex = lines.findIndex((line, index) => index > headingIndex && /^\|\s*:?-{3,}/.test(line.trim()));
+  if (headingIndex < 0 || separatorIndex < 0) throw new Error(`${heading} table not found`);
+  lines.splice(separatorIndex + 1, 0, row);
+  return `${lines.join('\n').replace(/\n+$/, '')}\n`;
+}
+
 function rmrf(p: string): void {
   try { fs.rmSync(p, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); } catch { /* best effort on Windows */ }
 }
@@ -458,6 +516,7 @@ function isolatedEnv(configHome: string, extra: NodeJS.ProcessEnv = {}): NodeJS.
   const env: NodeJS.ProcessEnv = {
     ...process.env, ...GIT_ENV,
     CI: '1', SQUAD_NONINTERACTIVE: '1', NO_COLOR: '1', FORCE_COLOR: '0', SQUAD_INIT_NO_COLOR: '1', TERM: 'dumb',
+    SQUAD_NO_UPDATE_CHECK: '1',
     APPDATA: configHome, LOCALAPPDATA: configHome, XDG_CONFIG_HOME: configHome,
     SQUAD_HOME_DIR_OVERRIDE: path.join(configHome, 'squad-home'),
     ...extra,
@@ -758,7 +817,11 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     const cliTarball = process.env['SQUAD_PREVIEW_CLI_TARBALL'];
     const sdkExpected = process.env['SQUAD_PREVIEW_SDK_SHA256'];
     const cliExpected = process.env['SQUAD_PREVIEW_CLI_SHA256'];
-    const expectedVersion = process.env['SQUAD_PREVIEW_EXPECTED_VERSION'] ?? '2.0.0-preview.1';
+    const registryState = process.env['SQUAD_PREVIEW_TARGET_REGISTRY_STATE'];
+    const insiderVersion = process.env['SQUAD_PREVIEW_INSIDER_VERSION'] || null;
+    if (!registryState || !['published', 'unpublished', 'UNKNOWN'].includes(registryState)) {
+      throw new Error(`SQUAD_PREVIEW_TARGET_REGISTRY_STATE must be published, unpublished, or UNKNOWN; got ${registryState ?? '<unset>'}`);
+    }
     if (!sdkTarball || !cliTarball || !sdkExpected || !cliExpected) throw new Error('preview tarball paths and expected sha256 values are required');
     for (const [label, file, expected] of [['sdk', sdkTarball, sdkExpected], ['cli', cliTarball, cliExpected]] as const) {
       if (!fs.existsSync(file)) throw new Error(`${label} tarball not found: ${file}`);
@@ -784,6 +847,8 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     const sdkManifest = readJson<{ version: string; exports?: Record<string, unknown> }>(path.join(sdkDir, 'package.json'))!;
     const cliManifest = readJson<{ version: string; exports?: Record<string, unknown> }>(path.join(cliDir, 'package.json'))!;
     newVersion = cliManifest.version;
+    const expectedVersion = process.env['SQUAD_PREVIEW_EXPECTED_VERSION'];
+    if (!expectedVersion) throw new Error('SQUAD_PREVIEW_EXPECTED_VERSION is required');
     const cliEntry = path.join(cliDir, 'dist', 'cli-entry.js');
     newCli = {
       file: process.execPath,
@@ -799,30 +864,67 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     const version = await run(newCli.file, [...newCli.args, '--version'], { cwd: staging, env: { ...process.env, ...newCli.env }, timeout: 30_000 });
     const selfUpgradeScript = [
       'import { selfUpgradeCli, selfUpgradeCommand } from "@bradygaster/squad-cli/core/upgrade";',
+      `const currentVersion = ${JSON.stringify(expectedVersion)};`,
+      `const insiderVersion = ${JSON.stringify(insiderVersion)};`,
       'const got = [];',
-      'for (const pm of ["npm","pnpm","yarn"]) for (const insider of [false,true]) {',
-      '  let executed = null; await selfUpgradeCli({ packageManager: pm, insider, exec: (cmd) => { executed = cmd; } });',
-      '  got.push({ pm, insider, command: selfUpgradeCommand(pm, insider), executed });',
+      'for (const pm of ["npm","pnpm","yarn"]) {',
+      '  const resolutions = []; const executed = []; let result = null; let error = null;',
+      '  try { result = await selfUpgradeCli({ packageManager: pm, currentVersion, resolveTagVersion: async (tag) => { resolutions.push(tag); return insiderVersion; }, exec: (cmd) => { executed.push(cmd); } }); }',
+      '  catch (err) { error = { code: err?.code ?? null, message: err?.message ?? String(err) }; }',
+      '  got.push({ pm, explicit: { latest: selfUpgradeCommand(pm, "latest"), insider: selfUpgradeCommand(pm, "insider") }, resolutions, executed, result, error });',
       '}',
       'console.log(JSON.stringify(got));',
     ].join(' ');
     const selfUpgrade = await run(process.execPath, ['--input-type=module', '-e', selfUpgradeScript], { cwd: staging, env: { ...process.env, ...newCli.env }, timeout: 30_000 });
-    const expectedCommands = [
-      'npm install -g @bradygaster/squad-cli@latest', 'npm install -g @bradygaster/squad-cli@insider',
-      'pnpm add -g @bradygaster/squad-cli@latest', 'pnpm add -g @bradygaster/squad-cli@insider',
-      'yarn global add @bradygaster/squad-cli@latest', 'yarn global add @bradygaster/squad-cli@insider',
-    ];
-    let resolvedCommands: string[] = [];
+    const expectedCommands = new Map([
+      ['npm', { latest: 'npm install -g @bradygaster/squad-cli@latest', insider: 'npm install -g @bradygaster/squad-cli@insider' }],
+      ['pnpm', { latest: 'pnpm add -g @bradygaster/squad-cli@latest', insider: 'pnpm add -g @bradygaster/squad-cli@insider' }],
+      ['yarn', { latest: 'yarn global add @bradygaster/squad-cli@latest', insider: 'yarn global add @bradygaster/squad-cli@insider' }],
+    ]);
+    type SelfUpgradeProbe = {
+      pm: string;
+      explicit: { latest: string; insider: string };
+      resolutions: string[];
+      executed: string[];
+      result: { tag: string; targetVersion: string | null; performed: boolean } | null;
+      error: { code: string | null; message: string } | null;
+    };
+    let selfUpgradeProbes: SelfUpgradeProbe[] = [];
     try {
-      resolvedCommands = (JSON.parse(selfUpgrade.stdout.trim().split(/\r?\n/).pop() ?? '[]') as Array<{ command: string; executed: string }>).flatMap((x) => [x.command, x.executed]);
+      selfUpgradeProbes = JSON.parse(selfUpgrade.stdout.trim().split(/\r?\n/).pop() ?? '[]') as SelfUpgradeProbe[];
     } catch { /* recorded as a failed target check */ }
+    const selfUpgradeOutput = `${selfUpgrade.stdout}\n${selfUpgrade.stderr}`;
+    const commandsMatch = selfUpgradeProbes.length === expectedCommands.size
+      && new Set(selfUpgradeProbes.map((probe) => probe.pm)).size === expectedCommands.size
+      && selfUpgradeProbes.every((probe) => {
+        const expected = expectedCommands.get(probe.pm);
+        return expected?.latest === probe.explicit.latest && expected.insider === probe.explicit.insider;
+      });
+    const publishedResolution = registryState === 'published'
+      && insiderVersion !== null
+      && selfUpgradeProbes.every((probe) => probe.resolutions.join(',') === 'insider'
+        && probe.executed.length === 1
+        && probe.executed[0] === probe.explicit.insider
+        && probe.result?.tag === 'insider'
+        && probe.result.targetVersion === insiderVersion
+        && probe.result.performed === true
+        && probe.error === null);
+    const unpublishedRefusal = registryState === 'unpublished'
+      && insiderVersion !== null
+      && insiderVersion !== expectedVersion
+      && selfUpgradeProbes.every((probe) => probe.resolutions.join(',') === 'insider'
+        && probe.executed.length === 0
+        && probe.result === null
+        && probe.error?.code === 'EDOWNGRADE'
+        && /refus(?:e|ed|al)|downgrade/i.test(probe.error.message));
+    const selfUpgradeOk = selfUpgrade.code === 0 && commandsMatch && (publishedResolution || unpublishedRefusal);
     targetChecks = [
       { id: 'target-tarballs-verified', ok: true },
       { id: 'target-version-smoke', ok: version.code === 0 && version.stdout.includes(expectedVersion) && cliManifest.version === expectedVersion && sdkManifest.version === expectedVersion,
         detail: `cli=${cliManifest.version}, sdk=${sdkManifest.version}, --version exit ${version.code}: ${tail(version.stdout || version.stderr, 1)}` },
       { id: 'target-exports-resolve', ok: exportProblems.length === 0, detail: exportProblems.join('; ') || undefined },
-      { id: 'self-upgrade-resolution', ok: selfUpgrade.code === 0 && expectedCommands.every((cmd) => resolvedCommands.filter((x) => x === cmd).length === 2),
-        detail: selfUpgrade.code !== 0 ? `exit ${selfUpgrade.code}: ${tail(selfUpgrade.stderr || selfUpgrade.stdout)}` : `resolved=${JSON.stringify(resolvedCommands)}` },
+      { id: 'self-upgrade-resolution', ok: selfUpgradeOk,
+        detail: `registry=${registryState}; insider=${insiderVersion ?? 'UNKNOWN'}; ${selfUpgrade.code !== 0 ? `exit ${selfUpgrade.code}: ${tail(selfUpgradeOutput)}` : `probes=${JSON.stringify(selfUpgradeProbes)}`}` },
     ];
 
     const only = process.env['SQUAD_PREVIEW_MATRIX_PRODUCERS']?.split(',').map((s) => s.trim()).filter(Boolean);
@@ -856,6 +958,8 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     const run: Run = {
       platform: PLATFORM, arch: process.arch, node: process.version, target: newVersion ?? 'unbuilt',
       targetSha: targetSha(), harnessHash: harnessHash(),
+      targetRegistryState: (process.env['SQUAD_PREVIEW_TARGET_REGISTRY_STATE'] ?? 'UNKNOWN') as Run['targetRegistryState'],
+      targetInsiderVersion: process.env['SQUAD_PREVIEW_INSIDER_VERSION'] || null,
       evidenceRunId: process.env['SQUAD_PREVIEW_EVIDENCE_RUN_ID'] ?? 'local',
       evidenceArtifact: process.env['SQUAD_PREVIEW_EVIDENCE_ARTIFACT'] ?? 'local-files', tarballs,
       event: process.env['GITHUB_EVENT_NAME'] ?? 'local', ...(runUrl ? { runUrl } : {}),
@@ -1098,6 +1202,10 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     if (!s.check('producer-init', init.code === 0 && fs.existsSync(teamMd), `exit ${init.code}: ${tail(init.stderr || init.stdout)}`)) {
       return s.result('fail', `old CLI ${spec.version} ${initArgs.join(' ')} failed: exit ${init.code} — ${tail(init.stderr || init.stdout)}`);
     }
+    if (spec.version === '2.0.0-preview.1') {
+      const cast = await oldCli('cast', '--name', 'Probe', '--role', 'Upgrade Probe');
+      if (cast.code !== 0) return s.result('fail', `published preview.1 producer could not cast Probe: exit ${cast.code} — ${tail(cast.stderr || cast.stdout)}`);
+    }
     const cfgAfterInit = readJson(path.join(project, '.squad', 'config.json')) ?? {};
     if (typeof cfgAfterInit['teamRoot'] === 'string') s.notes.push(`producer wrote teamRoot=${String(cfgAfterInit['teamRoot']).replace(configHome, '<config-home>')} at init`);
 
@@ -1134,8 +1242,19 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     } else {
       fs.appendFileSync(path.join(squadDir, 'decisions.md'), DECISION);
     }
-    fs.appendFileSync(teamMd, '| Probe | Upgrade Probe | .squad/agents/probe/charter.md | ✅ Active |\n| Emeritus | Retired Advisor | .squad/agents/emeritus/charter.md | 🪦 Retired |\n');
-    fs.appendFileSync(path.join(squadDir, 'routing.md'), '\n**Upgrade probes** → Probe\n');
+    if (spec.version !== '2.0.0-preview.1') {
+      fs.writeFileSync(teamMd, addMarkdownTableRow(
+        read(teamMd) ?? '',
+        '## Members',
+        '| Probe | Upgrade Probe | `.squad/agents/probe/charter.md` | ✅ Active |',
+      ));
+    }
+    const routingPath = path.join(squadDir, 'routing.md');
+    fs.writeFileSync(routingPath, addMarkdownTableRow(
+      read(routingPath) ?? '',
+      '## Routing Table',
+      '| Upgrade probes | Probe | Upgrade harness validation |',
+    ));
     const cfgPath = path.join(squadDir, 'config.json');
     const cfgSeed = readJson(cfgPath) ?? {};
     const CUSTOM_KEY = { owner: 'matrix', nested: { keep: true, list: [1, 2, 3] } };
@@ -1153,7 +1272,7 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     if (shape === 'legacy-casting') {
       const casting = path.join(squadDir, 'casting');
       for (const f of fs.readdirSync(casting)) fs.rmSync(path.join(casting, f), { recursive: true, force: true });
-      fs.writeFileSync(path.join(casting, 'registry.json'), JSON.stringify({ universe: 'Star Trek', agents: [{ name: 'Probe', role: 'Upgrade Probe', status: 'active' }, { name: 'Emeritus', role: 'Retired Advisor', status: 'retired' }] }, null, 2) + '\n');
+      fs.writeFileSync(path.join(casting, 'registry.json'), JSON.stringify({ universe: 'Star Trek', agents: [{ name: 'Probe', role: 'Upgrade Probe', status: 'active' }, { name: 'Emeritus', role: 'Retired Advisor', status: 'active' }] }, null, 2) + '\n');
     }
     if (shape === 'ai-team') {
       fs.renameSync(squadDir, path.join(project, '.ai-team'));
@@ -1299,11 +1418,34 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     ].filter((x): x is string => x !== null);
     if (shape !== 'upstream') s.check('user-config-preserved', cfgProblems.length === 0, cfgProblems.join('; ') || undefined);
 
-    // 7. doctor ─────────────────────────────────────────────────────────────
+    // 7. health + doctor ────────────────────────────────────────────────────
+    if (spec.version === '2.0.0-preview.1') {
+      const health = await squad(project, 'health', '--json');
+      let healthReport: { status?: string; checks?: Array<{ id?: string; status?: string; diagnostics?: string[] }> } | null = null;
+      try { healthReport = JSON.parse(health.stdout) as typeof healthReport; } catch { /* recorded below */ }
+      const teamHealth = healthReport?.checks?.find((check) => check.id === 'team');
+      const builtinDiagnostics = teamHealth?.diagnostics ?? [];
+      const healthOk = health.code === 0
+        && healthReport?.status === 'pass'
+        && teamHealth?.status === 'info'
+        && builtinDiagnostics.some((line) => line.includes('Rai is available but not configured'))
+        && builtinDiagnostics.some((line) => line.includes('Fact Checker is available but not configured'));
+      const healthFailures = healthReport?.checks?.filter((check) => check.status === 'fail') ?? [];
+      s.check('health', healthOk, healthOk ? undefined : `exit ${health.code}; failures=${JSON.stringify(healthFailures)}; ${tail(health.stdout || health.stderr, 8)}`);
+      profileCheckpoint('squad health');
+    } else {
+      s.skip('health', 'strict health/optional-built-in attestation is required for the exact published preview.1 producer');
+    }
+
     const doctor = await squad(project, 'doctor');
     profileCheckpoint('squad doctor');
     const failedLines = doctor.stdout.split(/\r?\n/).filter((l) => /^❌/.test(l.trim())).map((l) => l.trim());
-    s.check('doctor', doctor.code === 0 && failedLines.length === 0, failedLines.length ? failedLines.join(' | ') : doctor.code !== 0 ? `exit ${doctor.code}: ${tail(doctor.stderr || doctor.stdout)}` : undefined);
+    const bridgeLine = doctor.stdout.split(/\r?\n/).find((line) => line.includes('squad_state bridge'));
+    const doctorOk = doctor.code === 0
+      && failedLines.length === 0
+      && /Mode:\s+local/.test(doctor.stdout)
+      && bridgeLine?.includes(newVersion) === true;
+    s.check('doctor', doctorOk, doctorOk ? undefined : failedLines.length ? failedLines.join(' | ') : `bridge=${bridgeLine ?? '<missing>'}; ${tail(doctor.stderr || doctor.stdout)}`);
 
     // 8. Projection uninstall (uninstallClients) — this is NOT a downgrade ────────────────────
     // Baseline = the tree right after the plain upgrade, i.e. before any projection. uninstall must
