@@ -1,5 +1,0 @@
----
-"@bradygaster/squad-cli": patch
----
-
-`squad upgrade` is now idempotent and content-aware: every squad-owned file (templates, `.github/skills`, `squad-*.yml` workflows, the `.squad/templates/` mirror including its `skills/` and `workflows/` snapshots) is compared EOL-insensitively, `--dry-run` reports only files that would actually change (nothing right after an upgrade, even on CRLF checkouts), customized files are written to `<file>.local-backup` and verified before being overwritten, `.gitignore`/`.gitattributes` entries are appended in the file's own line-ending style instead of rewriting the file, files Squad previously shipped but no longer does are removed when unmodified, provably unmodified stale `.copilot/skills` copies are cleaned up, and `--help` states exactly what is overwritten and what is backed up (#2297, #2266, #2047, #2232).

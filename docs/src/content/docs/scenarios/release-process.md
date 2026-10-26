@@ -17,7 +17,7 @@ Create a normal release-preparation PR targeting `dev`. Keep the root, SDK, and
 CLI versions in lockstep:
 
 ```bash
-VERSION=2.0.0-preview.1
+VERSION=2.0.0-preview.2
 npm version "$VERSION" --workspaces --include-workspace-root --no-git-tag-version
 npm pkg set "dependencies.@bradygaster/squad-sdk=>=$VERSION" \
   --workspace @bradygaster/squad-cli
@@ -27,7 +27,7 @@ npm install --package-lock-only
 Add an exact changelog heading:
 
 ```markdown
-## [2.0.0-preview.1] - YYYY-MM-DD
+## [2.0.0-preview.2] - YYYY-MM-DD
 ```
 
 Before merging, verify:
@@ -45,11 +45,11 @@ Wait for `dev` CI to pass after the PR merges.
 
 ## Publish a preview
 
-Use a unique prerelease version such as `2.0.0-preview.1`. The release trigger
+Use a unique prerelease version such as `2.0.0-preview.2`. The release trigger
 is human-only and pins the exact reviewed commit:
 
 ```bash
-VERSION=2.0.0-preview.1
+VERSION=2.0.0-preview.2
 SHA=$(git rev-parse origin/dev)   # the reviewed dev tip, full 40-hex SHA
 gh workflow run squad-release.yml \
   --ref dev \
@@ -58,9 +58,15 @@ gh workflow run squad-release.yml \
   -f npm_dist_tag=insider \
   -f add_preview_alias=true \
   -f publish_standalone=true \
-  -f publish_package_managers=true
+  -f publish_package_managers=false
 gh run watch
 ```
+
+For `2.0.0-preview.2`, reviewers and release owners explicitly hold Homebrew,
+WinGet, and stable promotion. This dispatch publishes the npm pair (`insider`
+canonical plus the `preview` alias) and standalone artifacts only. Keep
+`publish_package_managers=false` until those channels receive separate
+authorization after attestation and receipt review.
 
 Optional inputs: `npm_dist_tag` (`insider`, the default, or `preview`),
 `add_preview_alias` (default `true`), `build_standalone` (default `true`),
@@ -132,7 +138,7 @@ updates `squad-insider` in Homebrew, and opens or reuses the
 
 Prepare another PR that changes all package versions and the changelog heading
 from the prerelease version to stable `2.0.0`. A preview version cannot be
-converted in place after publication; `2.0.0-preview.1` and `2.0.0` are
+converted in place after publication; `2.0.0-preview.2` and `2.0.0` are
 different releases.
 
 After the stable preparation lands on `dev`, a human must run the promotion

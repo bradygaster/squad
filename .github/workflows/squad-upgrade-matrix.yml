@@ -138,6 +138,15 @@ jobs:
         os: [ubuntu-latest, windows-latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+      - name: Check out exact target package manifests
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ inputs.target_sha }}
+          path: .preview-target
+          sparse-checkout: |
+            packages/squad-cli/package.json
+            packages/squad-sdk/package.json
+          persist-credentials: false
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
           node-version: 22
@@ -146,11 +155,8 @@ jobs:
         shell: bash
         run: |
           [[ "${{ inputs.evidence_run_id }}" =~ ^[0-9]+$ ]]
-          case "${{ inputs.evidence_artifact }}" in
-            release-evidence-*) ;;
-            *) echo "::error::evidence_artifact must begin with release-evidence-"; exit 1 ;;
-          esac
           [[ "${{ inputs.target_sha }}" =~ ^[0-9a-f]{40}$ ]]
+          test "${{ inputs.evidence_artifact }}" = "release-evidence-${{ inputs.target_sha }}"
           [[ "${{ inputs.cli_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
           [[ "${{ inputs.sdk_sha256 }}" =~ ^[0-9a-f]{64}$ ]]
       - name: Download exact release-evidence artifact
@@ -163,13 +169,15 @@ jobs:
             --repo "${{ github.repository }}" \
             --name "${{ inputs.evidence_artifact }}" \
             --dir release-evidence
-          cli="$(find release-evidence -type f -name 'bradygaster-squad-cli-*.tgz' -print -quit)"
-          sdk="$(find release-evidence -type f -name 'bradygaster-squad-sdk-*.tgz' -print -quit)"
-          test -n "$cli" && test -n "$sdk"
-          test "$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "$cli")" = "${{ inputs.cli_sha256 }}"
-          test "$(node -e "const fs=require('fs'),c=require('crypto');process.stdout.write(c.createHash('sha256').update(fs.readFileSync(process.argv[1])).digest('hex'))" "$sdk")" = "${{ inputs.sdk_sha256 }}"
-          echo "SQUAD_PREVIEW_CLI_TARBALL=$(cd "$(dirname "$cli")" && pwd)/$(basename "$cli")" >> "$GITHUB_ENV"
-          echo "SQUAD_PREVIEW_SDK_TARBALL=$(cd "$(dirname "$sdk")" && pwd)/$(basename "$sdk")" >> "$GITHUB_ENV"
+          node scripts/release/verify-preview-evidence.mjs \
+            --evidence-dir release-evidence \
+            --evidence-artifact "${{ inputs.evidence_artifact }}" \
+            --target-sha "${{ inputs.target_sha }}" \
+            --cli-sha256 "${{ inputs.cli_sha256 }}" \
+            --sdk-sha256 "${{ inputs.sdk_sha256 }}" \
+            --cli-package-json .preview-target/packages/squad-cli/package.json \
+            --sdk-package-json .preview-target/packages/squad-sdk/package.json \
+            --github-env "$GITHUB_ENV"
       - name: Install dependencies
         shell: bash
         run: |
@@ -179,6 +187,25 @@ jobs:
             echo "Retry $i/3 — npm install failed, retrying in 5s..."; sleep 5
           done
           [ "$success" = true ] || { echo "::error::npm install failed after 3 attempts"; exit 1; }
+      - name: Capture exact target registry state
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p preview-tarball-matrix-results
+          node scripts/release/registry-preflight.mjs \
+            --cli-tarball "$SQUAD_PREVIEW_CLI_TARBALL" \
+            --sdk-tarball "$SQUAD_PREVIEW_SDK_TARBALL" \
+            --registry https://registry.npmjs.org/ \
+            --repository "$GITHUB_REPOSITORY" \
+            --out preview-tarball-matrix-results/registry-preflight.json
+          target_version="$(node -p 'require("./preview-tarball-matrix-results/registry-preflight.json").version')"
+          test "$target_version" = "$SQUAD_PREVIEW_EXPECTED_VERSION"
+          registry_state="$(node -p 'require("./preview-tarball-matrix-results/registry-preflight.json").aggregate.versionState')"
+          insider_version="$(node -p 'require("./preview-tarball-matrix-results/registry-preflight.json").packages["@bradygaster/squad-cli"].distTags.values.insider || ""')"
+          echo "SQUAD_PREVIEW_TARGET_REGISTRY_STATE=$registry_state" >> "$GITHUB_ENV"
+          echo "SQUAD_PREVIEW_INSIDER_VERSION=$insider_version" >> "$GITHUB_ENV"
       - name: Run exact preview-tarball matrix
         shell: bash
         run: npx vitest run test/squad-20-preview-tarball-matrix.test.ts --reporter=default
@@ -189,7 +216,6 @@ jobs:
           SQUAD_PREVIEW_TARGET_SHA: ${{ inputs.target_sha }}
           SQUAD_PREVIEW_CLI_SHA256: ${{ inputs.cli_sha256 }}
           SQUAD_PREVIEW_SDK_SHA256: ${{ inputs.sdk_sha256 }}
-          SQUAD_PREVIEW_EXPECTED_VERSION: '2.0.0-preview.1'
           SQUAD_PREVIEW_EVIDENCE_RUN_ID: ${{ inputs.evidence_run_id }}
           SQUAD_PREVIEW_EVIDENCE_ARTIFACT: ${{ inputs.evidence_artifact }}
           GITHUB_TOKEN: ${{ github.token }}
