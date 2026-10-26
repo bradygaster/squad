@@ -88,13 +88,15 @@ describe('agent-spawn: buildCopilotCommand', () => {
     expect(args).toEqual(['-p', 'hello', '--foo']);
   });
 
-  it('injects --additional-mcp-config/--yolo when .mcp.json exists at teamRoot', () => {
+  it('injects MCP config without changing caller tool permissions', () => {
     mockFsExistsSync.mockReturnValue(true);
-    const ctx = makeContext({ teamRoot: '/repo' });
+    const ctx = makeContext({ teamRoot: '/repo', copilotFlags: '--deny-tool shell' });
     const { cmd, args } = buildCopilotCommand('hello', ctx);
     expect(cmd).toBe('copilot');
-    expect(args[0]).toBe('--yolo');
+    expect(args).not.toContain('--yolo');
     expect(args).toContain('--additional-mcp-config');
+    expect(args).toContain('--deny-tool');
+    expect(args).toContain('shell');
     expect(args).toContain('-p');
     expect(args).toContain('hello');
   });

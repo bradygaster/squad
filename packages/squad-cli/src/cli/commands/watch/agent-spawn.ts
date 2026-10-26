@@ -278,8 +278,8 @@ export function buildAgentCommand(
 
 /**
  * Build the command + args array for a Copilot session, with the
- * `--additional-mcp-config`/`--yolo` workaround injected so `squad_state_*`
- * MCP tools register (see {@link withAdditionalMcpConfig}).
+ * `--additional-mcp-config` injected so `squad_state_*` MCP tools register
+ * without changing the caller's tool permissions (see {@link withAdditionalMcpConfig}).
  *
  * Unlike {@link buildAgentCommand}, this always defaults to the bare
  * `copilot` binary rather than probing for a `gh copilot` fallback — used

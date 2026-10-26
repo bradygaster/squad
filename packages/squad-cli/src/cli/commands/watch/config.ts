@@ -16,6 +16,10 @@ export type DispatchMode = 'task' | 'fleet' | 'hybrid';
 /** Fully-resolved watch configuration. */
 export interface WatchConfig {
   interval: number;
+  /** Stop after this many completed watch rounds. Unset means unbounded. */
+  maxRounds?: number;
+  /** Wall-clock run limit, for example "8h". Unset means unbounded. */
+  maxDuration?: string;
   execute: boolean;
   maxConcurrent: number;
   timeout: number;
@@ -66,23 +70,25 @@ export function loadWatchConfig(
   cliOverrides: Partial<WatchConfig>,
 ): WatchConfig {
   let fileConfig: Partial<WatchConfig> = {};
+  let rawWatchConfig: Record<string, unknown> | undefined;
 
   try {
     const configPath = path.join(teamRoot, '.squad', 'config.json');
     const raw = storage.readSync(configPath);
     if (raw) {
       const parsed = JSON.parse(raw) as { watch?: Record<string, unknown> };
-      if (parsed.watch) {
-        fileConfig = normalizeFileConfig(parsed.watch);
-      }
+      rawWatchConfig = parsed.watch;
     }
   } catch {
     // No config file or parse error — use defaults
   }
+  if (rawWatchConfig) fileConfig = normalizeFileConfig(rawWatchConfig);
 
   // Merge: defaults < file < CLI
   const merged: WatchConfig = {
     interval: cliOverrides.interval ?? fileConfig.interval ?? DEFAULTS.interval,
+    maxRounds: cliOverrides.maxRounds ?? fileConfig.maxRounds,
+    maxDuration: cliOverrides.maxDuration ?? fileConfig.maxDuration,
     execute: cliOverrides.execute ?? fileConfig.execute ?? DEFAULTS.execute,
     maxConcurrent: cliOverrides.maxConcurrent ?? fileConfig.maxConcurrent ?? DEFAULTS.maxConcurrent,
     timeout: cliOverrides.timeout ?? fileConfig.timeout ?? DEFAULTS.timeout,
@@ -119,6 +125,14 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
   const result: Partial<WatchConfig> = {};
 
   if (typeof raw['interval'] === 'number') result.interval = raw['interval'];
+  if ('maxRounds' in raw) {
+    if (typeof raw['maxRounds'] !== 'number') throw new Error('watch.maxRounds must be a positive integer');
+    result.maxRounds = raw['maxRounds'];
+  }
+  if ('maxDuration' in raw) {
+    if (typeof raw['maxDuration'] !== 'string') throw new Error('watch.maxDuration must be a duration such as "8h"');
+    result.maxDuration = raw['maxDuration'];
+  }
   if (typeof raw['execute'] === 'boolean') result.execute = raw['execute'];
   if (typeof raw['maxConcurrent'] === 'number') result.maxConcurrent = raw['maxConcurrent'];
   if (typeof raw['timeout'] === 'number') result.timeout = raw['timeout'];
@@ -152,7 +166,7 @@ function normalizeFileConfig(raw: Record<string, unknown>): Partial<WatchConfig>
 
   // Everything else is a capability key
   const caps: Record<string, boolean | Record<string, unknown>> = {};
-  const reserved = new Set(['interval', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend']);
+  const reserved = new Set(['interval', 'maxRounds', 'maxDuration', 'execute', 'maxConcurrent', 'timeout', 'copilotFlags', 'agentCmd', 'verbose', 'dispatchMode', 'logFile', 'authUser', 'notifyLevel', 'overnightStart', 'overnightEnd', 'sentinelFile', 'stateBackend']);
   for (const [key, value] of Object.entries(raw)) {
     if (reserved.has(key)) continue;
     if (typeof value === 'boolean' || (typeof value === 'object' && value !== null && !Array.isArray(value))) {

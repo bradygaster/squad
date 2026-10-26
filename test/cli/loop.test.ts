@@ -248,6 +248,24 @@ describe('generateLoopFile', () => {
 });
 
 describe('buildLoopAgentCommand', () => {
+  it('defaults to non-interactive Copilot permissions when no flags are supplied', () => {
+    expect(buildLoopAgentCommand('run the loop', {})).toEqual({
+      cmd: 'copilot',
+      args: ['-p', 'run the loop', '--yolo'],
+    });
+    expect(buildLoopAgentCommand('run the loop', { copilotFlags: '  ' })).toEqual({
+      cmd: 'copilot',
+      args: ['-p', 'run the loop', '--yolo'],
+    });
+  });
+
+  it('preserves explicitly supplied Copilot flags', () => {
+    expect(buildLoopAgentCommand('run the loop', { copilotFlags: '--deny-tool shell' })).toEqual({
+      cmd: 'copilot',
+      args: ['-p', 'run the loop', '--deny-tool', 'shell'],
+    });
+  });
+
   it('places the prompt at a standalone custom agent placeholder', () => {
     const prompt = 'run the configured work loop';
 

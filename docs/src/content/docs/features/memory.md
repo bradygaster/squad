@@ -47,6 +47,11 @@ memory.delete
 memory.audit
 ```
 
+Memory class names (`TRANSIENT`, `LOCAL`, `DECISION`, `POLICY`, `COPILOT_MEMORY`,
+`FORBIDDEN`) ignore case, so `decision` and `DECISION` name the same class. An unknown
+class name is rejected and is never stored under a made-up class. The `memory.*` tools
+also ignore surrounding spaces, and their error lists the valid names.
+
 Governed memory records include load-guidance metadata so prompts and providers can choose
 what to load without weakening safety gates:
 
@@ -60,7 +65,11 @@ what to load without weakening safety gates:
 When an entry is promoted or superseded, the previous index entry is marked `[ARCHIVE]`
 and records `supersededBy` so tooling can follow the forward link to the active successor.
 
-The CLI exposes the same local bridge:
+The CLI opens the same governed store as the `squad_state` `memory.*` tools. It walks up
+from the current directory to the nearest `.squad/` (the team's `.squad/` in a linked
+project) and goes through the configured state backend, so on `orphan` or `two-layer` it
+reads and writes the `squad-state` branch, exactly like your agents do. (A linked project on
+`orphan` or `two-layer` doesn't work for either side yet.)
 
 ```bash
 squad memory classify "Always run tests before merge"
