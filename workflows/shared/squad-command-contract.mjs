@@ -177,7 +177,8 @@ function classifyArgument(argumentText) {
   const normalized = argumentText.replace(/[ \t]+/g, ' ').trim();
   const lowered = normalized.toLowerCase();
 
-  if (/^reconcile activation [1-9]\d* [a-f0-9]{64}$/.test(normalized)) {
+  const reconciliation = normalized.match(/^([A-Za-z]+ [A-Za-z]+) [1-9]\d* [a-f0-9]{64}$/);
+  if (reconciliation?.[1]?.toLowerCase() === 'reconcile activation') {
     return accepted('reconcile activation', normalized);
   }
 

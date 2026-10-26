@@ -1,11 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
 
 const ROOT = process.cwd();
-const TMP = path.join(ROOT, `.test-state-mcp-lifecycle-${randomBytes(4).toString('hex')}`);
+const TMP = path.join(tmpdir(), `.test-state-mcp-lifecycle-${randomBytes(4).toString('hex')}`);
 const CLI_ENTRY = path.join(ROOT, 'packages', 'squad-cli', 'dist', 'cli-entry.js');
 const activeChildren = new Set<ChildProcessWithoutNullStreams>();
 

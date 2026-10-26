@@ -5,6 +5,7 @@
 import { afterEach, describe, it, expect } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import {
   CastingEngine,
   type CastingConfig,
@@ -16,7 +17,7 @@ import {
 const castingRoots: string[] = [];
 
 function castingDir(): string {
-  const root = mkdtempSync(join(process.cwd(), '.casting-registry-test-'));
+  const root = mkdtempSync(join(tmpdir(), 'casting-registry-test-'));
   const dir = join(root, 'casting');
   mkdirSync(dir);
   castingRoots.push(root);
