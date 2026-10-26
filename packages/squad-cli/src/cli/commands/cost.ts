@@ -2,6 +2,7 @@ import {
   resolveSquadState,
   UsageLedger,
   type StateBackend,
+  type UsageLedgerReadResult,
   type UsageLedgerRecord,
   type UsageLedgerTurnStart,
 } from '@bradygaster/squad-sdk';
@@ -15,6 +16,7 @@ interface CostArgs {
 interface CostEntry {
   agent: string;
   sessionId: string;
+  squadSessionId?: string;
   turnId?: string;
   model: string;
   inputTokens: number;
@@ -97,6 +99,7 @@ function fromLedgerRecord(record: UsageLedgerRecord): CostEntry {
   return {
     agent: record.agentName ?? 'unknown',
     sessionId: record.sessionId,
+    ...(record.squadSessionId ? { squadSessionId: record.squadSessionId } : {}),
     ...(record.turnId ? { turnId: record.turnId } : {}),
     model: record.model,
     inputTokens: record.inputTokens,
@@ -213,7 +216,7 @@ function printSummary(
   console.log(formatRow('Total', total.inputTokens, total.outputTokens, total.estimatedCost));
   console.log();
 
-  const sessionCount = new Set(entries.map(entry => entry.sessionId)).size;
+  const sessionCount = new Set(entries.map(entry => entry.squadSessionId ?? entry.sessionId)).size;
   const modelTotals = new Map<string, { turns: number; estimatedCost: number }>();
   for (const entry of entries) {
     const model = modelTotals.get(entry.model) ?? { turns: 0, estimatedCost: 0 };
@@ -261,14 +264,36 @@ function getCurrentSessionCutoff(backend: StateBackend): number | null {
   }
 }
 
+/**
+ * The current session is the Squad session of the newest ledger row. When that
+ * row has no Squad session id (written by an older Squad), callers fall back to
+ * the newest session log in `log/`.
+ */
+function getCurrentSquadSessionId(ledger: UsageLedgerReadResult): string | undefined {
+  let newest: { timestamp: number; squadSessionId?: string } | undefined;
+  for (const row of [...ledger.records, ...ledger.turnStarts]) {
+    const timestamp = parseTimestamp(row.timestamp);
+    if (timestamp !== null && (!newest || timestamp >= newest.timestamp)) {
+      newest = { timestamp, squadSessionId: row.squadSessionId };
+    }
+  }
+  return newest?.squadSessionId;
+}
+
+interface StructuredScope {
+  cutoffTimestamp: number | null;
+  squadSessionId?: string;
+}
+
 function matchesScope(
-  record: Pick<UsageLedgerRecord | UsageLedgerTurnStart, 'agentName' | 'timestamp'>,
-  cutoffTimestamp: number | null,
+  record: Pick<UsageLedgerRecord | UsageLedgerTurnStart, 'agentName' | 'squadSessionId' | 'timestamp'>,
+  scope: StructuredScope,
   agentFilter?: string,
 ): boolean {
   const timestamp = parseTimestamp(record.timestamp);
   return timestamp !== null
-    && (cutoffTimestamp === null || timestamp > cutoffTimestamp)
+    && (scope.squadSessionId === undefined || record.squadSessionId === scope.squadSessionId)
+    && (scope.cutoffTimestamp === null || timestamp > scope.cutoffTimestamp)
     && (!agentFilter || (record.agentName ?? 'unknown').toLowerCase() === agentFilter.toLowerCase());
 }
 
@@ -286,16 +311,15 @@ function calculateCoverage(entries: CostEntry[], turnStarts: UsageLedgerTurnStar
   };
 }
 
-async function readStructuredEntries(
-  backend: StateBackend,
-  cutoffTimestamp: number | null,
+function readStructuredEntries(
+  result: UsageLedgerReadResult,
+  scope: StructuredScope,
   agentFilter?: string,
-): Promise<{ entries: CostEntry[]; coverage: UsageCoverage; invalidRecordCount: number }> {
-  const result = await new UsageLedger(backend).read();
+): { entries: CostEntry[]; coverage: UsageCoverage; invalidRecordCount: number } {
   const entries = result.records
-    .filter(record => matchesScope(record, cutoffTimestamp, agentFilter))
+    .filter(record => matchesScope(record, scope, agentFilter))
     .map(fromLedgerRecord);
-  const turnStarts = result.turnStarts.filter(record => matchesScope(record, cutoffTimestamp, agentFilter));
+  const turnStarts = result.turnStarts.filter(record => matchesScope(record, scope, agentFilter));
 
   return {
     entries,
@@ -344,8 +368,14 @@ export async function runCost(args: string[], teamRoot: string): Promise<void> {
     return;
   }
 
+  const ledger = await new UsageLedger(stateContext.backend).read();
   const cutoffTimestamp = showAll ? null : getCurrentSessionCutoff(stateContext.backend);
-  const structured = await readStructuredEntries(stateContext.backend, cutoffTimestamp, agentFilter);
+  const squadSessionId = showAll ? undefined : getCurrentSquadSessionId(ledger);
+  const structured = readStructuredEntries(
+    ledger,
+    squadSessionId ? { cutoffTimestamp: null, squadSessionId } : { cutoffTimestamp },
+    agentFilter,
+  );
   if (structured.entries.length > 0) {
     printSummary(
       structured.entries,

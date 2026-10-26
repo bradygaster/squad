@@ -1,28 +1,26 @@
 # Token Usage & Cost Tracking
 
-Squad can track token usage and estimated cost for each agent spawn, roll that data up by session, and expose it through orchestration logs, terminal summaries, and telemetry backends.
+Squad records token usage and estimated cost for each turn in the interactive shell, summarizes it by session with `squad cost`, and can export token metrics to telemetry backends.
 
 ---
 
 ## Overview
 
-- Squad tracks token usage (input/output tokens) and estimated cost per agent spawn
-- Usage data is recorded in orchestration logs and available via `squad cost` CLI
+- The interactive shell (`squad` with no arguments) records input tokens, output tokens and estimated cost for every coordinator and agent turn
+- `squad cost` reports that usage for the current session, for every session, or for one agent
 - Optional budget limits can be configured per agent or per session
 
 ---
 
 ## How It Works
 
-- The `CostTracker` class (`packages/squad-sdk/src/runtime/cost-tracker.ts`) accumulates token data
-- Each orchestration log entry includes a **Token usage** row
+- Each shell turn appends JSON Lines records to `.squad/log/usage.jsonl`: one when the turn starts and one with its usage when it completes
+- Each record names the SDK session that ran the turn and the Squad session it belongs to. The Squad session is the shell session, the one `/resume` restores, so it covers the coordinator and every agent the shell talks to
+- Hosts that run the coordinator themselves, such as Copilot CLI and VS Code, don't write this ledger
+- The `CostTracker` class (`packages/squad-sdk/src/runtime/cost-tracker.ts`) accumulates token data for telemetry
 - OTel metrics (`squad.tokens.input`, `squad.tokens.output`, `squad.tokens.cost`) are emitted when telemetry is enabled
 
-The orchestration log template stores usage in a markdown table row like this:
-
-```md
-| **Token usage** | 12,450 in / 3,200 out — $0.0234 |
-```
+When the ledger has no data, `squad cost` falls back to older orchestration log entries that contain a **Token usage** row and labels the totals as estimates.
 
 ---
 
@@ -30,23 +28,30 @@ The orchestration log template stores usage in a markdown table row like this:
 
 ```bash
 squad cost                 # current session costs
-squad cost --all           # all historical costs
-squad cost --agent fenster # costs for specific agent
+squad cost --all           # all recorded costs
+squad cost --agent fenster # one agent's costs in the current session
 ```
+
+The current session is the Squad session of the newest record in the ledger. If that record has no Squad session because an older Squad wrote it, `squad cost` counts the records after the newest timestamped session log in `.squad/log/` instead, or all records when there is none.
 
 **Example output:**
 
 ```text
-=== Squad Cost Summary ===
-Total input tokens:  12,450
-Total output tokens: 3,200
-Estimated cost:      $0.0234
+💰 Squad Cost Summary
+━━━━━━━━━━━━━━━━━━━━
 
---- By Agent ---
-  fenster: 12,450in / 3,200out ($0.0234) [1 turns, model: claude-sonnet-4.5]
+  Agent          Input Tokens    Output Tokens    Est. Cost
+  ─────────────  ──────────────  ───────────────  ───────────
+  EECOM                 7,000              100      $0.0700
+  Control               5,000              100      $0.0500
+  coordinator           1,000              100      $0.0100
+  ─────────────  ──────────────  ───────────────  ───────────
+  Total                13,000              300      $0.1300
 
---- By Session ---
-  session-abc123: 12,450in / 3,200out ($0.0234) [1 turns]
+  📊 3 agents across 3 turns in 1 session
+  Models: claude-sonnet-5 (3 turns, $0.1300)
+  Source: structured runtime usage ledger
+  Coverage: 3 of 3 turn attempts with recorded usage (100.0%)
 ```
 
 ---
