@@ -22,6 +22,12 @@ const NO_COLOR_ENV = {
   FORCE_COLOR: '0',
   npm_config_loglevel: process.env['npm_config_loglevel'] ?? 'warn',
 };
+delete NO_COLOR_ENV['npm_config_local_prefix'];
+delete NO_COLOR_ENV['npm_config_workspace'];
+delete NO_COLOR_ENV['npm_config_workspaces'];
+delete NO_COLOR_ENV['NPM_CONFIG_LOCAL_PREFIX'];
+delete NO_COLOR_ENV['NPM_CONFIG_WORKSPACE'];
+delete NO_COLOR_ENV['NPM_CONFIG_WORKSPACES'];
 const MISSING_MODULE_RE = /MODULE_NOT_FOUND|ERR_MODULE_NOT_FOUND|Cannot find module|Cannot find package/i;
 const EXIT_COMMAND_TIMEOUT_MS = process.platform === 'win32' ? 10_000 : 2_000;
 

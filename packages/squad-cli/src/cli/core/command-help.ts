@@ -397,6 +397,8 @@ function printWatchHelp(name: 'triage' | 'watch', version: string): void {
   console.log(`  ${BOLD}--max-concurrent N${RESET}          Parallel issue limit (default 1)`);
   console.log(`  ${BOLD}--timeout N${RESET}                 Max minutes per issue (default 30)`);
   console.log(`  ${BOLD}--interval <minutes>${RESET}        Polling interval (default 10)`);
+  console.log(`  ${BOLD}--max-rounds N${RESET}              Stop after N completed rounds`);
+  console.log(`  ${BOLD}--max-duration 8h${RESET}           Stop after elapsed time (ms, s, m, h, d)`);
   console.log(`  ${BOLD}--health${RESET}                    (watch only) print watch instance status\n`);
   console.log(`Capabilities (opt-in via --<name> or .squad/config.json):`);
   console.log(`  ${BOLD}--self-pull${RESET}                 git fetch/pull at round start`);
