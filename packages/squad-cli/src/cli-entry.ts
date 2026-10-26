@@ -204,6 +204,8 @@ async function main(): Promise<void> {
     console.log(`                    --copilot-flags "..." (extra copilot CLI flags)`);
     console.log(`                    --max-concurrent N (parallel issue limit, default 1)`);
     console.log(`                    --timeout N (max minutes per issue, default 30)`);
+    console.log(`                    --max-rounds N (stop after N completed rounds)`);
+    console.log(`                    --max-duration 8h (stop after elapsed time)`);
     console.log(`             Capabilities (opt-in via --<name> or config.json):`);
     console.log(`                    --self-pull       git fetch/pull at round start`);
     console.log(`                    --board           project board lifecycle + reconciliation`);
@@ -606,6 +608,11 @@ async function main(): Promise<void> {
       ? parseInt(args[intervalIdx + 1]!, 10)
       : undefined;
 
+    const maxRoundsIdx = args.indexOf('--max-rounds');
+    const maxRounds = maxRoundsIdx !== -1 ? Number(args[maxRoundsIdx + 1]) : undefined;
+    const maxDurationIdx = args.indexOf('--max-duration');
+    const maxDuration = maxDurationIdx !== -1 ? (args[maxDurationIdx + 1] ?? '') : undefined;
+
     const execute = args.includes('--execute') ? true : undefined;
 
     const verbose = args.includes('--verbose') || args.includes('-v');
@@ -725,6 +732,8 @@ async function main(): Promise<void> {
     // Load config: .squad/config.json merged with CLI overrides
     const config = loadWatchConfig(getSquadStartDir(), {
       interval,
+      maxRounds,
+      maxDuration,
       execute,
       maxConcurrent,
       timeout,
@@ -746,7 +755,7 @@ async function main(): Promise<void> {
     // After parsing all flags, check for positional args that look like prompts.
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
-      '--interval', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--board-owner', '--auth-user',
+      '--interval', '--max-rounds', '--max-duration', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--board-owner', '--auth-user',
       '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;

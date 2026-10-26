@@ -58,6 +58,8 @@ prerequisites, all supported methods, and update commands.
 | `squad watch --decision-hygiene` | Auto-merge decision inbox | Yes |
 | `squad watch --max-concurrent N` | Max parallel issues per round (default: 1) | Yes |
 | `squad watch --timeout N` | Per-issue timeout in minutes (default: 30) | Yes |
+| `squad watch --max-rounds N` | Stop after N completed rounds | Yes |
+| `squad watch --max-duration D` | Stop after a duration such as `8h` (ms, s, m, h, d) | Yes |
 | `squad watch --copilot-flags "..."` | Extra flags for Copilot CLI | Yes |
 | `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. | No |
 | `squad copilot` | Add the @copilot coding agent to the team | Yes |

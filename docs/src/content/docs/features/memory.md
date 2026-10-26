@@ -47,6 +47,11 @@ memory.delete
 memory.audit
 ```
 
+Memory class names (`TRANSIENT`, `LOCAL`, `DECISION`, `POLICY`, `COPILOT_MEMORY`,
+`FORBIDDEN`) ignore case, so `decision` and `DECISION` name the same class. An unknown
+class name is rejected and is never stored under a made-up class. The `memory.*` tools
+also ignore surrounding spaces, and their error lists the valid names.
+
 Governed memory records include load-guidance metadata so prompts and providers can choose
 what to load without weakening safety gates:
 
