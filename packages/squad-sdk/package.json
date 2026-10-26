@@ -241,20 +241,20 @@
     "node": ">=22.5.0"
   },
   "dependencies": {
-    "@github/copilot-sdk": "^1.0.19",
+    "@github/copilot-sdk": "^1.0.26",
     "vscode-jsonrpc": "^9.0.3"
   },
   "optionalDependencies": {
-    "@opentelemetry/api": "^1.9.0",
-    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.223.0",
-    "@opentelemetry/exporter-trace-otlp-grpc": "^0.223.0",
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/exporter-metrics-otlp-grpc": "^0.300.0",
+    "@opentelemetry/exporter-trace-otlp-grpc": "^0.300.0",
     "@opentelemetry/resources": "^2.9.0",
     "@opentelemetry/sdk-metrics": "^2.12.0",
-    "@opentelemetry/sdk-node": "^0.223.0",
+    "@opentelemetry/sdk-node": "^0.300.0",
     "@opentelemetry/sdk-trace-base": "^2.12.0",
     "@opentelemetry/sdk-trace-node": "^2.8.0",
     "@opentelemetry/semantic-conventions": "^1.28.0",
-    "sql.js": "^1.14.2",
+    "sql.js": "^1.15.1",
     "ws": "^8.22.0"
   },
   "devDependencies": {
@@ -262,7 +262,7 @@
     "@types/sql.js": "^1.4.10",
     "@types/ws": "^8.18.2",
     "typedoc": "~0.28.20",
-    "typedoc-plugin-markdown": "~4.13.1",
+    "typedoc-plugin-markdown": "~4.14.1",
     "typescript": "^6.0.3"
   },
   "keywords": [
