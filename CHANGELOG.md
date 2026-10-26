@@ -4,6 +4,26 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-preview.2] - 2026-10-25
+
+Second Squad 2.0 preview. Published primarily to the npm `insider` dist-tag, which powers `squad upgrade --self --insider`, with `preview` retained as a compatibility alias; `latest` stays at 1.1.0. This release focuses on upgrade safety, state-bridge lifecycle, health compatibility, and dogfood fixes discovered after preview.1.
+
+### Added
+
+- Recognize optional charter `Examples` sections without a noncanonical-section warning and preserve them through structured SDK edits (#2275, #2276).
+
+### Fixed
+
+- Refuse to overwrite external state owned by a different project (#2283).
+- Generate resolvable versioned `squad_state` bridge declarations, probe them in `squad doctor`, report bridge identity in health output, and terminate stdio servers when their host transport closes (#2301).
+- Make `squad health` accept legacy charter identity forms and built-in support agents, ignore routing headers/separators/placeholders, warn rather than fail for missing identity blocks, and report optional Rai/Fact Checker charters absent from `team.md` as INFO (`available but not configured`). `squad upgrade` never modifies `team.md`; opt in explicitly with `squad roster add <rai|fact-checker|all>` (#2303; #2298, #2234, #1785).
+- Accept documented legacy routing headers, column orders, and flattened long tables while still failing closed on missing/off-roster targets and zero parseable rules; report duplicate or conflicting work types deterministically (#2307).
+- Fix preview commands and migrations: list configured clients, record the `Rai` → `rai` case-only rename, show the project name in upgrade previews, expire update-check caches after 24 hours, route `squad_decide` to the active workstream inbox without over-truncating slugs, and remove local-mode/Node deprecation diagnostics (#2303; #2299, #2174).
+- Allow backend root aliases only for list-shaped operations; file and destructive operations reject them before accessing or erasing the state tree (#2301).
+- Make `squad upgrade --self` honor `--dry-run`, follow the installed prerelease channel through `insider`, and refuse downgrades unless `--force` is supplied (#2303; #2295).
+- Parse YAML block-sequence arrays and quoted scalar/inline-array values in skill frontmatter (#2236).
+- Make `squad upgrade` content-aware and idempotent across managed templates, skills, workflows, mirrors, backups, obsolete files, and line endings, with exact dry-run reporting and verified `.local-backup` preservation (#2303; #2297, #2266, #2047, #2232).
+
 ## [2.0.0-preview.1] - 2026-10-23
 
 First Squad 2.0 preview. Published primarily to the npm `insider` dist-tag, which powers `squad upgrade --self --insider`, with `preview` retained as a compatibility alias; `latest` stays at 1.1.0. Upgrade guidance, the tested old-version × OS upgrade matrix and the full list of breaking changes live in [Upgrading to Squad 2.0](docs/src/content/docs/scenarios/upgrading.md).

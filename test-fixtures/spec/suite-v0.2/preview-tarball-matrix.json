@@ -1,6 +1,6 @@
 {
   "protocol": "preview-tarball-matrix/v1",
-  "description": "Attested Windows/Linux upgrade matrix for the exact 2.0.0-preview.1 CLI and SDK tarballs produced by the release-evidence workflow. Historical producers, structural skips, F3 pins, state shapes, projection restoration, profile non-access, idempotency and unsupported-downgrade observations are inherited from upgrade-matrix.json; runs additionally pin targetSha, evidence run/artifact, both tarball sha256 values and the preview harnessHash.",
+  "description": "Attested Windows/Linux upgrade matrix for exact CLI and SDK tarballs produced by the release-evidence workflow. Historical and published-preview producers, structural skips, F3 pins, state shapes, projection restoration, profile non-access, idempotency and unsupported-downgrade observations are inherited from upgrade-matrix.json; current runs additionally pin targetSha, target registry state, evidence run/artifact, both tarball sha256 values and the preview harnessHash.",
   "concepts": {
     "upgrade": "`squad upgrade` with the current CLI: refreshes Squad-owned files, migrates casting/state, preserves user state. The only supported direction.",
     "projection uninstall": "`uninstallClients()` from `@bradygaster/squad-sdk/client`: removes generated host projections and restores shared files byte-exact. Does not change the installed CLI, `.squad/` state, or the repository's Squad version.",
@@ -159,6 +159,29 @@
       }
     },
     {
+      "version": "2.0.0-preview.1",
+      "source": "npm",
+      "why": "Published preview baseline installed by exact npm version, with both registry tarballs verified against their immutable npm shasums and integrities before scaffolding and upgrading to the evidence tarballs.",
+      "supports": {
+        "stateBackend": true,
+        "dryRun": true
+      },
+      "artifacts": {
+        "registry": {
+          "@bradygaster/squad-cli": {
+            "version": "2.0.0-preview.1",
+            "shasum": "b040ad24cf7c4f850f49e617073ba24da6eaa7a8",
+            "integrity": "sha512-nOFSWMMGE9RGMXAYdsqs8ZU8Sfs8QV5vCahgGSvvWxO9kzQyU8oFAl7XLWNNf7AGD9hqp6Xv+nmXqisNpblSyw=="
+          },
+          "@bradygaster/squad-sdk": {
+            "version": "2.0.0-preview.1",
+            "shasum": "5cb67dff694d4d54d629360edf28cc05f63e9469",
+            "integrity": "sha512-gjxuDDAum4fL3W1VVwk8V2ZZVopGceIFnDp35iOxGlQOqcp/b3ZnTr6WdJwG5pw7Obk2rqzhMuxvDZacpHg81A=="
+          }
+        }
+      }
+    },
+    {
       "version": "HEAD",
       "source": "pack",
       "why": "Same-version clean install and idempotency using the exact release-evidence CLI/SDK tarballs, not a repository rebuild.",
@@ -178,13 +201,13 @@
     "orphan": "`squad init --state-backend orphan` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive.",
     "two-layer": "`squad init --state-backend two-layer` (producers that have the flag); the `squad-state` branch and `stateBackend` must survive.",
     "ai-team": "As `default`, then `.squad/` is renamed to the legacy `.ai-team/` and the upgrade runs with `--migrate-directory`.",
-    "upstream": "HEAD only: a second squad is declared via `squad upstream add <path> --name org`; `upstream.json` must survive the upgrade byte-exact."
+    "upstream": "Squad 2.0 producers only: a second squad is declared via `squad upstream add <path> --name org`; `upstream.json` must survive the upgrade byte-exact."
   },
   "checks": {
     "target-tarballs-verified": "The exact preview CLI and SDK tarballs match the workflow-supplied sha256 values before extraction or execution.",
-    "target-version-smoke": "The packed CLI reports exactly 2.0.0-preview.1 from `squad --version`, and both packed package manifests carry that version.",
+    "target-version-smoke": "The packed CLI version is derived from the evidence tarball package.json; `squad --version` and both packed package manifests must report that exact version.",
     "target-exports-resolve": "Every exact and wildcard `exports` target in both packed package manifests resolves to at least one file inside the extracted tarball.",
-    "self-upgrade-resolution": "The packed `selfUpgradeCommand` / injectable `selfUpgradeCli` resolve npm, pnpm and yarn to the exact latest/insider commands without executing a network install.",
+    "self-upgrade-resolution": "When the candidate is published, `selfUpgradeCommand` / injectable `selfUpgradeCli` resolve npm, pnpm and yarn to the exact latest/insider commands without executing a network install. When unpublished, the installed candidate must refuse the older tagged version with EDOWNGRADE/no-downgrade behavior.",
     "producer-artifact-verified": "The pinned artifact that was executed matched its recorded hashes (npm: sha1 shasum + sha512 integrity of both tarballs; GitHub Release: sha256 of the asset downloaded by id). A mismatch FAILS every row of that producer — it is never a skip; only an unreachable registry/release skips, with the reason.",
     "scenario-setup": "The matrix could set up the shape (e.g. configure the `upstream` squad). Only recorded when setup fails: a row can never be `fail` without a failing check (LD-2).",
     "producer-init": "The OLD CLI (the pinned producer artifact) scaffolds the project non-interactively (exit 0, `.squad/team.md` present).",
@@ -200,7 +223,8 @@
     "downgrade-probe": "UNSUPPORTED PATH, recorded not endorsed: the OLD CLI's `upgrade --dry-run` against a copy of the upgraded project must modify nothing; its exit code and message are recorded as a note. Squad has no supported downgrade.",
     "clients-projected": "`squad upgrade --client all --force` exits 0, `config.json` `clients` lists all 7 hosts, and every projection PARSES with its host's format — JSON (`.mcp.json`, `.kiro/agents/squad.json`, `.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json`), TOML (`.codex/agents/squad.toml`, `.codex/config.toml`), YAML frontmatter (`.github/agents/squad.agent.md`, `.claude/agents/squad.md`, `.kiro/steering/squad.md`, `.opencode/agent/squad.md`, `.cursor/agents/squad.md`, `.cursor/rules/squad.mdc`, `.agents/agents/squad.md`) — with a `squad_state` MCP entry where the host has one; mirrors the per-host assertions in `test/clients.test.ts`.",
     "user-config-preserved": "After projection the user's `.mcp.json` server, `AGENTS.md`/`CLAUDE.md` paragraphs and `.gitignore` rule are intact (for `upstream`: `upstream.json` is byte-identical).",
-    "doctor": "`squad doctor` exits 0 with no ❌ line.",
+    "health": "`squad health --json` reports PASS, with Rai and Fact Checker represented as INFO-only optional built-ins when they are available but not configured.",
+    "doctor": "`squad doctor` reports local mode, no failures, and a successful `squad_state` bridge handshake at the exact evidence-tarball version.",
     "projection-uninstall-byte-exact": "`uninstallClients(CLIENT_IDS)` from the packed SDK, judged against the tree right after the plain upgrade (before any projection): `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.gitignore` byte-identical to that baseline (absent stays absent); all 8 projection files removed (agents, Kiro steering, Cursor rules, Kiro agent JSON); `.mcp.json` equal to the baseline minus the `squad_state` entry Squad installed, with the user's server intact; Kiro/Cursor MCP JSON, `opencode.json` and `.codex/config.toml` created by the projection carry no `squad_state`; seeded `.squad/` files and `squad-state` blobs untouched. This is projection uninstall — NOT a package or repository rollback and NOT a downgrade."
   },
   "squadOwned": [
@@ -325,7 +349,7 @@
       "platforms": "*"
     }
   ],
-  "runs": [
+  "historicalRuns": [
     {
       "platform": "linux",
       "arch": "x64",
@@ -7170,5 +7194,6 @@
         }
       ]
     }
-  ]
+  ],
+  "runs": []
 }

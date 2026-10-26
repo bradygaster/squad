@@ -12,6 +12,7 @@ name: Squad Release Verify
 #   - vitest-report.json + test-reconciliation.json  every test bucketed; counts must sum
 #   - pack-evidence.json + both .tgz + .sha256         exact packs, integrity, file lists,
 #                             export-target validation, privacy scan
+#   - registry-preflight.json read-only npm version/tag, Git tag-ref and GitHub release classification
 #   - squad-2.0-verification-manifest-<sha>.json/.md + provenance.json + manifest.schema.json
 #
 # No skip labels and no SQUAD_*_CHECK repository variables are consulted here.
@@ -20,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       sha:
-        description: 'Full lowercase 40-hex commit SHA to verify (must equal the dispatched ref SHA)'
+        description: 'Full lowercase 40-hex candidate commit SHA to check out and verify'
         required: true
         type: string
   workflow_call:
@@ -76,16 +77,12 @@ jobs:
     timeout-minutes: 20
     env:
       SOURCE_SHA: ${{ inputs.source_sha || inputs.sha || github.event.pull_request.head.sha }}
-      DISPATCH_SHA: ${{ inputs.sha }}
       EVIDENCE_DIR: ${{ github.workspace }}\evidence-windows
     steps:
       - name: Validate requested SHA
         shell: pwsh
         run: |
           if ($env:SOURCE_SHA -notmatch '^[0-9a-f]{40}$') { throw "sha must be a full lowercase 40-hex SHA, got '$env:SOURCE_SHA'" }
-          if ($env:DISPATCH_SHA -and $env:GITHUB_SHA -cne $env:SOURCE_SHA) {
-            throw "workflow_dispatch ref SHA $env:GITHUB_SHA != requested $env:SOURCE_SHA"
-          }
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -139,17 +136,12 @@ jobs:
       cli_sha256: ${{ steps.pack.outputs.cli_sha256 }}
     env:
       SOURCE_SHA: ${{ inputs.source_sha || inputs.sha || github.event.pull_request.head.sha }}
-      DISPATCH_SHA: ${{ inputs.sha }}
       EVIDENCE_DIR: ${{ github.workspace }}/evidence
     steps:
       - name: Validate requested SHA
         run: |
           set -euo pipefail
           [[ "$SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::sha must be a full lowercase 40-hex SHA, got '$SOURCE_SHA'"; exit 1; }
-          if [[ -n "$DISPATCH_SHA" && "$GITHUB_SHA" != "$SOURCE_SHA" ]]; then
-            echo "::error::workflow_dispatch ref SHA $GITHUB_SHA != requested $SOURCE_SHA"
-            exit 1
-          fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -237,9 +229,9 @@ jobs:
 
       - name: "Gate: release policy (no label or variable bypass)"
         env:
-          # pull_request/workflow_dispatch: pending changesets must be well-formed, not drained.
-          # workflow_call from squad-release.yml: drain is enforced before publication.
-          POLICY_MODE: ${{ inputs.source_sha != '' && 'release' || 'ci' }}
+          # Pull requests validate pending changesets in CI mode. Both side-effect-free dispatches
+          # and workflow_call from squad-release.yml enforce the release drain before publication.
+          POLICY_MODE: ${{ (inputs.source_sha != '' || inputs.sha != '') && 'release' || 'ci' }}
         run: |
           set -euo pipefail
           node scripts/release/policy-gates.mjs "--mode=$POLICY_MODE" --json > "$EVIDENCE_DIR/policy-gates.json" || true
@@ -310,6 +302,33 @@ jobs:
             echo
             sha256sum "$EVIDENCE_DIR"/*.tgz
           } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Check out read-only registry preflight tooling from the workflow revision
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-preflight-tooling
+          sparse-checkout: scripts/release
+          persist-credentials: false
+
+      - name: Record read-only npm registry and GitHub release preflight
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          REQUIRE_ABSENCE: ${{ (inputs.source_sha != '' || inputs.sha != '') && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          absence_args=()
+          if [ "$REQUIRE_ABSENCE" = "1" ]; then absence_args+=(--require-absence); fi
+          node .release-preflight-tooling/scripts/release/registry-preflight.mjs \
+            --version "$VERSION" \
+            --pack-evidence "$EVIDENCE_DIR/pack-evidence.json" \
+            --registry https://registry.npmjs.org/ \
+            --repository "$GITHUB_REPOSITORY" \
+            --tag "v${VERSION}" \
+            --out "$EVIDENCE_DIR/registry-preflight.json" \
+            "${absence_args[@]}"
+          cat "$EVIDENCE_DIR/registry-preflight.json"
 
       - name: Name evidence artifact
         id: artifact

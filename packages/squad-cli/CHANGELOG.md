@@ -1,5 +1,23 @@
 # @bradygaster/squad-cli
 
+## 2.0.0-preview.2
+
+### Patch Changes
+
+- Refuse to overwrite external state owned by a different project.
+
+- Generate resolvable versioned state bridge declarations, probe them in `squad doctor`, report bridge identity in health output, and terminate stdio servers when their host transport closes.
+
+- `squad health` no longer reports markdown table headers, separator rows or `{placeholder}` cells as unknown routing agents, accepts built-in support agents (Scribe, Ralph, Rai, Fact Checker) as routing targets, parses legacy charters with a UTF-8 BOM or a one-line `**Role:** … | **Expertise:** …` identity, reports charters without an identity block as a warning with a hint instead of a failure, and reports optional Rai/Fact Checker charters absent from `team.md` as INFO (`available but not configured`). `squad upgrade` never modifies `team.md`; opt in explicitly with `squad roster add <rai|fact-checker|all>` (#2298, #2234, #1785).
+
+- Accept documented legacy routing table headers, column orders, and the historical flattened long-table layout. `squad health` validates every parsed target against the team or casting registry, fails for missing targets and zero rules, and reports duplicate or conflicting work types as deterministic warnings.
+
+- 2.0 preview command and migration fixes: `squad client list|add` lists configured host projections; the `agents/Rai` → `agents/rai` migration uses a two-step rename and `git mv` so the case change is recorded on Windows and macOS (templates now reference `agents/rai/`); the `undefined — previewing upgrade` header shows the project name; `squad update-check` flags caches older than 24h and shows the cache date; `squad_decide` writes to the active workstream inbox when one is resolvable and never truncates the summary slug below 60 characters; `squad doctor` reports `Mode: local` for a `teamRoot` that points at the same project and no longer triggers Node's DEP0190 warning (#2299, #2174).
+
+- `squad upgrade --self` now honors `--dry-run` (prints the exact install command, runs nothing), follows the installed channel (a `preview`/`insider` build upgrades via the `insider` dist-tag, stable via `latest`) unless `--insider` overrides, and refuses to install a version older than the running CLI unless `--force` is given (#2295).
+
+- `squad upgrade` is now idempotent and content-aware: every squad-owned file (templates, `.github/skills`, `squad-*.yml` workflows, the `.squad/templates/` mirror including its `skills/` and `workflows/` snapshots) is compared EOL-insensitively, `--dry-run` reports only files that would actually change (nothing right after an upgrade, even on CRLF checkouts), customized files are written to `<file>.local-backup` and verified before being overwritten, `.gitignore`/`.gitattributes` entries are appended in the file's own line-ending style instead of rewriting the file, files Squad previously shipped but no longer does are removed when unmodified, provably unmodified stale `.copilot/skills` copies are cleaned up, and `--help` states exactly what is overwritten and what is backed up (#2297, #2266, #2047, #2232).
+
 ## 2.0.0-preview.1
 
 ### Major Changes

@@ -36,7 +36,7 @@ describe('UPGRADE-EPERM-FALSE-SUCCESS: selfUpgradeCli surfaces install failures'
     });
 
     const { selfUpgradeCli } = await import('../packages/squad-cli/src/cli/core/upgrade.js');
-    await expect(selfUpgradeCli({ insider: false })).rejects.toThrow(/Self-upgrade failed/);
+    await expect(selfUpgradeCli({ insider: false, force: true })).rejects.toThrow(/Self-upgrade failed/);
   });
 
   it('throws with EACCES hint when the install command fails with EACCES', async () => {
@@ -53,7 +53,7 @@ describe('UPGRADE-EPERM-FALSE-SUCCESS: selfUpgradeCli surfaces install failures'
     });
 
     const { selfUpgradeCli } = await import('../packages/squad-cli/src/cli/core/upgrade.js');
-    await expect(selfUpgradeCli({ insider: false })).rejects.toThrow(/Self-upgrade failed/);
+    await expect(selfUpgradeCli({ insider: false, force: true })).rejects.toThrow(/Self-upgrade failed/);
   });
 
   it('cli-entry exits non-zero when selfUpgradeCli throws (no "✅ Upgraded" printed)', async () => {
