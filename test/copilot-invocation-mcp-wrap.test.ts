@@ -1,7 +1,7 @@
 /**
  * Tests for the centralized copilot invocation helper that injects
- * `--additional-mcp-config @<path>` so that Copilot CLI 1.0.58 actually loads
- * a project's `.copilot/mcp-config.json` (it ignores that file by default).
+ * `--additional-mcp-config @<path>` so Copilot CLI loads a project's `.mcp.json`
+ * when spawning non-interactive sessions.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -47,17 +47,22 @@ describe('copilot-invocation: --additional-mcp-config wrapping', () => {
     const cfg = path.join(workdir, '.mcp.json');
     writeFileSync(cfg, '{"mcpServers":{}}');
     const args = buildAdditionalMcpConfigArgs('copilot', workdir);
-    expect(args).toEqual(['--yolo', '--additional-mcp-config', `@${cfg}`]);
+    expect(args).toEqual(['--additional-mcp-config', `@${cfg}`]);
   });
 
-  it('withAdditionalMcpConfig prepends the flag to user args when applicable', () => {
+  it('withAdditionalMcpConfig prepends the MCP config and preserves caller args', () => {
     const cfg = path.join(workdir, '.mcp.json');
     writeFileSync(cfg, '{}');
-    const result = withAdditionalMcpConfig('copilot', ['-p', 'hi'], workdir);
-    expect(result[0]).toBe('--yolo');
-    expect(result[1]).toBe('--additional-mcp-config');
-    expect(result[2]).toBe(`@${cfg}`);
-    expect(result.slice(3)).toEqual(['-p', 'hi']);
+    const callerArgs = ['--deny-tool', 'shell(git push)', '-p', 'hi'];
+    const result = withAdditionalMcpConfig('copilot', callerArgs, workdir);
+    expect(result).toEqual(['--additional-mcp-config', `@${cfg}`, ...callerArgs]);
+  });
+
+  it('does not remove an explicitly supplied --yolo flag', () => {
+    const cfg = path.join(workdir, '.mcp.json');
+    writeFileSync(cfg, '{}');
+    const result = withAdditionalMcpConfig('copilot', ['--yolo', '-p', 'hi'], workdir);
+    expect(result).toEqual(['--additional-mcp-config', `@${cfg}`, '--yolo', '-p', 'hi']);
   });
 
   it('withAdditionalMcpConfig is a no-op when injection is not applicable', () => {

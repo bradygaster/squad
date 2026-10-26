@@ -1,33 +1,23 @@
 /**
  * Helpers for spawning the Copilot CLI from squad-managed code paths.
  *
- * Background — iter-9 finding: Copilot CLI 1.0.59 does NOT auto-load the
- * workspace `.mcp.json` in non-interactive (`-p`) mode due to a folder-trust
- * security gate (`FH.isFolderTrusted()`). The gate cannot be satisfied without
- * a UI prompt, so the `squad_state` MCP entry written by `squad init` /
- * `squad upgrade` to the repo-root `.mcp.json` is silently ignored every time
- * squad spawns `copilot -p` — leaving `squad_state_*` tools unwired.
+ * Background — workspace MCP auto-discovery can be disabled by the folder-trust
+ * gate in non-interactive (`-p`) sessions, leaving the `squad_state` MCP entry
+ * written by `squad init` / `squad upgrade` unwired.
  *
- * Mitigation: every squad-internal `copilot` spawn prepends two flags:
- *   1. `--yolo`  — suppresses the per-tool-call consent prompt that would
- *      otherwise block non-interactive (`-p`) automation.
- *   2. `--additional-mcp-config @<abs-path>`  — explicitly loads the project's
- *      `.mcp.json` so `squad_state_*` tools register for that session.
+ * Mitigation: every squad-internal `copilot` spawn prepends
+ * `--additional-mcp-config @<abs-path>` to explicitly load the project's
+ * `.mcp.json` so `squad_state_*` tools register for that session. Tool
+ * authorization remains controlled by the caller; loading MCP config must not
+ * add or remove `--yolo`.
  *
  * We only inject when:
  *  - the command being spawned is the bare `copilot` binary (i.e. the user
  *    did not override via `--agent-cmd`)
  *  - a `.mcp.json` file actually exists at `teamRoot`
  *
- * Empirical test matrix (Copilot CLI 1.0.59):
- *   copilot -p "..."                                      → ❌ workspace MCP NOT loaded
- *   copilot --yolo -p "..."                               → ❌ workspace MCP NOT loaded
- *   copilot --yolo --autopilot -p "..."                   → ❌ workspace MCP NOT loaded
- *   copilot --additional-mcp-config @.mcp.json --yolo -p  → ✅ PROVEN WORKAROUND
- *   interactive copilot → "Trust folder?" → Yes           → ✅ loads (not automatable)
- *
- * See `.squad/files/validation/COMBINED-FIX-BRANCH-MANIFEST.md` (iter-9) for
- * the full empirical proof that this exact flag combination is required.
+ * See issue #2139: coupling MCP loading to `--yolo` overrides caller-supplied
+ * tool restrictions.
  */
 
 import path from 'node:path';
@@ -37,7 +27,7 @@ import { existsSync } from 'node:fs';
  * Build the extra CLI args needed to make the Copilot CLI load this project's
  * `.mcp.json` for a non-interactive (`-p`) spawned session.
  *
- * Returns `['--yolo', '--additional-mcp-config', '@<abs-path>']` when
+ * Returns `['--additional-mcp-config', '@<abs-path>']` when
  * injection is applicable, or an empty array when:
  *  - a custom agent command was specified (not the bare `copilot` binary), or
  *  - `teamRoot` is falsy, or
@@ -63,17 +53,14 @@ export function buildAdditionalMcpConfigArgs(cmd: string, teamRoot: string | und
   } catch {
     return [];
   }
-  return ['--yolo', '--additional-mcp-config', `@${configPath}`];
+  return ['--additional-mcp-config', `@${configPath}`];
 }
 
 /**
- * Prepend the MCP-config + yolo args to `args`. Returns the full argv list to
+ * Prepend the MCP-config args to `args`. Returns the full argv list to
  * pass to spawn/execFile for the given cmd. The injection slots these flags
  * BEFORE other args so positional `-p <prompt>` still works correctly.
- *
- * If `--yolo` is already present in `args` (e.g. user supplied it via
- * `copilotFlags`), the duplicate is stripped from `args` before prepending to
- * avoid passing `--yolo` twice.
+ * Caller-supplied arguments, including permission flags, are preserved as-is.
  */
 export function withAdditionalMcpConfig(
   cmd: string,
@@ -82,7 +69,5 @@ export function withAdditionalMcpConfig(
 ): string[] {
   const extra = buildAdditionalMcpConfigArgs(cmd, teamRoot);
   if (extra.length === 0) return args;
-  // Strip any user-supplied --yolo to avoid passing it twice.
-  const cleanArgs = args.filter(a => a !== '--yolo');
-  return [...extra, ...cleanArgs];
+  return [...extra, ...args];
 }

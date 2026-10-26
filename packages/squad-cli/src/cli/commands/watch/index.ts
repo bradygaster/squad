@@ -34,6 +34,7 @@ import { createPlatformAdapter } from '@bradygaster/squad-sdk/platform';
 import type { PlatformAdapter, WorkItem, PullRequest as SdkPullRequest } from '@bradygaster/squad-sdk/platform';
 
 import type { WatchConfig } from './config.js';
+import { parseWatchDuration, watchBoundReason } from './bounds.js';
 import type { WatchCapability, WatchContext, WatchPhase, CapabilityResult } from './types.js';
 import { CapabilityRegistry } from './registry.js';
 import { createDefaultRegistry } from './capabilities/index.js';
@@ -608,6 +609,8 @@ async function preflightCapabilities(
  */
 export interface WatchOptions {
   intervalMinutes: number;
+  maxRounds?: number;
+  maxDuration?: string;
   execute?: boolean;
   copilotFlags?: string;
   agentCmd?: string;
@@ -638,6 +641,8 @@ function legacyToConfig(options: WatchOptions): WatchConfig {
 
   return {
     interval: options.intervalMinutes,
+    maxRounds: options.maxRounds,
+    maxDuration: options.maxDuration,
     execute: options.execute ?? false,
     maxConcurrent: options.maxConcurrent ?? 1,
     timeout: options.issueTimeoutMinutes ?? 30,
@@ -726,6 +731,14 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   if (isNaN(interval) || interval < 1) {
     fatal('--interval must be a positive number of minutes');
   }
+  if (config.maxRounds !== undefined && (!Number.isSafeInteger(config.maxRounds) || config.maxRounds < 1)) {
+    fatal('--max-rounds must be a positive integer');
+  }
+  const maxDurationMs = config.maxDuration === undefined ? undefined : parseWatchDuration(config.maxDuration);
+  if (config.maxDuration !== undefined && (maxDurationMs === undefined || !Number.isSafeInteger(Date.now() + maxDurationMs))) {
+    fatal('--max-duration must be a positive duration (ms, s, m, h, or d)');
+  }
+  const deadline = maxDurationMs === undefined ? undefined : Date.now() + maxDurationMs;
 
   // Detect squad directory — follows external state if configured
   const { local: squadDirInfo, stateDir } = effectiveSquadDir(dest);
@@ -927,12 +940,14 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   let stopRequested = false;
   let isShuttingDown = false;
   let intervalId: NodeJS.Timeout | undefined;
+  let durationTimer: NodeJS.Timeout | undefined;
   let resolveRun: (() => void) | undefined;
 
   const shutdown = async (): Promise<void> => {
     if (isShuttingDown) return;
     isShuttingDown = true;
     if (intervalId) clearInterval(intervalId);
+    if (durationTimer) clearTimeout(durationTimer);
     process.off('SIGINT', shutdown);
     process.off('SIGTERM', shutdown);
     await eventBus.emit({
@@ -946,7 +961,32 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     resolveRun?.();
   };
 
+  const stopIfBoundReached = async (): Promise<boolean> => {
+    if (isShuttingDown) return true;
+    const reason = watchBoundReason(round, Date.now(), config.maxRounds, deadline, config.maxDuration);
+    if (!reason) return false;
+    console.log(`\n${YELLOW}🛑${RESET} [${new Date().toLocaleTimeString()}] Stop requested - ${reason}`);
+    stopRequested = true;
+    await shutdown();
+    return true;
+  };
+
+  const scheduleDurationStop = (): void => {
+    if (deadline === undefined) return;
+    const delay = Math.min(Math.max(deadline - Date.now(), 1), 2_147_483_647);
+    durationTimer = setTimeout(() => {
+      if (isShuttingDown) return;
+      if (Date.now() < deadline) {
+        scheduleDurationStop();
+      } else if (!roundInProgress) {
+        void stopIfBoundReached().catch(err => console.error(`${RED}✗${RESET} Watch shutdown error: ${(err as Error).message}`));
+      }
+    }, delay);
+  };
+  scheduleDurationStop();
+
   async function executeRound(): Promise<void> {
+    if (await stopIfBoundReached()) return;
     const ts = new Date().toLocaleTimeString();
     const roundStart = Date.now();
 
@@ -1104,7 +1144,13 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   }
 
   // Run immediately, then on interval
-  await executeRound();
+  roundInProgress = true;
+  try {
+    await executeRound();
+  } finally {
+    roundInProgress = false;
+    await stopIfBoundReached();
+  }
 
   return new Promise<void>((resolve) => {
     resolveRun = resolve;
@@ -1118,7 +1164,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
 
     intervalId = setInterval(
       async () => {
-        if (roundInProgress) return;
+        if (roundInProgress || isShuttingDown) return;
         roundInProgress = true;
         try {
           await executeRound();
@@ -1137,6 +1183,7 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
           }
         } finally {
           roundInProgress = false;
+          await stopIfBoundReached();
         }
       },
       interval * 60 * 1000,

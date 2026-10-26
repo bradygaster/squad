@@ -4,9 +4,10 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdir, rm, writeFile, readFile } from 'fs/promises';
+import { mkdir, mkdtemp, rm, writeFile, readFile } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
+import { tmpdir } from 'os';
 
 import {
   parseVersion,
@@ -310,14 +311,11 @@ describe('getInstallInstructions', () => {
 // Copilot Install — installFromCopilot
 // ============================================================================
 
-const INSTALL_TEST_ROOT = join(process.cwd(), 'test-fixtures', 'copilot-install-test');
+let INSTALL_TEST_ROOT: string;
 
 describe('installFromCopilot', () => {
   beforeEach(async () => {
-    if (existsSync(INSTALL_TEST_ROOT)) {
-      await rm(INSTALL_TEST_ROOT, { recursive: true, force: true });
-    }
-    await mkdir(INSTALL_TEST_ROOT, { recursive: true });
+    INSTALL_TEST_ROOT = await mkdtemp(join(tmpdir(), 'squad-copilot-install-'));
   });
 
   afterEach(async () => {
