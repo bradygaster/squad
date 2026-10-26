@@ -10,6 +10,7 @@ export default defineConfig({
   },
   test: {
     include: ['test/**/*.test.ts'],
+    globalSetup: ['test/setup/tracked-worktree-guard.ts'],
     // Redirect every profile-level directory Squad knows about into a temp dir before any
     // test loads, so no test can read or write the developer's real user profile.
     setupFiles: ['test/setup/profile-guard.ts'],
