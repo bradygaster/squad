@@ -110,6 +110,25 @@ function stepNamed(job: WorkflowJob, name: string): WorkflowStep {
 function serialized(job: WorkflowJob): string {
   return JSON.stringify(job);
 }
+
+function unionJobPermissions(workflow: WorkflowDefinition): Record<string, string> {
+  const permissionRank: Record<string, number> = { none: 0, read: 1, write: 2 };
+  const union: Record<string, string> = {};
+
+  for (const job of Object.values(workflow.jobs)) {
+    const permissions = job.permissions ?? workflow.permissions ?? {};
+    for (const [scope, access] of Object.entries(permissions)) {
+      if (!(access in permissionRank)) {
+        throw new Error(`Unsupported permission access "${access}" for "${scope}"`);
+      }
+      if (!(scope in union) || permissionRank[access] > permissionRank[union[scope]]) {
+        union[scope] = access;
+      }
+    }
+  }
+
+  return union;
+}
 const squadWorkflow = readFileSync(join(process.cwd(), 'workflows', 'squad.md'), 'utf8');
 
 describe('standalone release handoff', () => {
@@ -217,7 +236,13 @@ describe('standalone release handoff', () => {
       evidence_artifact: '${{ needs.verify.outputs.evidence_artifact }}',
     });
     expect(releaseWorkflow.jobs.npm.secrets).toEqual({ NPM_TOKEN: '${{ secrets.NPM_TOKEN }}' });
-    expect(releaseWorkflow.jobs.npm.permissions).toEqual({ contents: 'read', actions: 'read', 'id-token': 'write' });
+    const npmPublishPermissions = unionJobPermissions(npmPublishWorkflow);
+    expect(npmPublishPermissions).toEqual({
+      contents: 'write',
+      actions: 'read',
+      'id-token': 'write',
+    });
+    expect(releaseWorkflow.jobs.npm.permissions).toEqual(npmPublishPermissions);
   });
 
   it('keeps standalone bundles as artifacts by default and holds the public release for selected channels', () => {

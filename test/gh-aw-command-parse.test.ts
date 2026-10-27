@@ -109,6 +109,51 @@ describe('gh-aw: shared /squad command contract (#1824)', () => {
     });
   });
 
+  describe('reconciliation command', () => {
+    const sha = 'a'.repeat(64);
+
+    it.each([
+      `/squad reconcile activation 123 ${sha}`,
+      `/squad Reconcile Activation 123 ${sha}`,
+      `/squad rEcOnCiLe aCtIvAtIoN 123 ${sha}`,
+    ])('accepts command-word casing without changing the SHA: %s', body => {
+      const result = classifySquadCommand(comment(body), 'issue_comment');
+      expect(result).toMatchObject({
+        status: 'accepted',
+        source: 'comment',
+        mode: 'reconcile activation',
+        argumentText: body.slice('/squad '.length),
+      });
+      expect(commandRequiresAuthorization(result)).toBe(true);
+    });
+
+    it('accepts mixed-case keywords from workflow dispatch', () => {
+      expect(classifySquadCommand(dispatch(`Reconcile Activation 123 ${sha}`), 'workflow_dispatch'))
+        .toMatchObject({ status: 'accepted', mode: 'reconcile activation' });
+    });
+
+    it.each([
+      `Reconcile Activation 123 ${'A'.repeat(64)}`,
+      `Reconcile Activation 123 ${'a'.repeat(63)}A`,
+      `Reconcile Activation 123 ${'a'.repeat(63)}`,
+      `Reconcile Activation 0 ${sha}`,
+      `Reconcile Activation 0123 ${sha}`,
+      `Reconcile Activation -1 ${sha}`,
+      `Reconcile Activation 123 ${sha} extra`,
+    ])('rejects invalid IDs, hashes, and trailing arguments: %s', command => {
+      expect(classifySquadCommand(comment(`/squad ${command}`), 'issue_comment'))
+        .toMatchObject({ status: 'rejected', reason: 'Unknown command or malformed arguments.' });
+    });
+
+    it('does not route a casing-only comment edit twice', () => {
+      const previous = `/squad reconcile activation 123 ${sha}`;
+      const current = `/squad Reconcile Activation 123 ${sha}`;
+      const payload = { ...comment(current), action: 'edited', changes: { body: { from: previous } } };
+      const result = classifySquadCommand(payload, 'issue_comment');
+      expect(editedCommandShouldRoute(payload, 'issue_comment', result)).toBe(false);
+    });
+  });
+
   describe('workflow_dispatch call site', () => {
     it.each([
       ['implement', 'implement', null],

@@ -1,6 +1,7 @@
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { runInit } from '@bradygaster/squad-cli/core/init';
 import { runUpgrade } from '@bradygaster/squad-cli/core/upgrade';
@@ -35,8 +36,8 @@ function version(value: string): void {
 
 describe('upgrade preflights legacy casting before managed writes', () => {
   beforeEach(async () => {
-    root = mkdtempSync(join(process.cwd(), '.test-legacy-upgrade-'));
-    home = mkdtempSync(join(process.cwd(), '.test-legacy-home-'));
+    root = mkdtempSync(join(tmpdir(), 'squad-legacy-upgrade-'));
+    home = mkdtempSync(join(tmpdir(), 'squad-legacy-home-'));
     execFileSync('git', ['init', '--quiet'], { cwd: root });
     process.env.SQUAD_HOME_DIR_OVERRIDE = home;
     await runInit(root);

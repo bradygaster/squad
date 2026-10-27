@@ -13,6 +13,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { FSStorageProvider } from '../packages/squad-sdk/src/storage/fs-storage-provider.js';
 import {
@@ -28,7 +29,7 @@ import {
 const roots: string[] = [];
 
 function testRoot(prefix: string): string {
-  const root = path.join(process.cwd(), `.test-${prefix}-${randomUUID()}`);
+  const root = path.join(os.tmpdir(), `.test-${prefix}-${randomUUID()}`);
   roots.push(root);
   fs.mkdirSync(path.join(root, '.squad'), { recursive: true });
   return root;
