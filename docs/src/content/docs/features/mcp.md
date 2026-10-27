@@ -22,18 +22,22 @@ MCP bridges Squad agents and external services. Agents use MCP tools to send not
 
 ## MCP Configuration Files
 
-There are two places to configure MCP, depending on your platform:
+Where you add a server depends on your host:
 
 | Platform | Config File | How to Edit | Startup |
 |----------|------------|-----------|---------|
-| **Copilot CLI** | `.copilot/mcp-config.json` | Text editor | Add to shell initialization (`~/.bashrc`, `~/.zshrc`, etc.) |
-| **VS Code** | `.vscode/settings.json` | VS Code Settings GUI or JSON editor | Built-in; restarts Copilot extension |
+| **Copilot CLI** | `.mcp.json` at the repo root (shared with your team; Squad's `squad_state` server already lives there) or `~/.copilot/mcp-config.json` (personal, every project) | Text editor | Add to shell initialization (`~/.bashrc`, `~/.zshrc`, etc.) |
+| **VS Code** | `.vscode/mcp.json` (top-level key `servers`) or `~/.copilot/mcp-config.json` | Text editor, or **MCP: Add Server** from the Command Palette | Built-in; start or restart from **MCP: List Servers** |
 
-This guide covers both. Pick the one that matches your workflow.
+Copilot CLI doesn't read a `.copilot/mcp-config.json` inside the project (`squad init` writes a sample one there), so a server added to it never loads. Hosts added with `squad init --client` have their own MCP config (Claude Code shares `.mcp.json`), and Squad adds `squad_state` to it for you.
+
+This guide covers Copilot CLI and VS Code. Pick the one that matches your workflow.
 
 ---
 
 ## Step-by-Step: CLI Setup
+
+These steps use your personal config, `~/.copilot/mcp-config.json`. To share a server with your team, add the same `mcpServers` entry to `.mcp.json` at the repo root instead, next to `squad_state`, and commit it. Copilot CLI loads project servers once you trust the folder.
 
 ### Step 1: Create the `.copilot` directory and config file
 
@@ -53,7 +57,7 @@ Open `~/.copilot/mcp-config.json` in your editor:
 nano ~/.copilot/mcp-config.json
 
 # Windows (PowerShell)
-notepad $PROFILE\..\mcp-config.json
+notepad $HOME\.copilot\mcp-config.json
 ```
 
 Paste this base structure:
@@ -115,30 +119,24 @@ If configured correctly, you'll see your GitHub server and its available tools (
 
 ## Step-by-Step: VS Code Setup
 
-### Step 1: Open VS Code Settings
+### Step 1: Open the workspace MCP config
 
-- **macOS:** Code → Preferences → Settings
-- **Windows:** File → Preferences → Settings
+Create `.vscode/mcp.json` in your project, or run **MCP: Add Server** from the Command Palette (`Cmd+Shift+P` on macOS, `Ctrl+Shift+P` on Windows) and follow the prompts.
 
-Or use the keyboard shortcut: `Cmd+,` (macOS) or `Ctrl+,` (Windows).
+### Step 2: Add an MCP server
 
-### Step 2: Search for "MCP"
-
-In the settings search box, type `MCP` to find Copilot extension settings.
-
-### Step 3: Add an MCP server
-
-Look for the **"Copilot MCP Servers"** section (or similar — naming varies by Copilot version).
-
-Click **"Edit in settings.json"** to see the raw configuration:
+VS Code uses a top-level `servers` key, not `mcpServers`:
 
 ```json
-"copilot.mcp.servers": {
-  "github": {
-    "command": "node",
-    "args": ["/absolute/path/to/github-mcp.js"],
-    "env": {
-      "GITHUB_TOKEN": "${env:GITHUB_TOKEN}"
+{
+  "servers": {
+    "github": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/absolute/path/to/github-mcp.js"],
+      "env": {
+        "GITHUB_TOKEN": "${env:GITHUB_TOKEN}"
+      }
     }
   }
 }
@@ -146,7 +144,9 @@ Click **"Edit in settings.json"** to see the raw configuration:
 
 The `${env:GITHUB_TOKEN}` syntax reads from your shell environment. Replace `/absolute/path/to/github-mcp.js` with the actual path to your MCP server script.
 
-### Step 4: Add environment variables
+To keep a server personal instead, VS Code also reads `~/.copilot/mcp-config.json`, the same file Copilot CLI uses (with `mcpServers`).
+
+### Step 3: Add environment variables
 
 Open your VS Code integrated terminal (`` Ctrl+` `` or `` Cmd+` ``):
 
@@ -156,17 +156,17 @@ export GITHUB_TOKEN=$(gh auth token)
 
 This sets the token for the current terminal session. To make it permanent, add it to your shell profile (see CLI Step 3 above).
 
-### Step 5: Reload VS Code
+### Step 4: Start the server
 
-Press `Cmd+Shift+P` (macOS) or `Ctrl+Shift+P` (Windows) and select **"Copilot: Reload Copilot Servers"**.
+Run **MCP: List Servers** from the Command Palette, select the server, and choose **Start Server** (or **Restart Server** after you change its config). VS Code can also start servers on its own when you send a chat message.
 
 ---
 
-## Example: GitHub MCP (Already Included)
+## Example: GitHub MCP
 
-Most Squad installs come with GitHub MCP pre-configured. Here's what it looks like:
+Here's what a GitHub MCP entry looks like:
 
-### CLI: `.copilot/mcp-config.json`
+### Copilot CLI: `.mcp.json` or `~/.copilot/mcp-config.json`
 
 ```json
 {
@@ -184,12 +184,13 @@ Most Squad installs come with GitHub MCP pre-configured. Here's what it looks li
 
 Replace `/absolute/path/to/github-mcp.js` with the actual path to your GitHub MCP server script.
 
-### VS Code: `.vscode/settings.json`
+### VS Code: `.vscode/mcp.json`
 
 ```json
 {
-  "copilot.mcp.servers": {
+  "servers": {
     "github": {
+      "type": "stdio",
       "command": "node",
       "args": ["/absolute/path/to/github-mcp.js"],
       "env": {
@@ -352,20 +353,23 @@ Agents don't need special setup to discover tools. Here's the flow:
 
 **Fix:**
 
-1. **Verify config syntax:**
+1. **Verify the server is in a file your host reads:** for Copilot CLI that's `.mcp.json` at the repo root, `.github/mcp.json`, or `~/.copilot/mcp-config.json`. A server in the project's `.copilot/mcp-config.json` is never loaded; move it to `.mcp.json`.
+
+2. **Verify config syntax:**
    ```bash
    # CLI
+   cat .mcp.json | jq .
    cat ~/.copilot/mcp-config.json | jq .
    # Should be valid JSON; if not, `jq` will error
    ```
 
-2. **Restart Copilot to reload config:**
+3. **Restart Copilot to reload config:**
    ```bash
    copilot quit
    copilot
    ```
 
-3. **Test the MCP server directly:**
+4. **Test the MCP server directly:**
    ```bash
    node /absolute/path/to/mcp-server.js
    ```

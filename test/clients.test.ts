@@ -325,12 +325,21 @@ describe('claude adapter', () => {
   it('projects only the coordinator agent, .mcp.json and CLAUDE.md block', () => {
     installClients(['claude'], ctx());
     const agent = read('.claude/agents/squad.md');
-    expect(agent).toMatch(/^---\nname: squad\ndescription: ".*"\ntools: .*Task.*mcp__squad_state\n---/);
+    expect(agent).toMatch(/^---\nname: squad\ndescription: ".*"\n---/);
+    // No allowlist: the coordinator inherits squad_state and any MCP server the user adds.
+    expect(agent.split('\n---')[0]).not.toMatch(/^tools:/m);
     expect(fs.readdirSync(path.join(root, '.claude/agents'))).toEqual(['squad.md']);
     expect(readJson('.mcp.json').mcpServers.squad_state.command).toBe('squad');
     expect(read('CLAUDE.md')).toContain(BLOCK_BEGIN);
     expect(read('.gitignore')).toBe('# squad:claude\n.claude/worktrees/\n');
     expect(read('CLAUDE.md')).toContain('--mcp-config .mcp.json');
+  });
+  it('keeps a user-added MCP server in .mcp.json and does not hide it from the coordinator', () => {
+    fs.writeFileSync(path.join(root, '.mcp.json'), JSON.stringify({ mcpServers: { 'agent-memory': { command: 'agent-memory-mcp' } } }, null, 2));
+    installClients(['claude'], ctx());
+    installClients(['claude'], ctx());
+    expect(readJson('.mcp.json').mcpServers['agent-memory']).toEqual({ command: 'agent-memory-mcp' });
+    expect(read('.claude/agents/squad.md').split('\n---')[0]).not.toMatch(/^tools:/m);
   });
   it('.gitignore gets plain ignore lines (no HTML markers) and uninstall removes only what Squad added', () => {
     fs.writeFileSync(path.join(root, '.gitignore'), 'node_modules/\n.claude/worktrees/\n');

@@ -230,6 +230,8 @@ describe.skipIf(!cliBuilt)('squad <cmd> --help end-to-end', () => {
     const out = stdout + stderr;
     expect(out).toContain('squad watch');
     expect(out).toContain('Usage:');
+    expect(out).toContain('--max-rounds');
+    expect(out).toContain('--max-duration');
   });
 
   it('doctor --help prints help instead of running the doctor', async () => {

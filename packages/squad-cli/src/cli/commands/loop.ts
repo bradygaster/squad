@@ -140,9 +140,8 @@ export function buildLoopAgentCommand(
     return buildCustomAgentCommand(options.agentCmd, prompt);
   }
   const args = ['-p', prompt];
-  if (options.copilotFlags) {
-    args.push(...options.copilotFlags.trim().split(/\s+/));
-  }
+  const copilotFlags = options.copilotFlags?.trim() || '--yolo';
+  args.push(...copilotFlags.split(/\s+/));
   return { cmd: 'copilot', args: withAdditionalMcpConfig('copilot', args, options.teamRoot) };
 }
 

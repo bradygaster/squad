@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
+import * as os from 'node:os';
 import { randomUUID } from 'node:crypto';
 import { FSStorageProvider } from '../packages/squad-sdk/src/storage/fs-storage-provider.js';
 import {
@@ -15,7 +16,7 @@ import { ensureMemoryGovernanceUpgradeDefaults } from '../packages/squad-cli/src
 const roots: string[] = [];
 
 function testRoot(prefix: string): string {
-  const root = path.join(process.cwd(), `.test-${prefix}-${randomUUID()}`);
+  const root = path.join(os.tmpdir(), `.test-${prefix}-${randomUUID()}`);
   roots.push(root);
   fs.mkdirSync(path.join(root, '.squad'), { recursive: true });
   return root;
@@ -340,6 +341,57 @@ describe('LocalMemoryStore', () => {
     expect(result.stored).toBe(false);
     expect(result.classification.reason).toContain('hostInjectedCopilotAdapter is enabled');
     expect(JSON.stringify(await store.auditLog())).not.toContain('Semantic memory should be sent');
+  });
+
+  it('keeps local search working when hostInjectedCopilotAdapter is enabled without a host client', async () => {
+    const root = testRoot('memory-provider-missing-client-search');
+    const store = new LocalMemoryStore(new FSStorageProvider(), root);
+    await store.write({ content: 'Use Vitest for SDK regression tests.', title: 'Test runner', requestedClass: 'LOCAL' });
+    await store.configureHostInjectedCopilotAdapter({ enabled: true });
+
+    const results = await store.search('vitest');
+
+    expect(results.map(r => r.title)).toEqual(['Test runner']);
+    const audit = await store.auditLog();
+    expect(audit).toContainEqual(expect.objectContaining({
+      action: 'provider-error',
+      class: 'COPILOT_MEMORY',
+      title: 'Host-injected Copilot adapter search skipped',
+      provider: 'hostInjectedCopilotAdapter',
+    }));
+    expect(audit.at(-1)).toMatchObject({ action: 'search', reason: 'Search returned 1 result(s)' });
+    expect(JSON.stringify(audit)).not.toContain('vitest');
+  });
+
+  it('keeps local search working when the host-injected client search throws', async () => {
+    const root = testRoot('memory-provider-client-search-throws');
+    const client: CopilotMemoryProviderClient = {
+      async write() {
+        return { id: 'unused' };
+      },
+      async search() {
+        throw new Error('raw client failure mentioning vitest');
+      },
+      async delete() {
+        return false;
+      },
+    };
+    const store = new LocalMemoryStore(new FSStorageProvider(), root, { hostInjectedCopilotAdapterClient: client });
+    await store.write({ content: 'Use Vitest for SDK regression tests.', title: 'Test runner', requestedClass: 'LOCAL' });
+    await store.configureHostInjectedCopilotAdapter({ enabled: true });
+
+    const results = await store.search('vitest');
+
+    expect(results.map(r => r.title)).toEqual(['Test runner']);
+    const auditLog = await store.auditLog();
+    expect(auditLog).toContainEqual(expect.objectContaining({
+      action: 'provider-error',
+      title: 'Host-injected Copilot adapter search failed',
+      provider: 'hostInjectedCopilotAdapter',
+    }));
+    const auditJson = JSON.stringify(auditLog);
+    expect(auditJson).toContain('hostInjectedCopilotAdapter provider search failed (Error); raw provider error text omitted');
+    expect(auditJson).not.toContain('raw client failure');
   });
 
   it('rejects provider=copilot because no real Copilot Memory API exists locally', async () => {
