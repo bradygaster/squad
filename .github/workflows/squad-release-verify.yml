@@ -110,7 +110,7 @@ jobs:
         run: npm run build
 
       - name: Run Windows platform suite with JSON report
-        run: npx vitest run test/mcp-root-write.test.ts --reporter=default --reporter=json --outputFile="$env:EVIDENCE_DIR\vitest-report.json"
+        run: npx vitest run test/mcp-root-write.test.ts test/memory-providers.test.ts --reporter=default --reporter=json --outputFile="$env:EVIDENCE_DIR\vitest-report.json"
 
       - name: Require the Windows-only test to execute
         if: always()

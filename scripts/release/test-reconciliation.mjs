@@ -46,6 +46,13 @@ export const CATEGORY_RULES = Object.freeze([
   },
   {
     category: 'env-gated',
+    file: 'test/memory-providers.test.ts',
+    title: '[platform: win32] retries transient Windows index rename sharing violations',
+    runsOn: 'win32',
+    reason: "it.skipIf(process.platform !== 'win32'): Windows-only index rename sharing violations",
+  },
+  {
+    category: 'env-gated',
     file: 'test/mcp-root-write.test.ts',
     title: '[platform: non-win32] removes the legacy raw POSIX symlink hash while preserving unrelated entries',
     runsOn: 'non-win32',

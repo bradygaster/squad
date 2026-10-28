@@ -11,10 +11,12 @@
  */
 
 import { afterEach, describe, expect, it } from 'vitest';
+import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import * as os from 'node:os';
 import { randomUUID } from 'node:crypto';
+import { pathToFileURL } from 'node:url';
 import { FSStorageProvider } from '../packages/squad-sdk/src/storage/fs-storage-provider.js';
 import {
   LocalMemoryStore,
@@ -560,6 +562,75 @@ describe('LocalMemoryStore — concurrent writes and index integrity', () => {
     for (const id of ids) {
       expect(activeIds.has(id!)).toBe(true);
     }
+  });
+
+  it('serializes writes from separate processes sharing the same memory index', async () => {
+    const root = testRoot('concurrent-writes-separate-stores');
+    const writesPerStore = 25;
+    const memoryDir = path.join(root, '.squad', 'memory');
+    for (const dir of ['local', 'policy-inbox', 'semantic-inbox', 'tombstones']) {
+      fs.mkdirSync(path.join(memoryDir, dir), { recursive: true });
+    }
+    fs.writeFileSync(path.join(memoryDir, 'config.json'), '{}\n');
+    fs.writeFileSync(path.join(memoryDir, 'audit.jsonl'), '');
+
+    const memoryModule = pathToFileURL(path.resolve('packages/squad-sdk/dist/memory/index.js')).href;
+    const storageModule = pathToFileURL(path.resolve('packages/squad-sdk/dist/storage/fs-storage-provider.js')).href;
+    const runWriter = (prefix: string) => {
+      const script = `
+        import { LocalMemoryStore } from ${JSON.stringify(memoryModule)};
+        import { FSStorageProvider } from ${JSON.stringify(storageModule)};
+        const store = new LocalMemoryStore(new FSStorageProvider(), ${JSON.stringify(root)});
+        const results = await Promise.all(Array.from({ length: ${writesPerStore} }, (_, i) =>
+          store.write({ content: ${JSON.stringify(prefix)} + i, title: ${JSON.stringify(prefix)} + i, requestedClass: 'LOCAL' })
+        ));
+        if (results.some(result => !result.stored)) throw new Error('A memory write was rejected');
+      `;
+      return new Promise<void>((resolve, reject) => {
+        const child = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'ignore', 'pipe'] });
+        let stderr = '';
+        child.stderr?.setEncoding('utf8');
+        child.stderr?.on('data', chunk => { stderr += chunk; });
+        child.once('error', reject);
+        child.once('close', code => {
+          if (code === 0) resolve();
+          else reject(new Error(`Memory writer exited with code ${code}: ${stderr}`));
+        });
+      });
+    };
+    const writers = await Promise.allSettled([runWriter('first-'), runWriter('second-')]);
+    const failedWriter = writers.find(result => result.status === 'rejected');
+    if (failedWriter?.status === 'rejected') throw failedWriter.reason;
+
+    const indexDir = path.join(root, '.squad', 'memory');
+    const index = JSON.parse(fs.readFileSync(path.join(indexDir, 'index.json'), 'utf8')) as Array<{ id: string; status: string; title: string }>;
+    const activeEntries = index.filter(entry => entry.status === 'active');
+    expect(activeEntries).toHaveLength(writesPerStore * 2);
+    const titles = new Set(activeEntries.map(entry => entry.title));
+    for (const prefix of ['first-', 'second-']) {
+      for (let i = 0; i < writesPerStore; i++) expect(titles.has(`${prefix}${i}`)).toBe(true);
+    }
+    expect(fs.readdirSync(indexDir).some(name => name.endsWith('.tmp'))).toBe(false);
+  }, 30_000);
+
+  it.skipIf(process.platform !== 'win32')('[platform: win32] retries transient Windows index rename sharing violations', async () => {
+    const root = testRoot('index-rename-retry');
+    const storage = new FSStorageProvider();
+    const rename = storage.rename.bind(storage);
+    let attempts = 0;
+    storage.rename = async (oldPath, newPath) => {
+      attempts++;
+      if (attempts < 3) throw Object.assign(new Error('file is busy'), { code: 'EPERM' });
+      await rename(oldPath, newPath);
+    };
+
+    const store = new LocalMemoryStore(storage, root);
+    const result = await store.write({ content: 'Retry the index rename.', title: 'Rename retry', requestedClass: 'LOCAL' });
+
+    expect(result.stored).toBe(true);
+    expect(attempts).toBe(3);
+    const indexDir = path.join(root, '.squad', 'memory');
+    expect(fs.readdirSync(indexDir).some(name => name.endsWith('.tmp'))).toBe(false);
   });
 });
 
