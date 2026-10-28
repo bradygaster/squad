@@ -4,11 +4,12 @@ MCP (Model Context Protocol) servers extend Squad with tools for external servic
 
 ## Config File Locations
 
-Users configure MCP servers at these locations (checked in priority order):
-1. **Repository-level:** `.copilot/mcp-config.json` (team-shared, committed to repo)
-2. **Workspace-level:** `.vscode/mcp.json` (VS Code workspaces)
-3. **User-level:** `~/.copilot/mcp-config.json` (personal)
-4. **CLI override:** `--additional-mcp-config` flag (session-specific)
+Squad registers its own `squad_state` server in the repo-root `.mcp.json`. Users add other servers next to it, in the file their host reads:
+1. **Repository-level:** `.mcp.json` at the repo root (team-shared, committed). Copilot CLI and Claude Code read it; Copilot CLI also reads `.github/mcp.json`. Copilot CLI loads project-level servers once the folder is trusted, and does not read a project-level `.copilot/mcp-config.json`.
+2. **Workspace-level:** `.vscode/mcp.json` (VS Code workspaces; the top-level key is `servers`, not `mcpServers`)
+3. **User-level:** `~/.copilot/mcp-config.json` (personal; Copilot CLI loads it in every project, and VS Code reads it as its Copilot global config)
+4. **CLI override:** `--additional-mcp-config @<file>` flag (session-specific; `squad loop` and `squad watch` execute mode pass `@.mcp.json` this way)
+5. **Other hosts** (`squad init --client ...`): Kiro `.kiro/settings/mcp.json`, Cursor `.cursor/mcp.json`, OpenCode `opencode.json` (`mcp`), Codex `.codex/config.toml` (`[mcp_servers.<name>]`). For Antigravity use `agy mcp add`, because Squad regenerates `.agents/agents/squad.md`.
 
 ## Sample Config — Trello
 
