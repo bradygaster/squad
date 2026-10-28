@@ -301,6 +301,7 @@ export class ExecuteCapability implements WatchCapability {
           : `agent failed: ${result.error}${contextSummary}`,
         data: {
           dispatched: eligible.length,
+          issues: eligible.map(issue => issue.number),
           executed: result.success ? eligible.length : 0,
           success: result.success,
           ...(contextUtilization ? { contextUtilization } : {}),
