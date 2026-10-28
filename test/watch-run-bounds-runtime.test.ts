@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock('@bradygaster/squad-sdk/platform', () => ({
+  getRemoteUrl: () => undefined,
   createPlatformAdapter: () => ({
     type: 'github',
     listWorkItems: mocks.listWorkItems,
@@ -27,6 +28,7 @@ vi.mock('@bradygaster/squad-sdk/ralph/triage', () => ({
 vi.mock('@bradygaster/squad-sdk/ralph/capabilities', () => ({
   loadCapabilities: async () => null,
   filterByCapabilities: (issues: unknown[]) => ({ handled: issues, skipped: [] }),
+  getPodId: () => undefined,
 }));
 vi.mock('@bradygaster/squad-sdk/ralph', () => ({
   RalphMonitor: class {
