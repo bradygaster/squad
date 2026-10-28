@@ -213,6 +213,28 @@ describe('CLI: watch execute mode', () => {
 
       consoleLogSpy.mockRestore();
     });
+
+    it('reports local verification failures separately from remote CI failures', () => {
+      const consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const state = {
+        untriaged: 0,
+        assigned: 0,
+        drafts: 0,
+        needsReview: 0,
+        changesRequested: 0,
+        ciFailures: 0,
+        readyToMerge: 0,
+        executed: 0,
+      };
+
+      reportBoard(state, 1, { verificationFailures: 2 });
+
+      const output = consoleLogSpy.mock.calls.map(call => call.join(' ')).join('\n');
+      expect(output).toContain('Verification failures');
+      expect(output).toContain('2');
+      expect(output).not.toContain('CI failures');
+      consoleLogSpy.mockRestore();
+    });
   });
 
   describe('classifyIssue', () => {

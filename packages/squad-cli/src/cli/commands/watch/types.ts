@@ -10,7 +10,7 @@ import type { ExecutorIdentity, WorkClaimProvider } from '@bradygaster/squad-sdk
 import type { WatchClaimMetrics } from './claim-metrics.js';
 
 /** Phase within a single watch round. */
-export type WatchPhase = 'pre-scan' | 'post-triage' | 'post-execute' | 'housekeeping';
+export type WatchPhase = 'pre-scan' | 'post-triage' | 'post-execute' | 'verification' | 'housekeeping';
 
 /** Result of a capability preflight check. */
 export interface PreflightResult {

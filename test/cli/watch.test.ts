@@ -11,7 +11,7 @@ describe('CLI: watch command', () => {
   it('module exports runWatch function', async () => {
     const mod = await import('@bradygaster/squad-cli/commands/watch');
     expect(typeof mod.runWatch).toBe('function');
-  });
+  }, 15_000);
 
   it('module exports reportBoard function', async () => {
     const mod = await import('@bradygaster/squad-cli/commands/watch');

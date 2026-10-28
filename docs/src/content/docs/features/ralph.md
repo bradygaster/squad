@@ -165,6 +165,18 @@ squad watch --execute --interval 15             # check every 15 minutes
 squad watch --execute --max-concurrent 2        # work on 2 issues in parallel
 ```
 When `--execute` is enabled, Ralph spawns Copilot CLI sessions for actionable issues (assigned to a squad member, not blocked, not already assigned to a human). Squad automatically injects `--yolo --additional-mcp-config @.mcp.json` into every spawned Copilot invocation so that MCP tools are available in non-interactive (`-p`) mode — see [Copilot CLI MCP Trust Gate](./copilot-mcp-trust.md) for details.
+#### Verification gate
+To check work after Ralph dispatches it, configure explicit commands under `watch.verify.commands` in `.squad/config.json`:
+```json
+{
+  "watch": {
+    "verify": { "commands": ["npm run typecheck", "npm test"] }
+  }
+}
+```
+The commands run sequentially after dispatch and stop at the first failure. If a check fails or commands are not configured, watch reports the failure and stops before the next dispatch; review the work before restarting it. Verification is disabled unless `watch.verify` is configured.
+
+> **Security:** Verification commands run with the watch process permissions and environment against a working tree Ralph has edited. Configure only checks you trust. Watch prints this warning when verification is enabled.
 #### Custom instructions with `.squad/ralph-instructions.md`
 If `.squad/ralph-instructions.md` exists, `squad watch --execute` tells the spawned Ralph session to read that file first and follow **all** of its sections. This is the escape hatch for repo-specific Ralph behavior.
 Use it when you want Ralph to consistently apply local operating rules such as:
