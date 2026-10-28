@@ -159,3 +159,58 @@ describe('publish-policy: live workflow files', () => {
     });
   }
 });
+
+describe('publish-policy: release recovery after staging cleanup failure', () => {
+  const workflow = readFileSync(
+    join(process.cwd(), '.github', 'workflows', 'squad-npm-publish.yml'),
+    'utf-8',
+  );
+  const section = (startMarker: string, endMarker: string): string => {
+    const start = workflow.indexOf(startMarker);
+    if (start === -1) return '';
+    const end = workflow.indexOf(endMarker, start + startMarker.length);
+    return workflow.slice(start, end === -1 ? undefined : end);
+  };
+  const sdkCleanup = section(
+    '      - name: Remove SDK staging tag\n',
+    '\n      - name: Remove CLI staging tag',
+  );
+  const cliCleanup = section(
+    '      - name: Remove CLI staging tag\n',
+    '\n      - name: Record staging tag cleanup results',
+  );
+  const cleanupEvidence = section(
+    '      - name: Record staging tag cleanup results\n',
+    '\n      - name: Upload reconciliation evidence',
+  );
+  const draftJob = section(
+    '  publish-draft-release:\n',
+    '\n  promote-insider-tag:',
+  );
+
+  it('records staging cleanup failures without failing the publish job', () => {
+    expect(sdkCleanup).toMatch(/id: remove-sdk-staging-tag/);
+    expect(sdkCleanup).toMatch(
+      /if: success\(\) && steps\.existing\.outputs\.stage_pair == 'true'/,
+    );
+    expect(sdkCleanup).toMatch(
+      /assert-publish-identity\.mjs[\s\S]*?if npm dist-tag rm @bradygaster\/squad-sdk[\s\S]*?outcome=failure[\s\S]*?exit_code=\$status/,
+    );
+    expect(cliCleanup).toMatch(/id: remove-cli-staging-tag/);
+    expect(cliCleanup).toMatch(
+      /if: success\(\) && steps\.existing\.outputs\.stage_pair == 'true'/,
+    );
+    expect(cliCleanup).toMatch(
+      /assert-publish-identity\.mjs[\s\S]*?if npm dist-tag rm @bradygaster\/squad-cli[\s\S]*?outcome=failure[\s\S]*?exit_code=\$status/,
+    );
+    expect(cleanupEvidence).toMatch(
+      /SDK_CLEANUP_OUTCOME: \$\{\{ steps\.remove-sdk-staging-tag\.outputs\.outcome[\s\S]*?CLI_CLEANUP_OUTCOME: \$\{\{ steps\.remove-cli-staging-tag\.outputs\.outcome[\s\S]*?staging-tag-cleanup\.json[\s\S]*?::warning::Could not remove/,
+    );
+  });
+
+  it('publishes the existing draft when preparation succeeded and reconciliation is complete', () => {
+    expect(draftJob).toMatch(
+      /if: always\(\) && needs\.prepare\.result == 'success' && inputs\.verify_run_id != '' && inputs\.publish_draft_release && needs\.publish\.outputs\.outcome == 'COMPLETE'/,
+    );
+  });
+});
