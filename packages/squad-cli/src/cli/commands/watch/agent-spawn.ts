@@ -417,19 +417,61 @@ export function runProcessTreeCommand(
   });
 }
 
-function posixProcessGroupCanExecute(pid: number): boolean {
+interface PosixProcess {
+  pid: number;
+  ppid: number;
+  pgid: number;
+  state: string;
+}
+
+function readPosixProcesses(): PosixProcess[] {
+  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,pgid=,stat='], {
+    encoding: 'utf-8',
+    timeout: 2_000,
+  });
+  return rows.split(/\r?\n/).flatMap((row) => {
+    const match = row.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/);
+    return match
+      ? [{
+          pid: Number(match[1]),
+          ppid: Number(match[2]),
+          pgid: Number(match[3]),
+          state: match[4]!,
+        }]
+      : [];
+  });
+}
+
+function posixDescendants(rootPid: number): number[] {
   try {
-    const rows = execFileSync('ps', ['-A', '-o', 'pgid=,stat='], {
-      encoding: 'utf-8',
-      timeout: 2_000,
-    });
-    return rows.split(/\r?\n/).some((row) => {
-      const match = row.trim().match(/^(\d+)\s+(\S+)/);
-      return match?.[1] === String(pid) && !match[2]!.startsWith('Z');
-    });
+    const processes = readPosixProcesses();
+    const children = new Map<number, number[]>();
+    for (const process of processes) {
+      const siblings = children.get(process.ppid) ?? [];
+      siblings.push(process.pid);
+      children.set(process.ppid, siblings);
+    }
+    const descendants: number[] = [];
+    const pending = [...(children.get(rootPid) ?? [])];
+    while (pending.length > 0) {
+      const pid = pending.pop()!;
+      descendants.push(pid);
+      pending.push(...(children.get(pid) ?? []));
+    }
+    return descendants;
+  } catch {
+    return [];
+  }
+}
+
+function posixProcessTreeCanExecute(rootPid: number, descendants: ReadonlySet<number>): boolean {
+  try {
+    return readPosixProcesses().some(process =>
+      (process.pgid === rootPid || descendants.has(process.pid))
+      && !process.state.startsWith('Z'));
   } catch {
     try {
-      process.kill(-pid, 0);
+      process.kill(-rootPid, 0);
       return true;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
@@ -438,9 +480,9 @@ function posixProcessGroupCanExecute(pid: number): boolean {
   }
 }
 
-async function waitForPosixProcessGroupExit(pid: number): Promise<void> {
+async function waitForPosixProcessTreeExit(rootPid: number, descendants: ReadonlySet<number>): Promise<void> {
   while (true) {
-    if (!posixProcessGroupCanExecute(pid)) return;
+    if (!posixProcessTreeCanExecute(rootPid, descendants)) return;
     await new Promise(resolve => setTimeout(resolve, 10));
   }
 }
@@ -455,9 +497,15 @@ export async function terminateProcessTree(
   platform: NodeJS.Platform = process.platform,
 ): Promise<void> {
   const pid = child.pid;
+  const descendants = platform !== 'win32' && pid
+    ? new Set(posixDescendants(pid))
+    : new Set<number>();
   killProcessTree(child, platform);
   if (platform !== 'win32' && pid && child.exitCode == null && child.signalCode == null) {
-    await waitForPosixProcessGroupExit(pid);
+    for (const descendant of descendants) {
+      try { process.kill(descendant, 'SIGKILL'); } catch { /* already exited */ }
+    }
+    await waitForPosixProcessTreeExit(pid, descendants);
   }
 }
 
