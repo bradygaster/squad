@@ -92,7 +92,7 @@ export async function loadExternalCapabilities(
         );
         continue;
       }
-      const validPhases = ['pre-scan', 'post-triage', 'post-execute', 'housekeeping'];
+      const validPhases = ['pre-scan', 'post-triage', 'post-execute', 'verification', 'housekeeping'];
       if (!validPhases.includes(cap.phase)) {
         console.log(
           `${YELLOW}⚠️ Failed to load capability from ${filename}: invalid phase '${cap.phase}' (must be one of: ${validPhases.join(', ')})${RESET}`,
