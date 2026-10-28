@@ -21,14 +21,20 @@ Over multiple sessions, Squad's `.squad/` files grow — agent histories, decisi
 
 ## Nap
 
-**What it does:** Summarizes accumulated work into smaller, more efficient memory files. This is the same as running `/compact` in the CLI or `squad nap` from the command line.
+**What it does:** `squad nap` makes `.squad/` files smaller so agents load less at spawn. It moves old content into archive files and deletes old logs. It does not summarize anything. In the Squad interactive shell (`squad` with no arguments), the same command is `/nap`. It is not the same as `/compact` in GitHub Copilot CLI, which shortens the current chat session and does not touch `.squad/` files.
 
-When you tell the team to "take a nap," each agent:
+A nap does four things:
 
-1. Reviews its `history.md` and other state files
-2. Compresses older entries into concise summaries
-3. Archives verbose detail while preserving key decisions and learnings
-4. Reports how much context was reclaimed
+1. **Agent histories.** Each `agents/{name}/history.md` over 15 KB keeps its `## Core Context` section and its last 5 other `##` sections (3 with `--deep`). Older `##` sections move word for word to `history-archive.md` in the same folder. Entries written as `###` headings under one `## Learnings` section count as one section, so they are not moved.
+2. **Logs.** Files in `log/` and `orchestration-log/` older than 7 days are deleted.
+3. **Decision inbox.** Files left in `decisions/inbox/` are appended to `decisions.md` and deleted.
+4. **Decisions.** When `decisions.md` is over 20 KB, entries older than 30 days move to `decisions-archive.md`. If none are that old, the oldest dated entries move until the file fits. Undated entries always stay. Nap skips this step if git ignores the archive file and does not track it, because the move could never be committed.
+
+It then reports how much space it reclaimed.
+
+Summarizing is a separate job that an AI agent does: you can ask the coordinator to summarize a member's history. Scribe doesn't touch histories; its charter limits it to merging decisions. See [Memory & Knowledge](/squad/docs/concepts/memory-and-knowledge/).
+
+"Team, take a nap" in a chat is a plain request to the coordinator. No built-in rule maps that phrase to `squad nap`, so the coordinator decides what to do. For predictable results, run `squad nap` yourself.
 
 ### Nap ≠ Shutting Down
 
@@ -37,19 +43,19 @@ This is the most common misconception:
 | Action | What happens to `.squad/` files |
 |--------|-------------------------------|
 | **Shutting down Squad** (closing the CLI, killing the process) | Files stay exactly as they are. Nothing is summarized or compacted. |
-| **Nap** (`team, take a nap` or `squad nap`) | Files are actively summarized and compacted. Older entries are archived, working context gets leaner. |
+| **Nap** (`squad nap`, or `/nap` in the Squad interactive shell) | Old history sections and old decisions move to archive files, and old logs are deleted. Nothing is summarized. |
 
-Shutting down Squad every night does **not** perform context hygiene. You must explicitly tell the team to take a nap.
+Shutting down Squad every night does **not** perform context hygiene. Nap never runs on its own: run `squad nap` when you want it.
 
 ### CLI equivalents
 
 ```bash
 squad nap              # Standard context hygiene
-squad nap --deep       # Thorough cleanup with recursive descent
+squad nap --deep       # Same, but keep only the last 3 history sections (default 5)
 squad nap --dry-run    # Preview what would be cleaned up
 ```
 
-In the interactive shell, use `/compact` for the same effect.
+In the Squad interactive shell, use `/nap` with the same flags. In GitHub Copilot CLI (`copilot --agent squad`), run `squad nap` from a terminal. Copilot CLI's own `/compact` shortens the chat session, not `.squad/` files.
 
 ---
 
@@ -106,7 +112,7 @@ This runs both behaviors and gives you a report on how much context was reduced 
 team, take a nap
 ```
 
-Compacts and summarizes all agent memory files, reclaiming context space.
+Asks the coordinator to tidy the team's memory files. For a predictable result, run `squad nap`.
 
 ```
 team, reskill

@@ -75,7 +75,7 @@ prerequisites, all supported methods, and update commands.
 | `squad upstream add\|remove\|list\|sync` | Manage upstream Squad sources | Yes |
 | `copilot --agent squad` | Launch interactive shell explicitly | No |
 | `squad nap` | Context hygiene (compress, prune, archive .squad/ state) | Yes |
-| `squad nap --deep` | Thorough cleanup with recursive descent | Yes |
+| `squad nap --deep` | Same as `squad nap`, but keeps only the last 3 `##` history sections (default 5) | Yes |
 | `squad nap --dry-run` | Preview cleanup actions without changes | Yes |
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) | No |
 | `squad state-mcp [--experimental-backend]` | Run the `squad_state` stdio MCP server; pass `--experimental-backend` (or `SQUAD_EXPERIMENTAL_BACKEND=1`) to also expose the 11 experimental `squad_backend_*` conversation tools (transcript/event-log only until a harness is registered) | Yes |
@@ -276,12 +276,12 @@ Agent name matching is **case-insensitive** — `@keaton`, `@Keaton`, and `@KEAT
 ├── skills/              # Reusable knowledge (markdown files)
 │   ├── auth-rate-limiting.md
 │   └── ...
-├── agents/
-│   ├── neo/
-│   │   ├── charter.md   # Role definition, expertise, tools
-│   │   └── history.md   # Accumulated knowledge
-│   └── ...
-└── history-archive/     # Archived old session logs
+└── agents/
+    ├── neo/
+    │   ├── charter.md          # Role definition, expertise, tools
+    │   ├── history.md          # Accumulated knowledge
+    │   └── history-archive.md  # Old history sections moved out by squad nap
+    └── ...
 ```
 
 ### `team.md`

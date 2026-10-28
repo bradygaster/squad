@@ -25,6 +25,8 @@ squad plugin list --json
 
 This example is declarative only. Squad does not install `mempalace`, run `mempalace`, start `mempalace-mcp`, install assistant hooks, or execute memory provider code during plugin install.
 
+Installing this sample does not give agents a memory. It copies one guidance file to `.squad/memory/providers/mempalace-provider.md` and records metadata under `.squad/plugins/`. Agents spawned by the Squad coordinator in GitHub Copilot, or by the Squad interactive shell (`squad` with no arguments), do not see that file unless you point them at it. Only SDK code that spawns agents through `AgentLifecycleManager` adds it to the agent prompt automatically.
+
 Install and configure MemPalace separately:
 
 ```bash

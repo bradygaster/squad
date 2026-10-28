@@ -6,7 +6,7 @@ The plugin MVP is designed for reusable Squad knowledge and configuration, not e
 
 Copilot plugin dependencies can be declared with `copilot.requires`. They are metadata only: Squad records and displays them so users know which Copilot plugins to install through Copilot's own lifecycle.
 
-External packages, repositories, and MCP servers can be described with `repository`, `upstream`, and `mcp`. Typed provider contracts can be described with `providers`. They are also metadata only: Squad may display install hints and inject provider summaries into spawned-agent context, but it must not run package managers, start MCP servers, configure assistant clients, call provider tools, query live provider backends, or install assistant hooks.
+External packages, repositories, and MCP servers can be described with `repository`, `upstream`, and `mcp`. Typed provider contracts can be described with `providers`. They are also metadata only: Squad may display install hints and, on spawn paths that inject plugin context (today only the SDK's `AgentLifecycleManager`), add provider summaries to spawned-agent context, but it must not run package managers, start MCP servers, configure assistant clients, call provider tools, query live provider backends, or install assistant hooks.
 
 ---
 
