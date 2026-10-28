@@ -331,4 +331,95 @@ describe('CLI: cost command', () => {
     expect(output).toContain('Coverage: 0 of 1 turn attempt with recorded usage (0.0%)');
     expect(output).not.toContain('Legacy Agent');
   });
+
+  describe('Squad session scope', () => {
+    // Shaped like the interactive shell's writes: one SDK session for the
+    // coordinator plus one per agent, all stamped with the shell session id.
+    function shellTurn(
+      squadSessionId: string | undefined,
+      sessionId: string,
+      agentName: string,
+      startedAt: string,
+      inputTokens: number,
+    ): Array<Record<string, unknown>> {
+      const turnId = `${sessionId}:${startedAt}`;
+      const stamp = squadSessionId ? { squadSessionId } : {};
+      return [
+        { version: 1, kind: 'turn-start', turnId, sessionId, ...stamp, agentName, timestamp: startedAt },
+        {
+          version: 1,
+          kind: 'usage',
+          turnId,
+          sessionId,
+          ...stamp,
+          agentName,
+          model: 'claude-sonnet-5',
+          inputTokens,
+          outputTokens: 100,
+          estimatedCost: inputTokens / 100000,
+          timestamp: new Date(Date.parse(startedAt) + 60_000).toISOString(),
+        },
+      ];
+    }
+
+    const yesterday = (squadSessionId?: string) => [
+      ...shellTurn(squadSessionId, 'sdk-coord-a', 'coordinator', '2026-10-25T09:00:00.000Z', 1000),
+      ...shellTurn(squadSessionId, 'sdk-flight-a', 'Flight', '2026-10-25T09:01:00.000Z', 9000),
+    ];
+    const today = (squadSessionId?: string) => [
+      ...shellTurn(squadSessionId, 'sdk-coord-b', 'coordinator', '2026-10-26T10:00:00.000Z', 1000),
+      ...shellTurn(squadSessionId, 'sdk-control-b', 'Control', '2026-10-26T10:01:00.000Z', 5000),
+      ...shellTurn(squadSessionId, 'sdk-eecom-b', 'EECOM', '2026-10-26T10:30:00.000Z', 7000),
+    ];
+
+    async function costOutput(args: string[]): Promise<string> {
+      const { runCost } = await import('../../packages/squad-cli/src/cli/commands/cost.ts');
+      const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+      await runCost(args, TEAM_ROOT);
+      return logSpy.mock.calls.map(call => call.join(' ')).join('\n');
+    }
+
+    it('defaults to the newest Squad session and ignores session logs', async () => {
+      mkdirSync(LOG_DIR, { recursive: true });
+      // A session log written by another host in the middle of today's run.
+      writeFileSync(join(LOG_DIR, '2026-10-26T10-15-00Z-session.md'), '# session\n', 'utf8');
+      writeUsageLedger([...yesterday('shell-a'), ...today('shell-b')]);
+
+      const output = await costOutput([]);
+
+      expect(output).not.toContain('Flight');
+      expect(output).toContain('Control');
+      expect(output).toContain('EECOM');
+      expect(output).toContain('3 agents across 3 turns in 1 session');
+      expect(output).toContain('Coverage: 3 of 3 turn attempts with recorded usage (100.0%)');
+    });
+
+    it('counts Squad sessions rather than SDK sessions with --all', async () => {
+      writeUsageLedger([...yesterday('shell-a'), ...today('shell-b')]);
+
+      const output = await costOutput(['--all']);
+
+      expect(output).toContain('4 agents across 5 turns in 2 sessions');
+    });
+
+    it('falls back to the newest session log when the newest record has no Squad session id', async () => {
+      mkdirSync(LOG_DIR, { recursive: true });
+      writeFileSync(join(LOG_DIR, '2026-10-26T09-00-00Z-session.md'), '# session\n', 'utf8');
+      writeUsageLedger([...yesterday('shell-a'), ...today()]);
+
+      const output = await costOutput([]);
+
+      expect(output).not.toContain('Flight');
+      expect(output).toContain('3 agents across 3 turns in 3 sessions');
+    });
+
+    it('does not reach into older sessions when the agent filter misses the current one', async () => {
+      writeUsageLedger([...yesterday('shell-a'), ...today('shell-b')]);
+
+      const output = await costOutput(['--agent', 'Flight']);
+
+      expect(output).toContain('No token usage data found.');
+      expect(output).not.toContain('9,000');
+    });
+  });
 });

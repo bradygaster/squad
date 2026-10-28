@@ -427,22 +427,77 @@ jobs:
           exit "$status"
 
       - name: Remove SDK staging tag
+        id: remove-sdk-staging-tag
         if: success() && steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
-          npm dist-tag rm @bradygaster/squad-sdk "$STAGING_TAG"
+          if npm dist-tag rm @bradygaster/squad-sdk "$STAGING_TAG"; then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Remove CLI staging tag
+        id: remove-cli-staging-tag
         if: success() && steps.existing.outputs.stage_pair == 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
           node "$RELEASE_SCRIPTS_ROOT/assert-publish-identity.mjs" --source-sha "$SOURCE_SHA" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "$TAG" --evidence-dir "$PACKS_DIR"
-          npm dist-tag rm @bradygaster/squad-cli "$STAGING_TAG"
+          if npm dist-tag rm @bradygaster/squad-cli "$STAGING_TAG"; then
+            echo "outcome=success" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            echo "outcome=failure" >> "$GITHUB_OUTPUT"
+            echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Record staging tag cleanup results
+        if: always() && steps.existing.outputs.stage_pair == 'true'
+        env:
+          SDK_CLEANUP_OUTCOME: ${{ steps.remove-sdk-staging-tag.outputs.outcome || 'not-recorded' }}
+          SDK_CLEANUP_STEP_OUTCOME: ${{ steps.remove-sdk-staging-tag.outcome }}
+          SDK_CLEANUP_EXIT_CODE: ${{ steps.remove-sdk-staging-tag.outputs.exit_code || '' }}
+          CLI_CLEANUP_OUTCOME: ${{ steps.remove-cli-staging-tag.outputs.outcome || 'not-recorded' }}
+          CLI_CLEANUP_STEP_OUTCOME: ${{ steps.remove-cli-staging-tag.outcome }}
+          CLI_CLEANUP_EXIT_CODE: ${{ steps.remove-cli-staging-tag.outputs.exit_code || '' }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { writeFileSync } from 'node:fs';
+
+          const outcomes = {
+            sdk: {
+              outcome: process.env.SDK_CLEANUP_OUTCOME,
+              stepOutcome: process.env.SDK_CLEANUP_STEP_OUTCOME,
+              exitCode: process.env.SDK_CLEANUP_EXIT_CODE || null,
+            },
+            cli: {
+              outcome: process.env.CLI_CLEANUP_OUTCOME,
+              stepOutcome: process.env.CLI_CLEANUP_STEP_OUTCOME,
+              exitCode: process.env.CLI_CLEANUP_EXIT_CODE || null,
+            },
+          };
+          const evidence = {
+            stagingTag: process.env.STAGING_TAG,
+            outcomes,
+          };
+          writeFileSync(
+            `${process.env.RECON_DIR}/staging-tag-cleanup.json`,
+            `${JSON.stringify(evidence, null, 2)}\n`,
+          );
+          for (const [pkg, result] of Object.entries(outcomes)) {
+            if (result.outcome === 'failure') {
+              console.log(`::warning::Could not remove the ${pkg} staging tag ${process.env.STAGING_TAG}; see cleanup step logs.`);
+            }
+          }
+          NODE
 
       - name: Upload reconciliation evidence
         if: always()
@@ -458,7 +513,7 @@ jobs:
   publish-draft-release:
     name: Publish the existing draft after recovery reconciliation
     needs: [prepare, publish]
-    if: inputs.verify_run_id != '' && inputs.publish_draft_release && needs.publish.outputs.outcome == 'COMPLETE'
+    if: always() && needs.prepare.result == 'success' && inputs.verify_run_id != '' && inputs.publish_draft_release && needs.publish.outputs.outcome == 'COMPLETE'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

@@ -162,7 +162,11 @@ export interface MemoryProviderStatus {
  *
  * Implementations receive only pre-classified, non-forbidden, non-transient
  * memory. The {@link LocalMemoryStore} enforces governance before routing
- * to any registered provider.
+ * to any registered provider, and again on the way back: search results whose
+ * class is not one the provider could have been sent (a LOCAL, DECISION or
+ * POLICY class it declares in `supportedClasses`), or whose title or snippet
+ * classifies as FORBIDDEN, are dropped. Every call is bounded by
+ * {@link LocalMemoryStoreOptions.providerTimeoutMs}.
  */
 export interface MemoryProvider {
   readonly id: string;
@@ -355,6 +359,13 @@ export interface LocalMemoryStoreOptions {
    * reaches these providers. Results are merged with local search results.
    */
   registeredProviders?: MemoryProvider[];
+  /**
+   * Per-call timeout for registered providers (`write`, `search`, `status`),
+   * in milliseconds. Default 5000. A call that times out is audited as a
+   * provider error and skipped; it is not cancelled, so a slow write may
+   * still land in the provider later.
+   */
+  providerTimeoutMs?: number;
 }
 
 interface MemoryIndexEntry {
@@ -441,9 +452,35 @@ function evictOldest<T extends { createdAt: number }>(entries: Map<string, T>, m
   }
 }
 
-function safeProviderErrorReason(provider: Pick<MemoryProvider, 'name'>, operation: 'write' | 'search', error: unknown): string {
+function safeProviderErrorReason(provider: Pick<MemoryProvider, 'name'>, operation: 'write' | 'search' | 'status', error: unknown): string {
   const errorName = error instanceof Error ? error.name : 'UnknownError';
   return `${provider.name} provider ${operation} failed (${errorName}); raw provider error text omitted`;
+}
+
+/** Classes LocalMemoryStore.write() routes to registered providers, so the only ones they may return. */
+const PROVIDER_ROUTABLE_CLASSES: ReadonlyArray<MemoryClass> = ['LOCAL', 'DECISION', 'POLICY'];
+
+const DEFAULT_PROVIDER_TIMEOUT_MS = 5000;
+
+class ProviderTimeoutError extends Error {
+  constructor(timeoutMs: number) {
+    super(`Provider call exceeded ${timeoutMs} ms`);
+    this.name = 'ProviderTimeoutError';
+  }
+}
+
+async function withProviderTimeout<T>(work: Promise<T>, timeoutMs: number): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      work,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new ProviderTimeoutError(timeoutMs)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 function firstLine(value: string): string {
@@ -577,6 +614,7 @@ export class LocalMemoryStore {
   private readonly squadDir: string;
   private readonly copilotProvider: HostInjectedCopilotMemoryAdapter;
   private readonly registeredProviders: MemoryProvider[];
+  private readonly providerTimeoutMs: number;
   /**
    * Async mutex tail for index read-modify-write operations.
    * Each caller enqueues behind the current tail so concurrent writes
@@ -594,6 +632,10 @@ export class LocalMemoryStore {
       options.hostInjectedCopilotAdapterClient ?? options.copilotMemoryClient,
     );
     this.registeredProviders = options.registeredProviders ?? [];
+    const timeoutMs = options.providerTimeoutMs;
+    this.providerTimeoutMs = typeof timeoutMs === 'number' && Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? timeoutMs
+      : DEFAULT_PROVIDER_TIMEOUT_MS;
   }
 
   /**
@@ -871,7 +913,7 @@ export class LocalMemoryStore {
     for (const provider of this.registeredProviders) {
       if (!provider.supportedClasses.includes(classification.class)) continue;
       try {
-        const providerResult = await provider.write(providerWriteRequest);
+        const providerResult = await withProviderTimeout(provider.write(providerWriteRequest), this.providerTimeoutMs);
         await this.audit({
           action: 'write',
           id: providerResult.id,
@@ -880,6 +922,7 @@ export class LocalMemoryStore {
           path: providerResult.path ?? `${provider.id}:${providerResult.id}`,
           reason: `Replicated to ${provider.name} provider`,
           actor: request.author,
+          provider: provider.id,
         });
       } catch (error) {
         await this.audit({
@@ -988,23 +1031,45 @@ export class LocalMemoryStore {
     }
 
     // Query registered external providers. Governance filtering already
-    // passed. Deduplicates results by id (local takes precedence).
+    // passed for the query; recalled items are checked again on the way back,
+    // because a provider (or a store someone else can write to) is not trusted:
+    // only classes this provider could have been sent, and nothing FORBIDDEN.
+    // Deduplicates results by id (local takes precedence).
     const seenIds = new Set(results.map(r => r.id));
     for (const provider of this.registeredProviders) {
       try {
-        const providerResults = await provider.search(query);
+        const allowedClasses = provider.supportedClasses.filter(c => PROVIDER_ROUTABLE_CLASSES.includes(c));
+        const providerResults = await withProviderTimeout(provider.search(query), this.providerTimeoutMs);
+        let dropped = 0;
         for (const result of providerResults) {
+          if (!allowedClasses.includes(result.class)) {
+            dropped++;
+            continue;
+          }
+          const recheck = await this.classify({ content: `${result.title}\n${result.snippet}` });
+          if (recheck.class === 'FORBIDDEN') {
+            dropped++;
+            continue;
+          }
           if (seenIds.has(result.id)) continue;
           seenIds.add(result.id);
           results.push({
             id: result.id,
             class: result.class,
-            loadGuidance: result.loadGuidance,
+            loadGuidance: normalizeLoadGuidance(result.loadGuidance, loadGuidanceFor(result.class)),
             title: result.title,
             path: result.path ?? `${provider.id}:${result.id}`,
             snippet: result.snippet.slice(0, 240),
             provider: provider.id,
             score: result.score,
+          });
+        }
+        if (dropped > 0) {
+          await this.audit({
+            action: 'reject',
+            title: 'Dropped registered provider search results',
+            reason: `${provider.name} returned ${dropped} result(s) outside its supported classes or classified as forbidden`,
+            provider: provider.id,
           });
         }
       } catch (error) {
@@ -1168,8 +1233,15 @@ export class LocalMemoryStore {
   }> {
     await this.ensureInitialized();
     const config = await this.readConfig();
+    // One provider whose status() throws or hangs must not hide the others.
     const providerStatuses: MemoryProviderStatus[] = await Promise.all(
-      this.registeredProviders.map(p => p.status()),
+      this.registeredProviders.map(async p => {
+        try {
+          return await withProviderTimeout(p.status(), this.providerTimeoutMs);
+        } catch (error) {
+          return { id: p.id, name: p.name, available: false, reason: safeProviderErrorReason(p, 'status', error) };
+        }
+      }),
     );
     return {
       defaultProvider: config.defaultProvider,

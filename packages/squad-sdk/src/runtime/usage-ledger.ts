@@ -16,6 +16,7 @@ export interface UsageLedgerRecord {
   version: typeof USAGE_LEDGER_VERSION;
   kind: 'usage';
   sessionId: string;
+  squadSessionId?: string;
   turnId?: string;
   agentName?: string;
   model: string;
@@ -30,6 +31,7 @@ export interface UsageLedgerTurnStart {
   kind: 'turn-start';
   turnId: string;
   sessionId: string;
+  squadSessionId?: string;
   agentName?: string;
   timestamp: string;
 }
@@ -37,8 +39,19 @@ export interface UsageLedgerTurnStart {
 export interface UsageTurnStart {
   turnId: string;
   sessionId: string;
+  squadSessionId?: string;
   agentName?: string;
   timestamp: Date;
+}
+
+/** Context stamped on a usage record that the runtime event does not carry. */
+export interface UsageRecordContext {
+  /**
+   * The Squad session the record belongs to. One Squad session spans several SDK
+   * sessions (the coordinator's and one per agent), so `sessionId` cannot mark it.
+   * The interactive shell passes its persisted session id, the one `/resume` restores.
+   */
+  squadSessionId?: string;
 }
 
 export interface UsageLedgerReadResult {
@@ -56,6 +69,10 @@ function isNonNegativeFiniteNumber(value: unknown): value is number {
   return typeof value === 'number' && Number.isFinite(value) && value >= 0;
 }
 
+function isOptionalNonEmptyString(value: unknown): boolean {
+  return value === undefined || (typeof value === 'string' && value.length > 0);
+}
+
 function isUsageLedgerRecord(value: unknown): value is UsageLedgerRecord {
   if (!value || typeof value !== 'object') return false;
 
@@ -64,6 +81,7 @@ function isUsageLedgerRecord(value: unknown): value is UsageLedgerRecord {
     && record.kind === 'usage'
     && typeof record.sessionId === 'string'
     && record.sessionId.length > 0
+    && isOptionalNonEmptyString(record.squadSessionId)
     && (record.turnId === undefined || (typeof record.turnId === 'string' && record.turnId.length > 0))
     && (record.agentName === undefined || typeof record.agentName === 'string')
     && typeof record.model === 'string'
@@ -87,12 +105,13 @@ function isUsageLedgerTurnStart(value: unknown): value is UsageLedgerTurnStart {
     && record.turnId.length > 0
     && typeof record.sessionId === 'string'
     && record.sessionId.length > 0
+    && isOptionalNonEmptyString(record.squadSessionId)
     && (record.agentName === undefined || typeof record.agentName === 'string')
     && typeof record.timestamp === 'string'
     && Number.isFinite(Date.parse(record.timestamp));
 }
 
-function toRecord(event: UsageEvent): UsageLedgerRecord {
+function toRecord(event: UsageEvent, context: UsageRecordContext = {}): UsageLedgerRecord {
   const record: UsageLedgerRecord = {
     version: USAGE_LEDGER_VERSION,
     kind: 'usage',
@@ -102,6 +121,7 @@ function toRecord(event: UsageEvent): UsageLedgerRecord {
     outputTokens: event.outputTokens,
     estimatedCost: event.estimatedCost,
     timestamp: event.timestamp.toISOString(),
+    ...(context.squadSessionId !== undefined ? { squadSessionId: context.squadSessionId } : {}),
     ...(event.turnId ? { turnId: event.turnId } : {}),
     ...(event.agentName ? { agentName: event.agentName } : {}),
   };
@@ -120,6 +140,7 @@ function toTurnStart(turn: UsageTurnStart): UsageLedgerTurnStart {
     turnId: turn.turnId,
     sessionId: turn.sessionId,
     timestamp: turn.timestamp.toISOString(),
+    ...(turn.squadSessionId !== undefined ? { squadSessionId: turn.squadSessionId } : {}),
     ...(turn.agentName ? { agentName: turn.agentName } : {}),
   };
 
@@ -136,8 +157,8 @@ export class UsageLedger {
     private readonly ledgerPath: string = USAGE_LEDGER_PATH,
   ) {}
 
-  async append(event: UsageEvent): Promise<void> {
-    await Promise.resolve(this.storage.append(this.ledgerPath, `${JSON.stringify(toRecord(event))}\n`));
+  async append(event: UsageEvent, context?: UsageRecordContext): Promise<void> {
+    await Promise.resolve(this.storage.append(this.ledgerPath, `${JSON.stringify(toRecord(event, context))}\n`));
   }
 
   async recordTurnStart(turn: UsageTurnStart): Promise<void> {
