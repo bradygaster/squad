@@ -161,6 +161,7 @@ function compressHistory(
   filePath: string,
   keepEntries: number,
   dryRun: boolean,
+  repoRoot: string,
 ): NapAction | null {
   if (!storage.existsSync(filePath)) return null;
   const size = fileSize(filePath);
@@ -239,23 +240,68 @@ function compressHistory(
   const newContent = newLines.join('\n');
   const archiveContent = archiveLines.join('\n');
   const saved = size - Buffer.byteLength(newContent, 'utf8');
+  const relPath = path.basename(path.dirname(filePath));
 
   if (!dryRun) {
     const archivePath = filePath.replace(/\.md$/, '-archive.md');
-    // Append to archive
-    if (archiveContent.trim()) {
-      storage.appendSync(archivePath, archiveContent + '\n');
+
+    // The same rules decision archival follows (see archiveDecisions).
+    // Rule 2 — nothing to append means nothing to remove.
+    if (!archiveContent.trim()) {
+      return {
+        type: 'compress',
+        target: filePath,
+        description: `History compression skipped: ${relPath}/history.md produced no content to archive. Source left intact.`,
+        bytesSaved: 0,
+      };
     }
+
+    // Rule 1 — never move sections out of a history.md git will commit into an
+    // archive it cannot commit (#1783): the trim would commit and the archive
+    // would not. A history.md that is itself ignored has nothing to lose.
+    if (isCommittableDestination(filePath, repoRoot) && !isCommittableDestination(archivePath, repoRoot)) {
+      return {
+        type: 'compress',
+        target: filePath,
+        description:
+          `History compression refused: ${archivePath} is untracked and git-ignored, so archived sections ` +
+          `could never be committed. ${relPath}/history.md left in place.`,
+        bytesSaved: 0,
+      };
+    }
+
+    const before = storage.readSync(archivePath) ?? '';
+    storage.appendSync(archivePath, archiveContent + '\n');
+
+    // Rule 2 — verify the append landed, by section count, before rewriting the source.
+    const after = storage.readSync(archivePath) ?? '';
+    const expected = countSectionHeadings(before) + archive.length;
+    const actual = countSectionHeadings(after);
+    if (actual !== expected) {
+      return {
+        type: 'compress',
+        target: filePath,
+        description:
+          `History compression aborted: expected ${expected} sections in ${relPath}/history-archive.md after append, ` +
+          `measured ${actual}. Source left intact.`,
+        bytesSaved: 0,
+      };
+    }
+
     storage.writeSync(filePath, newContent);
   }
 
-  const relPath = path.basename(path.dirname(filePath));
   return {
     type: 'compress',
     target: filePath,
     description: `Compressed ${relPath}/history.md: kept ${keepEntries} entries, archived ${archive.length}`,
     bytesSaved: Math.max(0, saved),
   };
+}
+
+/** `##` headings, matched the way compressHistory splits sections. */
+function countSectionHeadings(markdown: string): number {
+  return markdown.split('\n').filter(line => /^##\s/.test(line)).length;
 }
 
 // ─── Log pruning ────────────────────────────────────────────────────────
@@ -548,7 +594,7 @@ export async function runNap(options: NapOptions): Promise<NapResult> {
       for (const name of storage.listSync(agentsDir)) {
         if (!storage.isDirectorySync(path.join(agentsDir, name))) continue;
         const hf = path.join(agentsDir, name, 'history.md');
-        const action = compressHistory(hf, keepEntries, dryRun);
+        const action = compressHistory(hf, keepEntries, dryRun, path.dirname(squadDir));
         if (action) actions.push(action);
       }
     }
@@ -604,7 +650,7 @@ export function runNapSync(options: NapOptions): NapResult {
       for (const name of storage.listSync(agentsDir)) {
         if (!storage.isDirectorySync(path.join(agentsDir, name))) continue;
         const hf = path.join(agentsDir, name, 'history.md');
-        const action = compressHistory(hf, keepEntries, dryRun);
+        const action = compressHistory(hf, keepEntries, dryRun, path.dirname(squadDir));
         if (action) actions.push(action);
       }
     }

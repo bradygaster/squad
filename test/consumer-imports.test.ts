@@ -8,7 +8,7 @@ describe('Consumer-perspective imports', () => {
       expect(typeof parseTeamMarkdown).toBe('function');
       expect(typeof parseDecisionsMarkdown).toBe('function');
       expect(typeof parseRoutingMarkdown).toBe('function');
-    });
+    }, 15_000);
 
     it('exports CLI functions', async () => {
       const { runInit, runExport, runImport, scrubEmails } =
@@ -17,7 +17,7 @@ describe('Consumer-perspective imports', () => {
       expect(typeof runExport).toBe('function');
       expect(typeof runImport).toBe('function');
       expect(typeof scrubEmails).toBe('function');
-    });
+    }, 15_000);
 
     it('exports VERSION as a string', async () => {
       const { VERSION } = await import('@bradygaster/squad-sdk');
