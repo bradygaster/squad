@@ -88,7 +88,7 @@ prompt: |
   TARGET FILE(S): {exact file path(s)}
 
   Do the work. Keep it focused.
-  If you made a meaningful decision, persist it with `memory.write` (class: `decision`) when available, or fall back to `squad_decide` / `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`. Do not run git notes, switch branches, or write mutable `.squad/` state by hand.
+  If you made a meaningful decision, persist it with `memory.write` (class: `DECISION`) when available, or fall back to `squad_decide` / `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`. Do not run git notes, switch branches, or write mutable `.squad/` state by hand.
 
   ⚠️ OUTPUT: Report outcomes in human terms. Never expose tool internals or SQL.
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a plain text summary as FINAL output.

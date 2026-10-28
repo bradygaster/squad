@@ -262,7 +262,8 @@ describe('real client projections on disk', () => {
     for (const c of CLIENTS) {
       for (const rel of expected[c]) expect(fs.existsSync(path.join(workspaces.get(c)!, rel)), `${c}: ${rel}`).toBe(true);
     }
-    expect(fs.readFileSync(path.join(workspaces.get('claude')!, '.claude/agents/squad.md'), 'utf8')).toMatch(/^---\n[\s\S]*mcp__squad_state[\s\S]*---\n/);
+    // The Claude coordinator has no tools allowlist, so squad_state and user-added MCP servers are all inherited.
+    expect(fs.readFileSync(path.join(workspaces.get('claude')!, '.claude/agents/squad.md'), 'utf8')).toMatch(/^---\nname: squad\ndescription: ".*"\n---\n/);
     expect(JSON.parse(fs.readFileSync(path.join(workspaces.get('kiro')!, '.kiro/agents/squad.json'), 'utf8'))).toBeTypeOf('object');
   });
 

@@ -282,3 +282,117 @@ describe('Nap archival — #1760: `###` inside a fence is not a record boundary'
     expect(archived).not.toContain('SENTINEL_TAIL');
   });
 });
+
+// ─── History compression follows the same rules ─────────────────────────
+
+const HISTORY = '.squad/agents/fenster/history.md';
+const HISTORY_ARCHIVE = '.squad/agents/fenster/history-archive.md';
+
+/** `##` sections other than Core Context, the unit nap compresses. */
+function countSections(markdown: string): number {
+  return markdown.split('\n').filter((l) => /^## /.test(l) && !/^## Core Context/.test(l)).length;
+}
+
+function countSectionsInCommit(repoRoot: string, relPath: string): number {
+  try {
+    return countSections(git(['show', `HEAD:${relPath}`], repoRoot));
+  } catch {
+    return 0;
+  }
+}
+
+/** history.md above nap's 15 KB HISTORY_THRESHOLD with 12 sections, so 7 get archived. */
+function buildHistory(): string {
+  const filler = 'Learned something worth keeping about this codebase. '.repeat(40);
+  const lines = ['# Fenster history', '', '## Core Context', '', 'Backend specialist.', ''];
+  for (let i = 0; i < 12; i++) lines.push(`## Session ${i}`, '', filler, '');
+  return lines.join('\n');
+}
+
+function createHistoryRepo(opts: { excludeSquad: boolean; archiveExists: boolean }): {
+  repoRoot: string;
+  squadDir: string;
+} {
+  const repoRoot = mkdtempSync(join(tmpdir(), 'squad-nap-history-'));
+  tmpDirs.push(repoRoot);
+
+  git(['init', '--initial-branch=main'], repoRoot);
+  git(['config', 'user.email', 'fido@squad.test'], repoRoot);
+  git(['config', 'user.name', 'FIDO'], repoRoot);
+  git(['config', 'commit.gpgsign', 'false'], repoRoot);
+
+  const squadDir = join(repoRoot, '.squad');
+  mkdirSync(join(squadDir, 'agents', 'fenster'), { recursive: true });
+  writeFileSync(join(repoRoot, HISTORY), buildHistory(), 'utf8');
+  if (opts.archiveExists) {
+    writeFileSync(join(repoRoot, HISTORY_ARCHIVE), '# Fenster history archive\n', 'utf8');
+  }
+
+  git(['add', '-A'], repoRoot);
+  git(['commit', '-m', 'seed'], repoRoot);
+
+  if (opts.excludeSquad) {
+    appendFileSync(join(repoRoot, '.git', 'info', 'exclude'), '\n.squad/\n', 'utf8');
+  }
+
+  return { repoRoot, squadDir };
+}
+
+describe('Nap history compression — #1783: destination must be committable', () => {
+  it('does not move sections into a git-ignored archive that cannot be committed', async () => {
+    const { repoRoot, squadDir } = createHistoryRepo({ excludeSquad: true, archiveExists: false });
+    const totalBefore = countSectionsInCommit(repoRoot, HISTORY);
+    expect(totalBefore).toBe(12);
+
+    await runNap({ squadDir });
+    commitLikeAnAgent(repoRoot);
+
+    expect(countSectionsInCommit(repoRoot, HISTORY) + countSectionsInCommit(repoRoot, HISTORY_ARCHIVE)).toBe(totalBefore);
+  });
+
+  it('reports the refusal and writes nothing', async () => {
+    const { repoRoot, squadDir } = createHistoryRepo({ excludeSquad: true, archiveExists: false });
+    const before = readFileSync(join(repoRoot, HISTORY), 'utf8');
+
+    const result = await runNap({ squadDir });
+
+    expect(result.actions.find((a) => a.type === 'compress')?.description).toMatch(/^History compression refused/);
+    expect(readFileSync(join(repoRoot, HISTORY), 'utf8')).toBe(before);
+    expect(existsSync(join(repoRoot, HISTORY_ARCHIVE))).toBe(false);
+    expect(git(['status', '--porcelain'], repoRoot).trim()).toBe('');
+  });
+
+  it('still compresses when the archive is already tracked', async () => {
+    const { repoRoot, squadDir } = createHistoryRepo({ excludeSquad: true, archiveExists: true });
+
+    await runNap({ squadDir });
+    commitLikeAnAgent(repoRoot);
+
+    expect(countSectionsInCommit(repoRoot, HISTORY)).toBe(5);
+    expect(countSectionsInCommit(repoRoot, HISTORY_ARCHIVE)).toBe(7);
+  });
+
+  it('still compresses when .squad/ was never committed and is ignored as a whole', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'squad-nap-history-ignored-'));
+    tmpDirs.push(repoRoot);
+    git(['init', '--initial-branch=main'], repoRoot);
+    writeFileSync(join(repoRoot, '.gitignore'), '/.squad/\n', 'utf8');
+    mkdirSync(join(repoRoot, '.squad', 'agents', 'fenster'), { recursive: true });
+    writeFileSync(join(repoRoot, HISTORY), buildHistory(), 'utf8');
+
+    await runNap({ squadDir: join(repoRoot, '.squad') });
+
+    // Nothing under .squad/ reaches a commit, so there is no boundary to protect.
+    expect(countSections(readFileSync(join(repoRoot, HISTORY), 'utf8'))).toBe(5);
+    expect(countSections(readFileSync(join(repoRoot, HISTORY_ARCHIVE), 'utf8'))).toBe(7);
+  });
+
+  it('compresses normally when .squad/ is not excluded', async () => {
+    const { repoRoot, squadDir } = createHistoryRepo({ excludeSquad: false, archiveExists: false });
+
+    await runNap({ squadDir });
+
+    expect(countSections(readFileSync(join(repoRoot, HISTORY), 'utf8'))).toBe(5);
+    expect(countSections(readFileSync(join(repoRoot, HISTORY_ARCHIVE), 'utf8'))).toBe(7);
+  });
+});

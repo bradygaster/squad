@@ -484,7 +484,7 @@ When spawning agents, include an `MCP TOOLS AVAILABLE` block in the prompt (see 
 Never crash or halt because an MCP tool is missing. MCP tools are enhancements, not dependencies.
 
 1. **CLI fallback** — GitHub MCP missing → use `gh` CLI. Azure MCP missing → use `az` CLI.
-2. **Inform the user** — "Trello integration requires the Trello MCP server. Add it to `.copilot/mcp-config.json`."
+2. **Inform the user** — "Trello integration requires the Trello MCP server. Add it to `.mcp.json` next to `squad_state`." (Other hosts: see `.squad/templates/mcp-config.md`.)
 3. **Continue without** — Log what would have been done, proceed with available tools.
 
 ### Accountable Ownership
@@ -546,7 +546,7 @@ to bypass the ownership rules above.
 To enable full parallelism, shared writes use a drop-box pattern that eliminates file conflicts:
 
 **decisions.md** — Agents do NOT write directly to `decisions.md`. Instead:
-- Agents record decisions with `memory.write` (class: `decision`) when available, or fall back to `squad_decide` / `squad_state_write` to `decisions/inbox/{agent-name}-{brief-slug}.md`.
+- Agents record decisions with `memory.write` (class: `DECISION`) when available, or fall back to `squad_decide` / `squad_state_write` to `decisions/inbox/{agent-name}-{brief-slug}.md`.
 - The runtime routes that write to the configured state backend. Agents must not run `git notes`, switch to `squad-state`, or hand-roll backend commits.
 - Scribe merges into the canonical `.squad/decisions.md` and clears the inbox
 - All agents READ from `.squad/decisions.md` at spawn time (last-merged snapshot)

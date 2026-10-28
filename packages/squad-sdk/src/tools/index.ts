@@ -21,7 +21,7 @@ import { StateKeyConflictError, StateBackendUncertaintyError } from '../storage/
 import type { SquadState } from '../state/squad-state.js';
 import { validateStateKey } from '../state-backend.js';
 import { spawnParallel, type FanOutDependencies } from '../coordinator/fan-out.js';
-import { LocalMemoryStore, type CopilotMemoryProviderClient, type MemoryClass } from '../memory/index.js';
+import { LocalMemoryStore, parseMemoryClass, UnknownMemoryClassError, type CopilotMemoryProviderClient, type MemoryClass } from '../memory/index.js';
 import { resolveUpstreams, buildEffectiveUpstreamContext, formatUpstreamReport } from '../upstream/resolver.js';
 
 const tracer = trace.getTracer('squad-sdk');
@@ -168,6 +168,28 @@ export interface GovernedMemoryPromoteRequest {
   id: string;
   targetClass: Exclude<MemoryClass, 'FORBIDDEN' | 'TRANSIENT'>;
   actor?: string;
+}
+
+/**
+ * Parse a memory class sent by an agent. The MCP bridge passes arguments
+ * through without checking the schema enum, so `decision` can arrive here.
+ * Case is ignored. An unknown value becomes a failure result the agent can
+ * act on, instead of a memory filed under a made-up class.
+ */
+function parseMemoryClassArg(value: unknown): { memoryClass?: MemoryClass; failure?: SquadToolResult } {
+  try {
+    return { memoryClass: parseMemoryClass(value) };
+  } catch (error) {
+    const failure = unknownMemoryClassFailure(error);
+    if (failure) return { failure };
+    throw error;
+  }
+}
+
+/** Turn an unknown-class error from the store into a failure result; rethrow anything else. */
+function unknownMemoryClassFailure(error: unknown): SquadToolResult | undefined {
+  if (!(error instanceof UnknownMemoryClassError)) return undefined;
+  return { textResultForLlm: error.message, resultType: 'failure', error: error.message };
 }
 
 // --- Tool Definition Helper ---
@@ -970,14 +992,22 @@ export class ToolRegistry {
         required: ['content'],
       },
       handler: async (args) => {
-        const classification = await this.memoryStore.classify({
-          content: args.content,
-          requestedClass: args.class,
-        }, {
-          audit: true,
-          actor: args.author,
-          title: args.title,
-        });
+        // The store scans the content before it reads the class, and normalizes the class.
+        let classification;
+        try {
+          classification = await this.memoryStore.classify({
+            content: args.content,
+            requestedClass: args.class,
+          }, {
+            audit: true,
+            actor: args.author,
+            title: args.title,
+          });
+        } catch (error) {
+          const failure = unknownMemoryClassFailure(error);
+          if (failure) return failure;
+          throw error;
+        }
         return {
           textResultForLlm: `${classification.class}: ${classification.reason}`,
           resultType: classification.allowed ? 'success' : 'failure',
@@ -1005,13 +1035,22 @@ export class ToolRegistry {
         required: ['content'],
       },
       handler: async (args) => {
-        const result = await this.memoryStore.write({
-          content: args.content,
-          title: args.title,
-          author: args.author,
-          requestedClass: args.class,
-          approved: args.approved,
-        });
+        // The store scans the content before it reads the class, so secrets are still
+        // rejected and audited when the class name is unknown.
+        let result;
+        try {
+          result = await this.memoryStore.write({
+            content: args.content,
+            title: args.title,
+            author: args.author,
+            requestedClass: args.class,
+            approved: args.approved,
+          });
+        } catch (error) {
+          const failure = unknownMemoryClassFailure(error);
+          if (failure) return failure;
+          throw error;
+        }
         return {
           textResultForLlm: result.stored
             ? `Stored ${result.classification.class} memory ${result.id} at ${result.path}`
@@ -1072,10 +1111,19 @@ export class ToolRegistry {
         required: ['id', 'targetClass'],
       },
       handler: async (args) => {
-        const result = await this.memoryStore.promote(args.id, args.targetClass, args.actor);
+        const target = parseMemoryClassArg(args.targetClass);
+        if (target.failure) return target.failure;
+        if (!target.memoryClass) {
+          return { textResultForLlm: 'memory.promote needs targetClass: LOCAL, DECISION, POLICY or COPILOT_MEMORY.', resultType: 'failure' };
+        }
+        const targetClass = target.memoryClass;
+        if (targetClass === 'FORBIDDEN' || targetClass === 'TRANSIENT') {
+          return { textResultForLlm: 'memory.promote targetClass must be LOCAL, DECISION, POLICY or COPILOT_MEMORY.', resultType: 'failure' };
+        }
+        const result = await this.memoryStore.promote(args.id, targetClass, args.actor);
         return {
           textResultForLlm: result.stored
-            ? `Promoted memory ${args.id} to ${args.targetClass} as ${result.id}`
+            ? `Promoted memory ${args.id} to ${targetClass} as ${result.id}`
             : `Promotion rejected: ${result.classification.reason}`,
           resultType: result.stored ? 'success' : 'failure',
           toolTelemetry: { sourceId: args.id, targetId: result.id, stored: result.stored },
