@@ -8,14 +8,14 @@
  * analysis tracks inside one Copilot invocation.
  */
 
-import { execSync, execFile } from 'node:child_process';
+import { execSync } from 'node:child_process';
 import { writeFileSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import type { WatchCapability, WatchContext, PreflightResult, CapabilityResult } from '../types.js';
 import type { MachineCapabilities } from '@bradygaster/squad-sdk/ralph/capabilities';
 import type { DispatchMode } from '../config.js';
-import { agentProcessGroupOptions, killProcessTree, trackAgentProcessGroup } from '../agent-spawn.js';
+import { runProcessTreeCommand } from '../agent-spawn.js';
 import { createVerboseLogger } from '../verbose.js';
 import {
   acquireClaims,
@@ -83,7 +83,7 @@ export type FleetInvoker = (
 ) => Promise<{ success: boolean; output?: string; error?: string; cancelled?: boolean }>;
 
 /** Invoke a fleet prompt via the Copilot CLI. */
-const invokeFleet: FleetInvoker = (prompt, cwd, timeoutMs, signal) => {
+const invokeFleet: FleetInvoker = async (prompt, cwd, timeoutMs, signal) => {
   const promptFile = join(tmpdir(), `fleet-prompt-${Date.now()}.txt`);
   writeFileSync(promptFile, prompt, 'utf-8');
   const cleanupPromptFile = (): void => {
@@ -99,44 +99,30 @@ const invokeFleet: FleetInvoker = (prompt, cwd, timeoutMs, signal) => {
     return Promise.resolve({ success: false, error: (e as Error).message });
   }
 
-  return new Promise((resolve) => {
-    let onAbort: (() => void) | undefined;
-    // Use execFile with args array — no shell, no injection risk
-    const copilotBin = process.platform === 'win32' ? 'copilot.cmd' : 'copilot';
-    const child = execFile(copilotBin, [
-      '-p', promptContent,
-      '--allow-all',
-      '--no-ask-user',
-      '--autopilot',
-    ], {
-      cwd,
-      timeout: timeoutMs,
-      encoding: 'utf-8',
-      ...(signal ? agentProcessGroupOptions() : {}),
-    }, (err, stdout, stderr) => {
-      if (onAbort) signal?.removeEventListener('abort', onAbort);
-      cleanupPromptFile();
-      if (signal?.aborted) {
-        resolve({ success: false, cancelled: true, error: 'Fleet dispatch cancelled' });
-        return;
-      }
-      if (err) {
-        const e = err as Error & { killed?: boolean };
-        const msg = e.killed
-          ? `Fleet dispatch timed out after ${Math.round(timeoutMs / 60_000)}m`
-          : stderr || e.message;
-        resolve({ success: false, error: msg });
-        return;
-      }
-      resolve({ success: true, output: String(stdout) });
-    });
-    if (signal) {
-      trackAgentProcessGroup(child);
-      onAbort = () => killProcessTree(child);
-      if (signal.aborted) onAbort();
-      else signal.addEventListener('abort', onAbort, { once: true });
-    }
+  // Use execFile with args array — no shell, no injection risk.
+  const copilotBin = process.platform === 'win32' ? 'copilot.cmd' : 'copilot';
+  const run = await runProcessTreeCommand(copilotBin, [
+    '-p', promptContent,
+    '--allow-all',
+    '--no-ask-user',
+    '--autopilot',
+  ], {
+    cwd,
+    timeoutMs,
+    signal,
   });
+  cleanupPromptFile();
+  if (run.cancelled) {
+    return { success: false, cancelled: true, error: 'Fleet dispatch cancelled' };
+  }
+  const timedOut = run.timedOut || run.error?.killed === true;
+  if (run.error || timedOut) {
+    const msg = timedOut
+      ? `Fleet dispatch timed out after ${Math.round(timeoutMs / 60_000)}m`
+      : run.stderr || run.error!.message;
+    return { success: false, error: msg };
+  }
+  return { success: true, output: run.stdout };
 };
 
 export interface FleetDispatchOptions {

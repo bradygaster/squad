@@ -101,3 +101,26 @@ export function claimMetricsFor(
 ): WatchClaimMetrics | undefined {
   return provider.guarantees.exclusion === 'none' ? undefined : new WatchClaimMetrics(provider, opts);
 }
+
+/**
+ * Initialize telemetry before constructing claim counters. OTel instruments
+ * created against the no-op provider stay no-op after a provider is installed.
+ */
+export function initializeWatchClaimMetrics<T>(
+  provider: Pick<WorkClaimProvider, 'name' | 'guarantees'>,
+  initTelemetry: () => T,
+  opts: {
+    telemetryEnabled?: boolean;
+    createMetrics?: (provider: Pick<WorkClaimProvider, 'name' | 'guarantees'>) => WatchClaimMetrics | undefined;
+  } = {},
+): { metrics?: WatchClaimMetrics; telemetry?: T } {
+  if (provider.guarantees.exclusion === 'none') return {};
+  const telemetry = (opts.telemetryEnabled ?? isWatchTelemetryEnabled())
+    ? initTelemetry()
+    : undefined;
+  const metrics = (opts.createMetrics ?? claimMetricsFor)(provider);
+  return {
+    ...(metrics ? { metrics } : {}),
+    ...(telemetry ? { telemetry } : {}),
+  };
+}

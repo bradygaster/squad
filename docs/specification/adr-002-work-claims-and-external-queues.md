@@ -142,6 +142,10 @@ ownership, the same stance gh-aw takes for its Issue mirror.
 - **Fencing.** The holder renews every `ttlMs / 3`. A `fenced` result kills the
   spawned agent process tree. If renewals keep returning `unavailable`, the
   holder fences itself (kills the agent) once `now >= expiresAt - skewMarginMs`.
+  That deadline remains armed while a renewal request is pending, so a hung
+  provider cannot extend the agent's authority. Agent timeouts use the same
+  whole-tree termination path, and claim release waits until termination has
+  completed.
   Takeover waits until `expiresAt + skewMarginMs`, so overlap requires clock
   skew larger than the margin or a hung holder.
 - **Idempotent effects.** Because duplicates remain possible, effects must be
@@ -150,8 +154,11 @@ ownership, the same stance gh-aw takes for its Issue mirror.
 - **Batches.** When one agent session receives several issues, the executor
   holds and renews every claim for the whole session and releases each in
   `finally`. Claims are acquired one at a time, so before dispatch the
-  executor renews any claim that reached `expiresAt - skewMarginMs` while the
-  rest of the batch was being acquired, and drops it if that renewal fails.
+  executor renews in parallel any claim that reached
+  `expiresAt - skewMarginMs` while the rest of the batch was being acquired,
+  then performs one final liveness check across the whole batch. Any claim
+  that is no longer live at that handoff is dropped, including an earlier
+  renewal that became stale while another renewal was slow.
 - **In-process dedupe.** One watch round never dispatches an issue twice
   (hybrid `execute` plus `fleet-dispatch`), whatever provider is configured.
   This is a bug fix, not opt-in behavior.
@@ -172,8 +179,9 @@ cross-process behavior. Executors opt in with:
   `{ "provider": "git-ref", "ttlMs", "skewMarginMs", "remote", "refPrefix" }`.
 
 The flag overrides the config. `claims` becomes a reserved watch config key;
-unknown keys under it are warned about, and a `.squad/config.json` that does
-not parse stops watch instead of silently running without claims.
+unknown keys under it are warned about. Only an absent `.squad/config.json`
+selects defaults: an unreadable, empty, or unparsable file stops watch instead
+of silently running without claims.
 Whether a later major version makes `git-ref` the default is decided after
 gate G7.
 

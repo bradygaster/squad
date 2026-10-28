@@ -242,29 +242,40 @@ async function confirmStaleClaims<T extends { number: number }>(
   log: ClaimLogger,
   metrics: WatchContext['claimMetrics'],
 ): Promise<void> {
-  const won: Array<WonClaim<T>> = [];
-  for (const w of result.won) {
-    if (timing.now() < w.claim.expiresAt - timing.skewMarginMs) {
-      won.push(w);
-      continue;
-    }
+  const confirmed = await Promise.all(result.won.map(async (w): Promise<WonClaim<T> | null> => {
+    if (timing.now() < w.claim.expiresAt - timing.skewMarginMs) return w;
     try {
       const r = await provider.renew(w.claim, { ttlMs: timing.ttlMs });
       if (r.status === 'renewed') {
-        won.push({ item: w.item, claim: r.claim });
         log.debug(`claim #${w.item.number} reached its renew deadline during acquisition; renewed (epoch ${r.claim.epoch})`);
-        continue;
+        return { item: w.item, claim: r.claim };
       }
       result.held.push(w.item);
       metrics?.record('fenced');
       const by = r.by ? ` by ${r.by.holder.machineId}/${r.by.holder.instanceId}` : '';
       log.warn(`claim #${w.item.number} fenced${by} before dispatch (acquisition outlasted its lease) — skipping`);
+      return null;
     } catch (e) {
       const reason = `claim expired during acquisition and could not be renewed: ${(e as Error).message}`;
       result.unavailable.push({ item: w.item, reason });
       metrics?.record('lost');
       log.warn(`claim #${w.item.number} unavailable: ${reason} — skipping`);
+      return null;
     }
+  }));
+
+  const handoff = timing.now();
+  const won: Array<WonClaim<T>> = [];
+  for (const w of confirmed) {
+    if (!w) continue;
+    if (handoff < w.claim.expiresAt - timing.skewMarginMs) {
+      won.push(w);
+      continue;
+    }
+    const reason = 'claim reached its self-fence deadline before dispatch';
+    result.unavailable.push({ item: w.item, reason });
+    metrics?.record('lost');
+    log.warn(`claim #${w.item.number} unavailable: ${reason} — skipping`);
   }
   result.won = won;
 }
@@ -309,7 +320,8 @@ export async function holdClaimsWhile<R>(
   const lostOrFenced = new Set<number>();
   let fencedReason: string | undefined;
   let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let renewTimer: ReturnType<typeof setTimeout> | undefined;
+  let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | undefined;
 
   const fence = (reason: string): void => {
@@ -321,10 +333,37 @@ export async function holdClaimsWhile<R>(
 
   const label = (c: ClaimRecord): string => `#${c.key.id}`;
 
+  const armDeadline = (): void => {
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    if (stopped || fencedReason || current.length === 0) return;
+    const now = timing.now();
+    const deadline = Math.min(...current.map(c => c.expiresAt - timing.skewMarginMs));
+    deadlineTimer = setTimeout(() => {
+      const at = timing.now();
+      const expired: string[] = [];
+      current.forEach((c, idx) => {
+        if (at >= c.expiresAt - timing.skewMarginMs) {
+          expired.push(label(c));
+          if (!lostOrFenced.has(idx)) {
+            lostOrFenced.add(idx);
+            metrics?.record('lost');
+          }
+        }
+      });
+      if (expired.length === 0) {
+        armDeadline();
+        return;
+      }
+      fence(`claim ${expired.join(', ')} could not be renewed before expiry`);
+    }, Math.max(1, Math.ceil(deadline - now)));
+    deadlineTimer.unref?.();
+  };
+
   const renewOnce = async (): Promise<void> => {
     await Promise.all(current.map(async (c, idx) => {
       try {
         const r = await provider.renew(c, { ttlMs: timing.ttlMs });
+        if (stopped || fencedReason) return;
         if (r.status === 'renewed') {
           current[idx] = r.claim;
           log.debug(`claim ${label(c)} renewed (epoch ${r.claim.epoch})`);
@@ -337,6 +376,7 @@ export async function holdClaimsWhile<R>(
           fence(`claim ${label(c)} fenced${by}`);
         }
       } catch (e) {
+        if (stopped || fencedReason) return;
         const msg = (e as Error).message;
         if (timing.now() >= c.expiresAt - timing.skewMarginMs) {
           if (!lostOrFenced.has(idx)) {
@@ -353,20 +393,15 @@ export async function holdClaimsWhile<R>(
 
   const schedule = (): void => {
     if (stopped || fencedReason) return;
-    let delay = timing.ttlMs / 3;
-    const now = timing.now();
-    for (const c of current) {
-      // Retry no later than the self-fence deadline so an unreachable remote
-      // stops the agent at `expiresAt - skewMarginMs`, as ADR-002 requires.
-      delay = Math.min(delay, c.expiresAt - timing.skewMarginMs - now);
-    }
-    timer = setTimeout(() => {
+    const delay = timing.ttlMs / 3;
+    renewTimer = setTimeout(() => {
       inflight = renewOnce().finally(() => {
         inflight = undefined;
+        if (!stopped && !fencedReason) armDeadline();
         schedule();
       });
     }, Math.max(1, Math.floor(delay)));
-    timer.unref?.();
+    renewTimer.unref?.();
   };
 
   if (provider.guarantees.leases && current.length > 0) {
@@ -384,6 +419,7 @@ export async function holdClaimsWhile<R>(
       }));
       throw new Error(`invalid claim timing: ${badTiming}`);
     }
+    armDeadline();
     schedule();
   }
 
@@ -393,8 +429,9 @@ export async function holdClaimsWhile<R>(
     return { result, ...(fencedReason ? { fencedReason } : {}) };
   } finally {
     stopped = true;
-    if (timer) clearTimeout(timer);
-    if (inflight) await inflight.catch(() => undefined);
+    if (renewTimer) clearTimeout(renewTimer);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    void inflight?.catch(() => undefined);
     const outcome = outcomeOf(result, fencedReason !== undefined);
     await Promise.all(current.map(async (c, idx) => {
       try {

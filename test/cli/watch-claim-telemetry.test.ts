@@ -36,6 +36,7 @@ import { acquireClaims, holdClaimsWhile } from '../../packages/squad-cli/src/cli
 import {
   claimMetricsFor,
   formatClaimRoundLines,
+  initializeWatchClaimMetrics,
   isImplausibleTakeoverWarning,
   WatchClaimMetrics,
 } from '../../packages/squad-cli/src/cli/commands/watch/claim-metrics.js';
@@ -301,6 +302,29 @@ describe('watch --health claim counters', () => {
 });
 
 describe('OTel claim counters', () => {
+  it('installs telemetry before claim instruments are created', () => {
+    const order: string[] = [];
+    const provider = new InMemoryClaimProvider({ identity: identity('otel-order') });
+    const initialized = initializeWatchClaimMetrics(
+      provider,
+      () => {
+        order.push('provider');
+        return { shutdown: async () => {} };
+      },
+      {
+        telemetryEnabled: true,
+        createMetrics: current => {
+          order.push('instruments');
+          return new WatchClaimMetrics(current, { otel: false });
+        },
+      },
+    );
+
+    expect(order).toEqual(['provider', 'instruments']);
+    expect(initialized.metrics).toBeInstanceOf(WatchClaimMetrics);
+    expect(initialized.telemetry).toBeDefined();
+  });
+
   beforeEach(() => {
     instruments.clear();
     spyMeter.createCounter.mockClear();

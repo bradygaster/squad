@@ -318,26 +318,147 @@ export function spawnWithTimeout(
   timeoutMs: number,
 ): Promise<void> {
   const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
-  return new Promise<void>((resolve, reject) => {
-    execFile(cmd, safeArgs, {
-      cwd,
-      timeout: timeoutMs,
-      maxBuffer: 50 * 1024 * 1024,
-      shell: IS_WINDOWS,
-    }, (err) => {
-      cleanup();
-      if (err) {
-        const execErr = err as Error & { killed?: boolean };
-        reject(new Error(
-          execErr.killed
-            ? `Timed out after ${Math.round(timeoutMs / 1000)}s`
-            : execErr.message,
-        ));
-      } else {
-        resolve();
-      }
-    });
+  return runProcessTreeCommand(cmd, safeArgs, {
+    cwd,
+    timeoutMs,
+    maxBuffer: 50 * 1024 * 1024,
+    shell: IS_WINDOWS,
+  }).then((run) => {
+    cleanup();
+    if (run.error) {
+      const timedOut = run.timedOut || (!run.cancelled && run.error.killed === true);
+      throw new Error(
+        timedOut
+          ? `Timed out after ${Math.round(timeoutMs / 1000)}s`
+          : run.error.message,
+      );
+    }
+  }, (error) => {
+    cleanup();
+    throw error;
   });
+}
+
+export interface ProcessTreeCommandResult {
+  error?: Error & { killed?: boolean; signal?: NodeJS.Signals | null };
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  cancelled: boolean;
+}
+
+export interface ProcessTreeCommandOptions {
+  cwd: string;
+  timeoutMs: number;
+  maxBuffer?: number;
+  shell?: boolean;
+  signal?: AbortSignal;
+  onSpawn?: (child: ChildProcess) => void;
+}
+
+/**
+ * Run a command under an explicit timeout. Timeout and abort both terminate
+ * the whole process tree, and the promise does not resolve until that
+ * termination has completed.
+ */
+export function runProcessTreeCommand(
+  cmd: string,
+  args: string[],
+  options: ProcessTreeCommandOptions,
+): Promise<ProcessTreeCommandResult> {
+  return new Promise<ProcessTreeCommandResult>((resolve) => {
+    let child: ChildProcess | undefined;
+    let callbackFinished = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let termination: Promise<void> | undefined;
+    let timedOut = false;
+    let cancelled = false;
+
+    const beginTermination = (reason: 'timeout' | 'abort'): void => {
+      if (!child || callbackFinished || termination) return;
+      timedOut = reason === 'timeout';
+      cancelled = reason === 'abort';
+      termination = terminateProcessTree(child);
+    };
+
+    const onAbort = (): void => beginTermination('abort');
+    const group = agentProcessGroupOptions();
+    child = execFile(cmd, args, {
+      cwd: options.cwd,
+      maxBuffer: options.maxBuffer ?? 50 * 1024 * 1024,
+      shell: options.shell ?? false,
+      encoding: 'utf-8',
+      ...group,
+    }, async (err, stdout, stderr) => {
+      callbackFinished = true;
+      if (timeout) clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', onAbort);
+      if (termination) await termination;
+      resolve({
+        ...(err ? { error: err as ProcessTreeCommandResult['error'] } : {}),
+        stdout: String(stdout ?? ''),
+        stderr: String(stderr ?? ''),
+        timedOut,
+        cancelled,
+      });
+    });
+
+    if (group.detached) trackAgentProcessGroup(child);
+    options.onSpawn?.(child);
+
+    if (!callbackFinished) {
+      timeout = setTimeout(() => beginTermination('timeout'), options.timeoutMs);
+      timeout.unref?.();
+      if (options.signal) {
+        if (options.signal.aborted) onAbort();
+        else options.signal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
+  });
+}
+
+function posixProcessGroupCanExecute(pid: number): boolean {
+  try {
+    const rows = execFileSync('ps', ['-A', '-o', 'pgid=,stat='], {
+      encoding: 'utf-8',
+      timeout: 2_000,
+    });
+    return rows.split(/\r?\n/).some((row) => {
+      const match = row.trim().match(/^(\d+)\s+(\S+)/);
+      return match?.[1] === String(pid) && !match[2]!.startsWith('Z');
+    });
+  } catch {
+    try {
+      process.kill(-pid, 0);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+      throw error;
+    }
+  }
+}
+
+async function waitForPosixProcessGroupExit(pid: number): Promise<void> {
+  while (true) {
+    if (!posixProcessGroupCanExecute(pid)) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
+/**
+ * Kill a child process tree and wait until it can no longer execute. Windows
+ * `taskkill /T /F` is synchronous; POSIX waits until the detached process
+ * group contains no process that can still execute (zombies are inert).
+ */
+export async function terminateProcessTree(
+  child: KillableChild,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  const pid = child.pid;
+  killProcessTree(child, platform);
+  if (platform !== 'win32' && pid && child.exitCode == null && child.signalCode == null) {
+    await waitForPosixProcessGroupExit(pid);
+  }
 }
 
 /**
@@ -432,70 +553,48 @@ export function spawnAgent(
   signal?: AbortSignal,
 ): Promise<AgentSpawnResult> {
   const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
-  // Callers that may need to kill the agent get a POSIX process group.
-  const group = signal || pidTracking ? agentProcessGroupOptions() : { detached: false };
-  return new Promise<AgentSpawnResult>((resolve) => {
-    let onAbort: (() => void) | undefined;
-    const cp = execFile(
-      cmd,
-      safeArgs,
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 50 * 1024 * 1024,
-        shell: IS_WINDOWS,
-        ...group,
-      },
-      (err) => {
-        if (onAbort) signal?.removeEventListener('abort', onAbort);
-        cleanup();
-        const usageResult = usageOutputFile
-          ? readCopilotUsageOutput(usageOutputFile)
-          : {};
-        if (usageOutputFile && existsSync(usageOutputFile)) {
-          try {
-            unlinkSync(usageOutputFile);
-          } catch (cleanupError) {
-            usageResult.error ??= `Could not remove Copilot usage output: ${(cleanupError as Error).message}`;
-          }
-        }
-        const cancelled = signal?.aborted === true;
-        if (err) {
-          const execErr = err as Error & { killed?: boolean; signal?: NodeJS.Signals | null };
-          const timedOut = !cancelled && execErr.killed === true;
-          const reason = signal?.reason instanceof Error ? signal.reason.message : String(signal?.reason ?? 'aborted');
-          const msg = cancelled ? `Cancelled: ${reason}` : timedOut ? 'Timed out' : execErr.message;
-          resolve({
-            success: false,
-            error: msg,
-            usage: usageResult.usage,
-            usageError: usageResult.error,
-            ...(cancelled ? { cancelled: true } : {}),
-            ...(timedOut ? { timedOut: true } : {}),
-            ...(execErr.signal ? { signal: execErr.signal } : {}),
-          });
-        } else {
-          resolve({
-            success: !cancelled,
-            ...(cancelled ? { error: 'Cancelled', cancelled: true } : {}),
-            usage: usageResult.usage,
-            usageError: usageResult.error,
-          });
-        }
-      },
-    );
-
-    if (group.detached) trackAgentProcessGroup(cp);
-
-    if (pidTracking && cp.pid) {
-      pidTracking.tracker.track(cp.pid, pidTracking.label);
-      cp.on('exit', () => pidTracking.tracker.untrack(cp.pid!));
+  return runProcessTreeCommand(cmd, safeArgs, {
+    cwd,
+    timeoutMs,
+    maxBuffer: 50 * 1024 * 1024,
+    shell: IS_WINDOWS,
+    signal,
+    onSpawn: (cp) => {
+      if (pidTracking && cp.pid) {
+        pidTracking.tracker.track(cp.pid, pidTracking.label);
+        cp.on('exit', () => pidTracking.tracker.untrack(cp.pid!));
+      }
+    },
+  }).then((run) => {
+    cleanup();
+    const usageResult = usageOutputFile
+      ? readCopilotUsageOutput(usageOutputFile)
+      : {};
+    if (usageOutputFile && existsSync(usageOutputFile)) {
+      try {
+        unlinkSync(usageOutputFile);
+      } catch (cleanupError) {
+        usageResult.error ??= `Could not remove Copilot usage output: ${(cleanupError as Error).message}`;
+      }
     }
-
-    if (signal) {
-      onAbort = () => killProcessTree(cp);
-      if (signal.aborted) onAbort();
-      else signal.addEventListener('abort', onAbort, { once: true });
+    const reason = signal?.reason instanceof Error ? signal.reason.message : String(signal?.reason ?? 'aborted');
+    const timedOut = run.timedOut || (!run.cancelled && run.error?.killed === true);
+    if (run.error || run.cancelled || timedOut) {
+      const msg = run.cancelled ? `Cancelled: ${reason}` : timedOut ? 'Timed out' : run.error!.message;
+      return {
+        success: false,
+        error: msg,
+        usage: usageResult.usage,
+        usageError: usageResult.error,
+        ...(run.cancelled ? { cancelled: true } : {}),
+        ...(timedOut ? { timedOut: true } : {}),
+        ...(run.error?.signal ? { signal: run.error.signal } : {}),
+      };
     }
+    return {
+      success: true,
+      usage: usageResult.usage,
+      usageError: usageResult.error,
+    };
   });
 }

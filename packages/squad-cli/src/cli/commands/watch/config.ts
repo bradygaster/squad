@@ -186,11 +186,11 @@ export function loadWatchConfig(
   const configPath = path.join(teamRoot, '.squad', 'config.json');
   let raw: string | undefined;
   try {
-    raw = storage.readSync(configPath) ?? undefined;
-  } catch {
-    // No readable config file — use defaults
+    raw = storage.readSync(configPath);
+  } catch (err) {
+    throw new WatchConfigError(`Could not read .squad/config.json: ${(err as Error).message}`);
   }
-  if (raw) {
+  if (raw !== undefined) {
     let parsed: { watch?: Record<string, unknown> } | null;
     try {
       parsed = JSON.parse(raw.replace(/^\uFEFF/, '')) as { watch?: Record<string, unknown> } | null;

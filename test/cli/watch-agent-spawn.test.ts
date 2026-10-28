@@ -175,13 +175,13 @@ describe('agent-spawn: spawnAgent pid tracking', () => {
     expect(result.success).toBe(true);
   });
 
-  it('spawns a killable POSIX process group when a fence signal is passed', async () => {
+  it('spawns every POSIX agent as a killable process group for fences and timeouts', async () => {
     const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
     try {
       await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000, undefined, undefined, new AbortController().signal);
       expect(mockExecFile.mock.calls.at(-1)?.[2]).toMatchObject({ detached: true });
       await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000);
-      expect(mockExecFile.mock.calls.at(-1)?.[2]).toMatchObject({ detached: false });
+      expect(mockExecFile.mock.calls.at(-1)?.[2]).toMatchObject({ detached: true });
     } finally {
       platformSpy.mockRestore();
     }
@@ -333,4 +333,3 @@ describe('agent-spawn: Windows multiline and oversized prompt handling (#2070)',
     expect(escapeArgs(['-p', multilinePrompt], false)).toEqual(['-p', multilinePrompt]);
   });
 });
-

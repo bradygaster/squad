@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { FSStorageProvider } from '@bradygaster/squad-sdk';
 import {
   InMemoryClaimProvider,
   InMemoryClaimStore,
@@ -46,6 +47,7 @@ import {
 const ROOT = path.resolve('.evidence-tmp', `watch-claims-${randomUUID().slice(0, 8)}`);
 const RECORD_SCRIPT = path.join(ROOT, 'record.cjs');
 const SLEEP_SCRIPT = path.join(ROOT, 'sleep.cjs');
+const TREE_PARENT_SCRIPT = path.join(ROOT, 'tree-parent.cjs');
 
 const fwd = (p: string): string => p.replace(/\\/g, '/');
 
@@ -70,6 +72,13 @@ beforeAll(() => {
     "const fs = require('fs');",
     'fs.writeFileSync(process.argv[2], String(process.pid));',
     'setTimeout(() => {}, 30000);',
+  ].join('\n'));
+  fs.writeFileSync(TREE_PARENT_SCRIPT, [
+    "const { spawn } = require('child_process');",
+    'const heartbeat = process.argv[2];',
+    "const childCode = \"const fs=require('fs');const p=process.argv[1];setInterval(()=>fs.appendFileSync(p,'x'),10);\";",
+    "spawn(process.execPath, ['-e', childCode, heartbeat], { stdio: 'ignore' });",
+    'setInterval(() => {}, 1000);',
   ].join('\n'));
 });
 
@@ -372,6 +381,51 @@ describe('watch claims: fencing kills the agent', () => {
     }
   }, 30_000);
 
+  it('keeps the self-fence deadline armed while a renewal is pending', async () => {
+    const ttlMs = 180;
+    const skewMarginMs = 30;
+    const released: FinishOutcome[] = [];
+    let renewStarted = false;
+    const claim: ClaimRecord = {
+      key: { platform: 'github', repo: 'acme/widgets', id: '1' },
+      handle: 'pending-renewal',
+      holder: identity('A'),
+      epoch: 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + ttlMs,
+    };
+    const provider: WorkClaimProvider = {
+      name: 'git-ref',
+      guarantees: { exclusion: 'distributed', leases: true, fencing: true },
+      acquire: async () => ({ status: 'acquired', claim }),
+      renew: async () => {
+        renewStarted = true;
+        return new Promise(() => {});
+      },
+      release: async (_claim, outcome) => {
+        released.push(outcome);
+        return { status: 'released' };
+      },
+    };
+    const ctx = makeContext(teamDir('pending-renewal-deadline'), {
+      claims: provider,
+      claimTiming: { ttlMs, skewMarginMs },
+    });
+    const started = Date.now();
+    const held = await holdClaimsWhile(
+      ctx,
+      [claim],
+      signal => new Promise<string>(resolve => signal.addEventListener('abort', () => resolve('stopped'), { once: true })),
+      (_result, fenced) => fenced ? 'cancelled' : 'completed',
+      { debug: () => {}, warn: () => {} },
+    );
+
+    expect(renewStarted).toBe(true);
+    expect(held.fencedReason).toContain('could not be renewed before expiry');
+    expect(Date.now() - started).toBeLessThan(1000);
+    expect(released).toEqual(['cancelled']);
+  });
+
   it('releases with "completed" when the agent exits 0 and "abandoned" when it fails', async () => {
     const outcomes: FinishOutcome[] = [];
     const recording = (): WorkClaimProvider => {
@@ -644,6 +698,28 @@ describe('watch claims: config and flag precedence', () => {
     expect(loadWatchConfig(bom, {}).claims).toEqual({ provider: 'git-ref' });
   });
 
+  it('fails closed for empty or unreadable config; only absence selects defaults', () => {
+    const empty = teamDir('cfg-empty');
+    fs.writeFileSync(path.join(empty, '.squad', 'config.json'), '');
+    expect(() => loadWatchConfig(empty, {})).toThrow(WatchConfigError);
+    expect(() => loadWatchConfig(empty, {})).toThrow(/not valid JSON/);
+
+    const unreadable = teamDir('cfg-unreadable');
+    const configPath = path.join(unreadable, '.squad', 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify({ watch: { claims: 'git-ref' } }));
+    const read = vi.spyOn(FSStorageProvider.prototype, 'readSync').mockImplementation((filePath) => {
+      if (filePath === configPath) throw new Error('permission denied');
+      return undefined;
+    });
+    try {
+      expect(() => loadWatchConfig(unreadable, {})).toThrow(/Could not read .*permission denied/);
+    } finally {
+      read.mockRestore();
+    }
+
+    expect(loadWatchConfig(teamDir('cfg-absent'), {}).claims).toBeUndefined();
+  });
+
   it('warns about unknown watch.claims keys and keeps the known ones', () => {
     const root = withConfig('cfg-unknown-key', { claims: { provider: 'git-ref', ttl: 600_000, remote: 'upstream' } });
     const warnings: string[] = [];
@@ -804,6 +880,45 @@ describe('watch claims: acquisition that outlasts a lease never dispatches on a 
       [1, 'claim expired during acquisition and could not be renewed: remote unreachable'],
     ]);
   });
+
+  it('does a final handoff check after parallel renewals, so an earlier claim cannot re-stale', async () => {
+    let t = 1_000_000;
+    const now = (): number => t;
+    const store = new InMemoryClaimStore();
+    const mine = new InMemoryClaimProvider({ identity: identity('slow-A'), store, now, skewMarginMs });
+    const other = new InMemoryClaimProvider({ identity: identity('fast-B'), store, now, skewMarginMs });
+    const acquire = mine.acquire.bind(mine);
+    vi.spyOn(mine, 'acquire').mockImplementation(async (key, opts) => {
+      if (key.id === '3') t += ttlMs - skewMarginMs;
+      return acquire(key, opts);
+    });
+    const renew = mine.renew.bind(mine);
+    vi.spyOn(mine, 'renew').mockImplementation(async (claim, opts) => {
+      if (claim.key.id === '2') {
+        t += ttlMs + skewMarginMs + 1;
+        const takeover = await other.acquire(
+          { platform: 'github', repo: 'acme/widgets', id: '1' },
+          { ttlMs },
+        );
+        expect(takeover.status).toBe('acquired');
+      }
+      return renew(claim, opts);
+    });
+    const root = teamDir('final-handoff');
+    const recordFile = path.join(root, 'dispatch.jsonl');
+    const result = await new ExecuteCapability().execute(makeContext(root, {
+      adapter: fakeAdapter(ISSUES.slice(0, 3)),
+      executor: identity('slow-A'),
+      claims: mine,
+      claimTiming: { ttlMs, skewMarginMs, now },
+      agentCmd: recorderCmd(recordFile, 'A'),
+    }));
+
+    expect(result.success, result.summary).toBe(true);
+    expect(readRecords(recordFile).get('A')).toEqual([2, 3]);
+    expect((await other.inspect({ platform: 'github', repo: 'acme/widgets', id: '1' }))?.holder.machineId)
+      .toBe('fast-B');
+  });
 });
 
 describe('watch claims: fence kill reaches the whole process tree', () => {
@@ -859,20 +974,59 @@ describe('watch claims: fence kill reaches the whole process tree', () => {
     }
   });
 
+  it('does not release a claim on timeout until the agent process tree has stopped', async () => {
+    const root = teamDir(`timeout-tree-${process.platform}`);
+    const heartbeat = path.join(root, 'heartbeat.txt');
+    const inner = new InMemoryClaimProvider({ identity: identity('timeout-A') });
+    const acquired = await inner.acquire(
+      { platform: 'github', repo: 'acme/widgets', id: '1' },
+      { ttlMs: 30_000 },
+    );
+    if (acquired.status !== 'acquired') throw new Error(acquired.status);
+    let treeStoppedBeforeRelease = false;
+    const provider: WorkClaimProvider = {
+      name: inner.name,
+      guarantees: inner.guarantees,
+      acquire: (key, opts) => inner.acquire(key, opts),
+      renew: (claim, opts) => inner.renew(claim, opts),
+      release: async (claim, outcome) => {
+        const before = fs.existsSync(heartbeat) ? fs.statSync(heartbeat).size : 0;
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const after = fs.existsSync(heartbeat) ? fs.statSync(heartbeat).size : 0;
+        treeStoppedBeforeRelease = before > 0 && after === before;
+        return inner.release(claim, outcome);
+      },
+    };
+    const held = await holdClaimsWhile(
+      makeContext(root, {
+        claims: provider,
+        claimTiming: { ttlMs: 30_000, skewMarginMs: 0 },
+      }),
+      [acquired.claim],
+      signal => spawnAgent('node', [TREE_PARENT_SCRIPT, heartbeat], root, 400, undefined, undefined, signal),
+      result => result?.success ? 'completed' : 'abandoned',
+      { debug: () => {}, warn: () => {} },
+    );
+
+    expect(held.result.timedOut).toBe(true);
+    expect(treeStoppedBeforeRelease, `descendant still wrote after release began on ${process.platform}`).toBe(true);
+  }, 15_000);
+
   it.skipIf(process.platform === 'win32')('abort kills a grandchild the agent forked (real process group)', async () => {
     const dir = teamDir('group-kill');
-    const pidFile = path.join(dir, 'grandchild.pid');
+    const heartbeat = path.join(dir, 'heartbeat.txt');
     const controller = new AbortController();
-    const run = spawnAgent('sh', ['-c', `sleep 30 & echo $! > '${pidFile}'; wait`], dir, 20_000, undefined, undefined, controller.signal);
+    const run = spawnAgent('node', [TREE_PARENT_SCRIPT, heartbeat], dir, 20_000, undefined, undefined, controller.signal);
     const deadline = Date.now() + 10_000;
-    while (!fs.existsSync(pidFile) || !fs.readFileSync(pidFile, 'utf8').trim()) {
-      if (Date.now() > deadline) throw new Error('grandchild never started');
+    while (!fs.existsSync(heartbeat) || fs.statSync(heartbeat).size === 0) {
+      if (Date.now() > deadline) throw new Error('grandchild heartbeat never started');
       await new Promise(r => setTimeout(r, 25));
     }
-    const grandchild = Number(fs.readFileSync(pidFile, 'utf8').trim());
     controller.abort(new Error('claim fenced'));
     const result = await run;
+    const stoppedAt = fs.statSync(heartbeat).size;
+    await new Promise(r => setTimeout(r, 100));
     expect(result.cancelled).toBe(true);
-    expect(await waitForDeath(grandchild)).toBe(true);
+    expect(fs.statSync(heartbeat).size).toBe(stoppedAt);
   }, 30_000);
 });

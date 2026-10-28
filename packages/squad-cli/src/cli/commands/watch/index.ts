@@ -888,7 +888,12 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   let claimProvider: Awaited<ReturnType<typeof createWatchClaimProvider>>;
   // Assigned once the provider exists; the provider warns before any round runs.
   let claimMetrics: import('./claim-metrics.js').WatchClaimMetrics | undefined;
-  const { claimMetricsFor, isImplausibleTakeoverWarning } = await import('./claim-metrics.js');
+  const {
+    claimMetricsFor,
+    initializeWatchClaimMetrics,
+    isImplausibleTakeoverWarning,
+    isWatchTelemetryEnabled,
+  } = await import('./claim-metrics.js');
   try {
     claimProvider = await createWatchClaimProvider(config.claims, {
       teamRoot,
@@ -901,12 +906,18 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
   } catch (err) {
     return fatal(`Invalid claims configuration: ${(err as Error).message}`);
   }
-  // Claim telemetry only when claims exclude other executors; `none` output is unchanged.
-  claimMetrics = claimMetricsFor(claimProvider);
   let claimTelemetry: { shutdown: () => Promise<void> } | undefined;
-  if (claimMetrics && process.env['OTEL_EXPORTER_OTLP_ENDPOINT']) {
+  if (claimProvider.guarantees.exclusion !== 'none' && isWatchTelemetryEnabled()) {
     const { initSquadTelemetry } = await import('@bradygaster/squad-sdk');
-    claimTelemetry = initSquadTelemetry({ serviceName: 'squad-watch', mode: 'cli', installTransport: false });
+    const initialized = initializeWatchClaimMetrics(
+      claimProvider,
+      () => initSquadTelemetry({ serviceName: 'squad-watch', mode: 'cli', installTransport: false }),
+      { telemetryEnabled: true },
+    );
+    claimMetrics = initialized.metrics;
+    claimTelemetry = initialized.telemetry;
+  } else {
+    claimMetrics = claimMetricsFor(claimProvider);
   }
   const workRepo = resolveWorkRepo(teamRoot);
   console.log(`${DIM}🔒 ${describeClaimProvider(claimProvider, claimTiming, {
