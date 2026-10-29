@@ -33,14 +33,25 @@ describe('build-standalone.mjs — runtime extraction', () => {
 
   it('uses unzip for zip archives on non-Windows hosts', () => {
     // GNU tar (Linux) cannot read zip archives while bsdtar (Windows, macOS)
-    // can. The release workflow builds every target on ubuntu-latest, so
-    // without this every win32 bundle would fail to unpack its runtime.
+    // can. Keep cross-build support for local and recovery builds even though
+    // the release workflow now executes each target on its native runner.
     expect(build).toMatch(/ext === 'zip' && process\.platform !== 'win32'/);
     expect(build).toMatch(/run\('unzip'/);
   });
 
   it('surfaces the underlying tar error instead of a bare exit code', () => {
     expect(build).toMatch(/Failed to extract .* from/);
+  });
+
+  it('authenticates the checksum manifest before trusting artifact hashes', () => {
+    expect(build).toContain('SHASUMS256.txt.sig');
+    expect(build).toContain('SHASUMS256.txt.asc');
+    expect(build).toContain('nodejs-release-keyring.kbx');
+    expect(build).toContain('gpgv is required');
+    expect(build).toContain('Authenticated Node ${version} checksum manifests do not match');
+    expect(build.indexOf('authenticatedNodeChecksums(version')).toBeLessThan(
+      build.indexOf('const checksumLine'),
+    );
   });
 
   it('marks the vendored posix node binary executable', () => {
@@ -91,6 +102,11 @@ describe('build-standalone.mjs — Windows squad.exe', () => {
 
   it('sets SQUAD_STANDALONE_HOME from the SEA launcher too', () => {
     expect(build).toMatch(/process\.env\.SQUAD_STANDALONE_HOME = root/);
+  });
+
+  it('reports the process.version embedded in the SEA for native validation', () => {
+    expect(build).toContain("--standalone-runtime-version");
+    expect(build).toContain('console.log(process.version)');
   });
 });
 

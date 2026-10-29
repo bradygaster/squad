@@ -335,6 +335,7 @@ describe('standalone release handoff', () => {
   it('vendors the patched Node default and refuses versions below the security floor', () => {
     expect(nodeSecurityFloor).toMatchObject({
       advisory: 'https://nodejs.org/en/blog/vulnerability/october-2026-security-releases',
+      releaseNotes: 'https://github.com/nodejs/node/releases/tag/v22.23.4',
       standaloneDefault: '22.23.4',
       minimumByMajor: {
         22: '22.23.4',
@@ -352,6 +353,8 @@ describe('standalone release handoff', () => {
 
   it('checksum-verifies every downloaded Node runtime and pins release-critical CI', () => {
     expect(buildStandalone).toContain('SHASUMS256.txt');
+    expect(buildStandalone).toContain('SHASUMS256.txt.sig');
+    expect(buildStandalone).toContain('SHASUMS256.txt.asc');
     expect(buildStandalone).toContain("createHash('sha256')");
     expect(buildStandalone).toContain('Checksum mismatch for ${file}');
     expect(buildStandalone).toContain('downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir)');
@@ -361,6 +364,37 @@ describe('standalone release handoff', () => {
     expect(releaseVerify).toContain("node-version: '22.23.4'");
     expect(ci).not.toMatch(/node-version:\s*22(?:\r?\n|$)/);
     expect(ci).toContain("node-version: '22.23.4'");
+  });
+
+  it('supports exact-SHA artifact-only validation without creating or requiring a release tag', () => {
+    const guard = stepNamed(standaloneWorkflow.jobs.guard, 'Validate inputs').run ?? '';
+    expect(guard).toContain('if [ "$UPLOAD" = true ]; then');
+    expect(guard).toContain('release_tag must be empty or a stable, preview, or insider tag');
+    expect(guard).toContain('Artifact-only validation: no tag or release publication will occur.');
+    expect(guard.indexOf('if [ "$UPLOAD" = true ]; then')).toBeLessThan(
+      guard.indexOf('assert-publish-identity.mjs'),
+    );
+    expect(standaloneWorkflow.jobs.publish.if).toBe('inputs.upload');
+  });
+
+  it('executes every bundle on a matching hosted runner and records lifecycle plus archive evidence', () => {
+    for (const [target, runner] of [
+      ['linux-x64', 'ubuntu-latest'],
+      ['linux-arm64', 'ubuntu-24.04-arm'],
+      ['darwin-x64', 'macos-15-intel'],
+      ['darwin-arm64', 'macos-15'],
+      ['win32-x64', 'windows-latest'],
+      ['win32-arm64', 'windows-11-arm'],
+    ]) {
+      expect(standalone).toMatch(
+        new RegExp(`target: ${target}[\\s\\S]*?runner: ${runner.replace('.', '\\.')}`),
+      );
+    }
+    expect(standalone).toContain('Execute bundle and bounded bridge lifecycle smoke');
+    expect(standalone).toContain('validate-standalone-bundle.mjs');
+    expect(standalone).toContain('state-backend-root-guard.test.ts');
+    expect(standalone).toContain('squad-${{ matrix.target }}-validation.json');
+    expect(standalone).not.toContain('cross-built, not executable here');
   });
 
   it('builds package workspaces without the release-tag-incompatible root prebuild', () => {

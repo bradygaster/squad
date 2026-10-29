@@ -31,6 +31,12 @@ describe('Node security floor', () => {
       24: '24.22.1',
       26: '26.12.1',
     });
+    expect(policy.releaseNotes).toBe('https://github.com/nodejs/node/releases/tag/v22.23.4');
+    expect(policy.releaseKeys).toMatchObject({
+      repository: 'https://github.com/nodejs/release-keys',
+      commit: '481637f813e912c4aa3622d7964ab426c97b8e8d',
+      sha256: '610b8d249da3d5733f5a128def2dd0294dbbf5b5713e6ca2529db8db419dee00',
+    });
     expect(assertNodeSecurityFloor('22.23.4', policy)).toMatchObject({ minimum: '22.23.4' });
     expect(assertNodeSecurityFloor('24.22.2', policy)).toMatchObject({ minimum: '24.22.1' });
     expect(() => assertNodeSecurityFloor('22.23.3', policy)).toThrow(/below the 22\.x security floor/);

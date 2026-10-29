@@ -34,7 +34,11 @@ export function compareNodeVersions(left, right) {
 
 export function loadNodeSecurityFloor(policyPath = DEFAULT_POLICY_PATH) {
   const policy = JSON.parse(readFileSync(policyPath, 'utf8'));
-  if (policy.schemaVersion !== 1 || typeof policy.advisory !== 'string') {
+  if (
+    policy.schemaVersion !== 1 ||
+    typeof policy.advisory !== 'string' ||
+    typeof policy.releaseNotes !== 'string'
+  ) {
     throw new Error(`Invalid Node security floor policy at ${policyPath}`);
   }
   parseNodeVersion(policy.standaloneDefault);
@@ -43,6 +47,15 @@ export function loadNodeSecurityFloor(policyPath = DEFAULT_POLICY_PATH) {
     if (String(parsed.major) !== major) {
       throw new Error(`Node security floor major ${major} points to ${minimum}`);
     }
+  }
+  const keys = policy.releaseKeys;
+  if (
+    typeof keys?.repository !== 'string' ||
+    !/^[0-9a-f]{40}$/.test(keys?.commit ?? '') ||
+    typeof keys?.path !== 'string' ||
+    !/^[0-9a-f]{64}$/.test(keys?.sha256 ?? '')
+  ) {
+    throw new Error(`Invalid pinned Node release keyring in ${policyPath}`);
   }
   return policy;
 }

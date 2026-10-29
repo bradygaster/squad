@@ -187,10 +187,80 @@ function nodeArtifactName(platform, arch, version) {
   return { base: `node-v${version}-${slug}`, file: `node-v${version}-${slug}.${ext}`, ext };
 }
 
-function downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir) {
+function sha256(filePath) {
+  return createHash('sha256').update(readFileSync(filePath)).digest('hex');
+}
+
+function resolveGpgv() {
+  const candidates = process.platform === 'win32'
+    ? [
+        path.join(process.env.ProgramFiles ?? 'C:\\Program Files', 'Git', 'usr', 'bin', 'gpgv.exe'),
+        path.join(process.env['ProgramFiles(x86)'] ?? 'C:\\Program Files (x86)', 'GnuPG', 'bin', 'gpgv.exe'),
+      ]
+    : ['gpgv'];
+  for (const candidate of candidates) {
+    if (path.isAbsolute(candidate) && !existsSync(candidate)) continue;
+    try {
+      run(candidate, ['--version'], REPO_ROOT);
+      return candidate;
+    } catch {
+      // Try the next trusted verifier location.
+    }
+  }
+  throw new Error('gpgv is required to authenticate Node.js SHASUMS256.txt signatures');
+}
+
+function gpgvPath(filePath, gpgv) {
+  if (process.platform !== 'win32' || !/\\Git\\usr\\bin\\gpgv\.exe$/i.test(gpgv)) {
+    return filePath;
+  }
+  const match = path.resolve(filePath).match(/^([A-Za-z]):\\(.*)$/);
+  return match ? `/${match[1].toLowerCase()}/${match[2].replace(/\\/g, '/')}` : filePath;
+}
+
+function authenticatedNodeChecksums(version, stagingDir) {
+  const authenticatedPath = path.join(stagingDir, `SHASUMS256-${version}.authenticated.txt`);
+  if (existsSync(authenticatedPath)) return authenticatedPath;
+
   const baseUrl = `https://nodejs.org/dist/v${version}`;
   const checksumsPath = path.join(stagingDir, `SHASUMS256-${version}.txt`);
+  const signaturePath = path.join(stagingDir, `SHASUMS256-${version}.txt.sig`);
+  const armoredPath = path.join(stagingDir, `SHASUMS256-${version}.txt.asc`);
+  const armoredOutput = path.join(stagingDir, `SHASUMS256-${version}.asc-output.txt`);
+  const keyringPath = path.join(stagingDir, 'nodejs-release-keyring.kbx');
+  const keyPolicy = NODE_SECURITY_POLICY.releaseKeys;
+  const keyringUrl = `https://raw.githubusercontent.com/nodejs/release-keys/${keyPolicy.commit}/${keyPolicy.path}`;
+
+  run('curl', ['-fsSL', '-o', keyringPath, keyringUrl], stagingDir);
+  const keyringSha = sha256(keyringPath);
+  if (keyringSha !== keyPolicy.sha256) {
+    throw new Error(`Node.js release keyring checksum mismatch: expected ${keyPolicy.sha256}, got ${keyringSha}`);
+  }
   run('curl', ['-fsSL', '-o', checksumsPath, `${baseUrl}/SHASUMS256.txt`], stagingDir);
+  run('curl', ['-fsSL', '-o', signaturePath, `${baseUrl}/SHASUMS256.txt.sig`], stagingDir);
+  run('curl', ['-fsSL', '-o', armoredPath, `${baseUrl}/SHASUMS256.txt.asc`], stagingDir);
+
+  const gpgv = resolveGpgv();
+  const keyringArg = gpgvPath(keyringPath, gpgv);
+  run(gpgv, [
+    '--keyring',
+    keyringArg,
+    gpgvPath(signaturePath, gpgv),
+    gpgvPath(checksumsPath, gpgv),
+  ], stagingDir);
+  run(gpgv, ['--keyring', keyringArg, '--output', gpgvPath(armoredOutput, gpgv), gpgvPath(armoredPath, gpgv)], stagingDir);
+
+  const published = readFileSync(checksumsPath);
+  if (!published.equals(readFileSync(armoredOutput))) {
+    throw new Error(`Authenticated Node ${version} checksum manifests do not match SHASUMS256.txt`);
+  }
+  renameSync(armoredOutput, authenticatedPath);
+  step(`Authenticated Node ${version} SHASUMS256.txt with signed .sig and .asc manifests`);
+  return authenticatedPath;
+}
+
+function downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir) {
+  const checksumsPath = authenticatedNodeChecksums(version, stagingDir);
   const checksumLine = readFileSync(checksumsPath, 'utf8')
     .split(/\r?\n/)
     .find((line) => line.endsWith(`  ${file}`));
@@ -199,8 +269,8 @@ function downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir) {
     throw new Error(`Official SHASUMS256.txt has no checksum for ${file}`);
   }
 
-  run('curl', ['-fsSL', '-o', archivePath, `${baseUrl}/${file}`], stagingDir);
-  const actual = createHash('sha256').update(readFileSync(archivePath)).digest('hex');
+  run('curl', ['-fsSL', '-o', archivePath, `https://nodejs.org/dist/v${version}/${file}`], stagingDir);
+  const actual = sha256(archivePath);
   if (actual !== expected) {
     rmSync(archivePath, { force: true });
     throw new Error(`Checksum mismatch for ${file}: expected ${expected}, got ${actual}`);
@@ -265,6 +335,11 @@ const fs = require('node:fs');
 const { pathToFileURL } = require('node:url');
 
 const ENTRY = ${JSON.stringify(CLI_ENTRY)};
+
+if (process.argv[2] === '--standalone-runtime-version') {
+  console.log(process.version);
+  process.exit(0);
+}
 
 // winget installs portables by symlinking the exe into a links directory, and
 // process.execPath may report that link rather than the bundle. Try the exe's
