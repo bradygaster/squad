@@ -21,12 +21,13 @@
  * Usage:
  *   node scripts/build-standalone.mjs                        # host platform
  *   node scripts/build-standalone.mjs --platform linux --arch x64
- *   node scripts/build-standalone.mjs --node-version 22.20.0
+ *   node scripts/build-standalone.mjs --node-version 22.23.4
  *   node scripts/build-standalone.mjs --skip-runtime          # app tree only
  *   node scripts/build-standalone.mjs --include-optional      # fat bundle
  */
 
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
   renameSync, rmSync, writeFileSync, chmodSync,
@@ -34,11 +35,16 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  assertNodeSecurityFloor,
+  loadNodeSecurityFloor,
+} from './release/node-security-floor.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 /** Node.js runtime vendored into the bundle. Must satisfy squad's engines field (>=22.5.0). */
-const DEFAULT_NODE_VERSION = '22.20.0';
+const NODE_SECURITY_POLICY = loadNodeSecurityFloor();
+const DEFAULT_NODE_VERSION = NODE_SECURITY_POLICY.standaloneDefault;
 
 /** Platform/arch pairs we publish, matching the GitHub Copilot CLI release matrix. */
 const SUPPORTED = [
@@ -181,14 +187,34 @@ function nodeArtifactName(platform, arch, version) {
   return { base: `node-v${version}-${slug}`, file: `node-v${version}-${slug}.${ext}`, ext };
 }
 
+function downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir) {
+  const baseUrl = `https://nodejs.org/dist/v${version}`;
+  const checksumsPath = path.join(stagingDir, `SHASUMS256-${version}.txt`);
+  run('curl', ['-fsSL', '-o', checksumsPath, `${baseUrl}/SHASUMS256.txt`], stagingDir);
+  const checksumLine = readFileSync(checksumsPath, 'utf8')
+    .split(/\r?\n/)
+    .find((line) => line.endsWith(`  ${file}`));
+  const expected = checksumLine?.match(/^([0-9a-f]{64})  /)?.[1];
+  if (!expected) {
+    throw new Error(`Official SHASUMS256.txt has no checksum for ${file}`);
+  }
+
+  run('curl', ['-fsSL', '-o', archivePath, `${baseUrl}/${file}`], stagingDir);
+  const actual = createHash('sha256').update(readFileSync(archivePath)).digest('hex');
+  if (actual !== expected) {
+    rmSync(archivePath, { force: true });
+    throw new Error(`Checksum mismatch for ${file}: expected ${expected}, got ${actual}`);
+  }
+  step(`Verified ${file} against Node.js SHASUMS256.txt`);
+}
+
 /** Download the official Node.js build for the target and vendor just the runtime. */
 function vendorRuntime(bundleDir, platform, arch, version, stagingDir) {
   const { base, file, ext } = nodeArtifactName(platform, arch, version);
-  const url = `https://nodejs.org/dist/v${version}/${file}`;
   const archivePath = path.join(stagingDir, file);
 
   step(`Downloading Node ${version} for ${platform}-${arch}`);
-  run('curl', ['-fsSL', '-o', archivePath, url], stagingDir);
+  downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir);
 
   step('Extracting runtime');
   const member = platform === 'win32'
@@ -309,7 +335,7 @@ function resolveBlobBuilder(version, stagingDir) {
   const archivePath = path.join(stagingDir, `host-${file}`);
 
   step(`Fetching Node ${version} for the host to generate the SEA blob`);
-  run('curl', ['-fsSL', '-o', archivePath, `https://nodejs.org/dist/v${version}/${file}`], stagingDir);
+  downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir);
 
   const member = hostPlatform === 'win32' ? `${base}/node.exe` : `${base}/bin/node`;
   extractArchiveMember(archivePath, member, ext, stagingDir);
@@ -454,6 +480,7 @@ function directorySize(dir) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  assertNodeSecurityFloor(args.nodeVersion, NODE_SECURITY_POLICY);
   const target = `${args.platform}-${args.arch}`;
   const version = JSON.parse(
     readFileSync(path.join(REPO_ROOT, 'packages', 'squad-cli', 'package.json'), 'utf-8'),

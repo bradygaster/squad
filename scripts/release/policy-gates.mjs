@@ -11,6 +11,7 @@
  *                         dependency floor is '>=<version>' for prereleases and has no
  *                         prerelease suffix for stable versions (package.json AND lockfile)
  *   prerelease-guard      every workspace version is X.Y.Z, X.Y.Z-preview.N or X.Y.Z-insider.N
+ *   node-security-floor   standalone defaults meet the published minimum for their Node major
  *   publish-policy        every `npm ... publish` is workspace-scoped or one of the two exact
  *                         verified tarball paths used by squad-npm-publish.yml
  *   publish-allowlist     the publishable workspaces are exactly @bradygaster/squad-sdk and
@@ -30,6 +31,11 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
+import {
+  assertNodeSecurityFloor,
+  loadNodeSecurityFloor,
+} from './node-security-floor.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -105,6 +111,42 @@ export function runPolicyGates({ root = ROOT, mode = 'ci' } = {}) {
       if (pkg.version && !SANCTIONED_VERSION.test(pkg.version)) bad.push(`${pkg.name}@${pkg.version}`);
     }
     gate('prerelease-guard', bad.length === 0, bad.length ? `unsanctioned prerelease versions: ${bad.join(', ')}` : `all workspace versions match ${SANCTIONED_VERSION}`);
+  }
+
+  // node-security-floor
+  {
+    const problems = [];
+    try {
+      const policy = loadNodeSecurityFloor(path.join(root, 'scripts', 'release', 'node-security-floor.json'));
+      const workflowPath = path.join(root, '.github', 'workflows', 'squad-standalone-release.yml');
+      const workflow = parse(readFileSync(workflowPath, 'utf8'));
+      const callDefault = workflow.on?.workflow_call?.inputs?.node_version?.default;
+      const dispatchDefault = workflow.on?.workflow_dispatch?.inputs?.node_version?.default;
+      const envDefault = workflow.env?.NODE_VERSION;
+      const expectedEnv = `\${{ inputs.node_version || '${policy.standaloneDefault}' }}`;
+
+      for (const [where, value] of [
+        ['workflow_call node_version default', callDefault],
+        ['workflow_dispatch node_version default', dispatchDefault],
+      ]) {
+        if (value !== policy.standaloneDefault) {
+          problems.push(`${where} is '${value}', expected '${policy.standaloneDefault}'`);
+        }
+      }
+      if (envDefault !== expectedEnv) {
+        problems.push(`workflow NODE_VERSION is '${envDefault}', expected '${expectedEnv}'`);
+      }
+      assertNodeSecurityFloor(policy.standaloneDefault, policy);
+    } catch (error) {
+      problems.push(error instanceof Error ? error.message : String(error));
+    }
+    gate(
+      'node-security-floor',
+      problems.length === 0,
+      problems.length
+        ? problems.join('; ')
+        : 'standalone defaults and policy meet the published Node security floor',
+    );
   }
 
   // publish-policy

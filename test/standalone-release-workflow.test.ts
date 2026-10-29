@@ -18,6 +18,16 @@ const standalone = readFileSync(join(WORKFLOWS, 'squad-standalone-release.yml'),
 const npmPublish = readFileSync(join(WORKFLOWS, 'squad-npm-publish.yml'), 'utf8');
 const insiderPublish = readFileSync(join(WORKFLOWS, 'squad-insider-publish.yml'), 'utf8');
 const promote = readFileSync(join(WORKFLOWS, 'squad-promote.yml'), 'utf8');
+const ci = readFileSync(join(WORKFLOWS, 'squad-ci.yml'), 'utf8');
+const releaseVerify = readFileSync(join(WORKFLOWS, 'squad-release-verify.yml'), 'utf8');
+const buildStandalone = readFileSync(
+  join(process.cwd(), 'scripts', 'build-standalone.mjs'),
+  'utf8',
+);
+const nodeSecurityFloor = JSON.parse(readFileSync(
+  join(process.cwd(), 'scripts', 'release', 'node-security-floor.json'),
+  'utf8',
+));
 const verifyPublishEvidenceScript = readFileSync(
   join(process.cwd(), 'scripts', 'release', 'verify-publish-evidence.mjs'),
   'utf8',
@@ -320,6 +330,37 @@ describe('standalone release handoff', () => {
       'ref: ${{ inputs.source_ref || inputs.release_tag || github.ref }}',
     );
     expect(standaloneWorkflow.on?.release).toBeUndefined();
+  });
+
+  it('vendors the patched Node default and refuses versions below the security floor', () => {
+    expect(nodeSecurityFloor).toMatchObject({
+      advisory: 'https://nodejs.org/en/blog/vulnerability/october-2026-security-releases',
+      standaloneDefault: '22.23.4',
+      minimumByMajor: {
+        22: '22.23.4',
+        24: '24.22.1',
+        26: '26.12.1',
+      },
+    });
+    expect(standaloneWorkflow.on?.workflow_call?.inputs?.node_version?.default).toBe('22.23.4');
+    expect(standaloneWorkflow.on?.workflow_dispatch?.inputs?.node_version?.default).toBe('22.23.4');
+    expect(standaloneWorkflow.env?.NODE_VERSION).toBe("${{ inputs.node_version || '22.23.4' }}");
+    expect(stepNamed(standaloneWorkflow.jobs.guard, 'Validate inputs').run).toContain(
+      'node scripts/release/node-security-floor.mjs --version "$NODE_VERSION_INPUT"',
+    );
+  });
+
+  it('checksum-verifies every downloaded Node runtime and pins release-critical CI', () => {
+    expect(buildStandalone).toContain('SHASUMS256.txt');
+    expect(buildStandalone).toContain("createHash('sha256')");
+    expect(buildStandalone).toContain('Checksum mismatch for ${file}');
+    expect(buildStandalone).toContain('downloadVerifiedNodeArtifact(version, file, archivePath, stagingDir)');
+    expect(standalone).not.toMatch(/node-version:\s*22(?:\r?\n|$)/);
+    expect(standalone).toContain("node-version: '22.23.4'");
+    expect(releaseVerify).not.toMatch(/node-version:\s*22(?:\r?\n|$)/);
+    expect(releaseVerify).toContain("node-version: '22.23.4'");
+    expect(ci).not.toMatch(/node-version:\s*22(?:\r?\n|$)/);
+    expect(ci).toContain("node-version: '22.23.4'");
   });
 
   it('builds package workspaces without the release-tag-incompatible root prebuild', () => {

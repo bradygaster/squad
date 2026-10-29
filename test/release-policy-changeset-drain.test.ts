@@ -18,7 +18,7 @@ const ROOT = process.cwd();
 /** Minimal copy of the files runPolicyGates reads, with the given changeset fragments. */
 function fixtureRoot(changesets: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), 'squad-policy-gate-'));
-  for (const rel of ['package.json', 'package-lock.json', 'packages/squad-sdk/package.json', 'packages/squad-cli/package.json', 'CHANGELOG.md', 'docs/src/content/docs/whatsnew.md']) {
+  for (const rel of ['package.json', 'package-lock.json', 'packages/squad-sdk/package.json', 'packages/squad-cli/package.json', 'CHANGELOG.md', 'docs/src/content/docs/whatsnew.md', 'scripts/release/node-security-floor.json']) {
     mkdirSync(join(dir, rel, '..'), { recursive: true });
     cpSync(join(ROOT, rel), join(dir, rel));
   }
@@ -32,6 +32,7 @@ function fixtureRoot(changesets: Record<string, string>): string {
 const GOOD = '---\n"@bradygaster/squad-cli": patch\n---\n\nFix the thing.\n';
 const GOOD_TWO = '---\n"@bradygaster/squad-sdk": minor\n"@bradygaster/squad-cli": patch\n---\n\nAdd a thing.\n';
 const drain = (root: string, mode: 'ci' | 'release') => runPolicyGates({ root, mode }).gates.find((g) => g.id === 'changeset-drain')!;
+const nodeFloor = (root: string) => runPolicyGates({ root, mode: 'ci' }).gates.find((g) => g.id === 'node-security-floor')!;
 
 describe('policy gate changeset-drain is branch/event-aware', () => {
   it('release mode fails when any changeset is pending and passes when drained', () => {
@@ -81,6 +82,21 @@ describe('policy gate changeset-drain is branch/event-aware', () => {
   it('the changesets pending in this tree are well-formed (ci mode passes here)', () => {
     for (const f of listPendingChangesets(ROOT)) expect(validateChangeset(ROOT, f), f).toEqual([]);
     expect(drain(ROOT, 'ci').ok).toBe(true);
+  });
+
+  it('fails when a standalone workflow default falls below the declared floor', () => {
+    const root = fixtureRoot({});
+    try {
+      const workflow = join(root, '.github', 'workflows', 'squad-standalone-release.yml');
+      writeFileSync(workflow, readFileSync(workflow, 'utf8').replace(
+        "default: '22.23.4'",
+        "default: '22.23.3'",
+      ));
+      expect(nodeFloor(root)).toMatchObject({ ok: false });
+      expect(nodeFloor(root).detail).toContain("workflow_call node_version default is '22.23.3'");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('squad-release-verify.yml derives the mode from the event instead of hard-coding release', () => {
