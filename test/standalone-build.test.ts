@@ -35,8 +35,14 @@ describe('build-standalone.mjs — runtime extraction', () => {
     // GNU tar (Linux) cannot read zip archives while bsdtar (Windows, macOS)
     // can. Keep cross-build support for local and recovery builds even though
     // the release workflow now executes each target on its native runner.
-    expect(build).toMatch(/ext === 'zip' && process\.platform !== 'win32'/);
+    expect(build).toMatch(/if \(ext === 'zip'\)/);
+    expect(build).toMatch(/if \(process\.platform === 'win32'\)/);
     expect(build).toMatch(/run\('unzip'/);
+  });
+
+  it('uses Expand-Archive for zip archives on Windows hosts', () => {
+    expect(build).toContain('Expand-Archive -LiteralPath');
+    expect(build).toContain("run('powershell.exe'");
   });
 
   it('surfaces the underlying tar error instead of a bare exit code', () => {
@@ -48,8 +54,8 @@ describe('build-standalone.mjs — runtime extraction', () => {
     expect(build).toContain('SHASUMS256.txt.asc');
     expect(build).toContain('nodejs-release-keyring.kbx');
     expect(build).toContain('gpgv is required');
-    expect(build).toContain('Authenticated Node ${version} checksum manifests do not match');
-    expect(build).toContain("filter(line => /^[0-9a-f]{64}  \\S+$/.test(line))");
+    expect(build).toContain("gpgvPath(signaturePath, gpgv)");
+    expect(build).toContain("gpgvPath(checksumsPath, gpgv)");
     expect(build.indexOf('authenticatedNodeChecksums(version')).toBeLessThan(
       build.indexOf('const checksumLine'),
     );

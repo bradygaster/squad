@@ -282,7 +282,8 @@ jobs:
           set -euo pipefail
           if [ "${TARGET_PLATFORM}" = "win32" ]; then
             asset="squad-${TARGET}.zip"
-            tar -a -cf "${asset}" "squad-${TARGET}"
+            powershell.exe -NoProfile -NonInteractive -Command \
+              "Compress-Archive -Path 'squad-${TARGET}' -DestinationPath '${asset}' -Force"
           else
             asset="squad-${TARGET}.tar.gz"
             tar -czf "${asset}" "squad-${TARGET}"

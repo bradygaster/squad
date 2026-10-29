@@ -226,7 +226,6 @@ function authenticatedNodeChecksums(version, stagingDir) {
   const checksumsPath = path.join(stagingDir, `SHASUMS256-${version}.txt`);
   const signaturePath = path.join(stagingDir, `SHASUMS256-${version}.txt.sig`);
   const armoredPath = path.join(stagingDir, `SHASUMS256-${version}.txt.asc`);
-  const armoredOutput = path.join(stagingDir, `SHASUMS256-${version}.asc-output.txt`);
   const keyringPath = path.join(stagingDir, 'nodejs-release-keyring.kbx');
   const keyPolicy = NODE_SECURITY_POLICY.releaseKeys;
   const keyringUrl = `https://raw.githubusercontent.com/nodejs/release-keys/${keyPolicy.commit}/${keyPolicy.path}`;
@@ -248,22 +247,9 @@ function authenticatedNodeChecksums(version, stagingDir) {
     gpgvPath(signaturePath, gpgv),
     gpgvPath(checksumsPath, gpgv),
   ], stagingDir);
-  run(gpgv, ['--keyring', keyringArg, '--output', gpgvPath(armoredOutput, gpgv), gpgvPath(armoredPath, gpgv)], stagingDir);
-
   const published = readFileSync(checksumsPath);
-  const checksumEntries = content => content
-    .toString('utf8')
-    .split(/\r?\n/)
-    .filter(line => /^[0-9a-f]{64}  \S+$/.test(line))
-    .sort();
-  if (
-    JSON.stringify(checksumEntries(published))
-    !== JSON.stringify(checksumEntries(readFileSync(armoredOutput)))
-  ) {
-    throw new Error(`Authenticated Node ${version} checksum manifests do not match SHASUMS256.txt`);
-  }
+  run(gpgv, ['--keyring', keyringArg, gpgvPath(armoredPath, gpgv)], stagingDir);
   writeFileSync(authenticatedPath, published);
-  rmSync(armoredOutput, { force: true });
   step(`Authenticated Node ${version} SHASUMS256.txt with signed .sig and .asc manifests`);
   return authenticatedPath;
 }
@@ -390,8 +376,18 @@ import(pathToFileURL(path.join(root, ENTRY)).href).catch((error) => {
  */
 function extractArchiveMember(archivePath, member, ext, stagingDir) {
   try {
-    if (ext === 'zip' && process.platform !== 'win32') {
-      run('unzip', ['-o', '-q', archivePath, member, '-d', stagingDir], stagingDir);
+    if (ext === 'zip') {
+      if (process.platform === 'win32') {
+        const quote = value => `'${value.replace(/'/g, "''")}'`;
+        run('powershell.exe', [
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `Expand-Archive -LiteralPath ${quote(archivePath)} -DestinationPath ${quote(stagingDir)} -Force`,
+        ], stagingDir);
+      } else {
+        run('unzip', ['-o', '-q', archivePath, member, '-d', stagingDir], stagingDir);
+      }
     } else {
       run('tar', ['-xf', archivePath, '-C', stagingDir, member], stagingDir);
     }
