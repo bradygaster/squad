@@ -251,8 +251,15 @@ function authenticatedNodeChecksums(version, stagingDir) {
   run(gpgv, ['--keyring', keyringArg, '--output', gpgvPath(armoredOutput, gpgv), gpgvPath(armoredPath, gpgv)], stagingDir);
 
   const published = readFileSync(checksumsPath);
-  const normalizeText = content => content.toString('utf8').replace(/\r\n/g, '\n');
-  if (normalizeText(published) !== normalizeText(readFileSync(armoredOutput))) {
+  const checksumEntries = content => content
+    .toString('utf8')
+    .split(/\r?\n/)
+    .filter(line => /^[0-9a-f]{64}  \S+$/.test(line))
+    .sort();
+  if (
+    JSON.stringify(checksumEntries(published))
+    !== JSON.stringify(checksumEntries(readFileSync(armoredOutput)))
+  ) {
     throw new Error(`Authenticated Node ${version} checksum manifests do not match SHASUMS256.txt`);
   }
   writeFileSync(authenticatedPath, published);
