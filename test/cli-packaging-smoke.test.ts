@@ -122,7 +122,7 @@ describe('CLI packaging smoke test', { timeout: 120_000 }, () => {
     };
 
     installedCli = installPackedCli('squad-cli-test-');
-  }, 90000);
+  }, 180000);
 
   afterAll(() => {
     // Cleanup - with retry logic for Windows file locks

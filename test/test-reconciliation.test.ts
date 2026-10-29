@@ -1,15 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { reconcile, resolvePlatform, shouldFail } from '../scripts/release/test-reconciliation.mjs';
 
-function reportFor(
-  file: string,
-  title: string,
-  status: 'passed' | 'skipped',
-) {
+function reportForMany(tests: Array<{ file: string; title: string; status: 'passed' | 'skipped' }>) {
   return {
-    numTotalTests: 1,
+    numTotalTests: tests.length,
     numFailedTests: 0,
-    testResults: [{
+    testResults: tests.map(({ file, title, status }) => ({
       name: file,
       status: 'passed',
       assertionResults: [{
@@ -18,8 +14,12 @@ function reportFor(
         status,
         failureMessages: [],
       }],
-    }],
+    })),
   };
+}
+
+function reportFor(file: string, title: string, status: 'passed' | 'skipped') {
+  return reportForMany([{ file, title, status }]);
 }
 
 describe('release test reconciliation', () => {
@@ -65,20 +65,48 @@ describe('release test reconciliation', () => {
     expect(shouldFail(result, { failOnUnexplained: true })).toBe(true);
   });
 
+  it('classifies the Windows-only memory rename retry skip on Linux', () => {
+    const title = '[platform: win32] retries transient Windows index rename sharing violations';
+    const result = reconcile(reportFor('test/memory-providers.test.ts', title, 'skipped'), { platform: 'linux' });
+
+    expect(result.summary).toMatchObject({
+      byCategory: { 'env-gated': 1 },
+      ok: true,
+    });
+    expect(result.nonPassing[0]).toMatchObject({
+      file: 'test/memory-providers.test.ts',
+      title,
+      reason: "it.skipIf(process.platform !== 'win32'): Windows-only index rename sharing violations",
+    });
+  });
+
   it('requires the Windows-only test to be present and passed in Windows evidence', () => {
     const title = '[platform: win32] removes the legacy raw uppercase Windows drive hash while preserving unrelated entries';
-    const result = reconcile(reportFor('D:\\a\\squad\\squad\\test\\mcp-root-write.test.ts', title, 'passed'), {
+    const memoryTitle = '[platform: win32] retries transient Windows index rename sharing violations';
+    const result = reconcile(reportForMany([
+      { file: 'D:\\a\\squad\\squad\\test\\mcp-root-write.test.ts', title, status: 'passed' },
+      { file: 'D:\\a\\squad\\squad\\test\\memory-providers.test.ts', title: memoryTitle, status: 'passed' },
+    ]), {
       platform: 'win32',
       requirePlatformExecutions: true,
     });
 
-    expect(result.summary.requiredExecutions).toEqual([{
-      file: 'test/mcp-root-write.test.ts',
-      title,
-      platform: 'win32',
-      status: 'passed',
-      ok: true,
-    }]);
+    expect(result.summary.requiredExecutions).toEqual([
+      {
+        file: 'test/mcp-root-write.test.ts',
+        title,
+        platform: 'win32',
+        status: 'passed',
+        ok: true,
+      },
+      {
+        file: 'test/memory-providers.test.ts',
+        title: memoryTitle,
+        platform: 'win32',
+        status: 'passed',
+        ok: true,
+      },
+    ]);
     expect(result.summary.ok).toBe(true);
     expect(shouldFail(result, { failOnUnexplained: true })).toBe(false);
   });
@@ -90,7 +118,8 @@ describe('release test reconciliation', () => {
     });
 
     expect(result.summary.requiredExecutions).toEqual([
-      expect.objectContaining({ platform: 'win32', status: 'missing', ok: false }),
+      expect.objectContaining({ file: 'test/mcp-root-write.test.ts', platform: 'win32', status: 'missing', ok: false }),
+      expect.objectContaining({ file: 'test/memory-providers.test.ts', platform: 'win32', status: 'missing', ok: false }),
     ]);
     expect(result.summary.ok).toBe(false);
     expect(shouldFail(result, { failOnUnexplained: true })).toBe(true);

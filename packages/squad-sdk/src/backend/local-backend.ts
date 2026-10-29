@@ -192,7 +192,8 @@ export function createFileStateStore(squadDir: string, options: FileStateStoreOp
         fs.mkdirSync(path.dirname(lockPath), { recursive: true });
         return 'wait';
       }
-      if (code !== 'EEXIST') throw err;
+      // Windows may report a sharing violation instead of EEXIST for an active lock.
+      if (code !== 'EEXIST' && code !== 'EACCES' && code !== 'EPERM') throw err;
       // Crash recovery: an abandoned lock is claimed by atomic rename, so exactly one waiter wins it.
       // The claimed file is re-checked; if it turns out to be a live holder's lock it is put back untouched.
       try {

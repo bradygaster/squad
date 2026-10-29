@@ -1,6 +1,17 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { realpath } from 'node:fs/promises';
+import { createFileStateStore } from '../backend/local-backend.js';
+import { StateKeyConflictError } from '../storage/storage-error.js';
 import type { StorageProvider } from '../storage/storage-provider.js';
+
+async function ensureMemoryIndex(storage: StorageProvider, indexPath: string): Promise<void> {
+  try {
+    await storage.createIfAbsent(indexPath, '[]\n');
+  } catch (error) {
+    if (!(error instanceof StateKeyConflictError)) throw error;
+  }
+}
 
 export type MemoryClass =
   | 'TRANSIENT'
@@ -596,9 +607,11 @@ export async function ensureMemoryGovernanceDefaults(
   }
 
   const indexPath = path.join(memoryDir, 'index.json');
-  if (!await storage.exists(indexPath)) {
-    await storage.write(indexPath, '[]\n');
+  try {
+    await storage.createIfAbsent(indexPath, '[]\n');
     created.push(path.join('.squad', 'memory', 'index.json'));
+  } catch (error) {
+    if (!(error instanceof StateKeyConflictError)) throw error;
   }
 
   const auditPath = path.join(memoryDir, 'audit.jsonl');
@@ -615,12 +628,6 @@ export class LocalMemoryStore {
   private readonly copilotProvider: HostInjectedCopilotMemoryAdapter;
   private readonly registeredProviders: MemoryProvider[];
   private readonly providerTimeoutMs: number;
-  /**
-   * Async mutex tail for index read-modify-write operations.
-   * Each caller enqueues behind the current tail so concurrent writes
-   * are serialized without OS-level file locking.
-   */
-  private indexLockTail: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly storage: StorageProvider,
@@ -642,22 +649,24 @@ export class LocalMemoryStore {
    * Serialize all index read-modify-write operations.
    *
    * All callers that do readIndex() → mutate → writeIndex() must go through
-   * this method so concurrent writes within the same store instance cannot
-   * interleave and lose entries. The critical section is purely async
-   * (no thread blocking), so this is safe in Node.js single-thread land.
+   * this method so concurrent writers cannot interleave and lose entries.
+   * The file lock coordinates callers across store instances and processes
+   * sharing the same .squad directory.
    */
   private async withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
-    let unlock!: () => void;
-    // Append a new "release" promise to the tail of the lock chain.
-    // The next caller will wait for this release before proceeding.
-    const release = new Promise<void>(resolve => { unlock = resolve; });
-    const prev = this.indexLockTail;
-    this.indexLockTail = release;
-    await prev;
+    const resolvedSquadDir = path.resolve(this.squadDir);
+    let lockRoot = resolvedSquadDir;
+    try {
+      lockRoot = await realpath(resolvedSquadDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+    const fileLock = createFileStateStore(lockRoot);
+    const releaseFileLock = await fileLock.lockAsync!('backend/locks/memory-index');
     try {
       return await fn();
     } finally {
-      unlock();
+      releaseFileLock();
     }
   }
 
@@ -1328,9 +1337,7 @@ export class LocalMemoryStore {
       await this.storage.write(configPath, JSON.stringify(DEFAULT_CONFIG, null, 2) + '\n');
     }
     const indexPath = path.join(memoryDir, 'index.json');
-    if (!await this.storage.exists(indexPath)) {
-      await this.storage.write(indexPath, '[]\n');
-    }
+    await ensureMemoryIndex(this.storage, indexPath);
     const auditPath = path.join(memoryDir, 'audit.jsonl');
     if (!await this.storage.exists(auditPath)) {
       await this.storage.write(auditPath, '');
@@ -1414,11 +1421,28 @@ export class LocalMemoryStore {
 
   private async writeIndex(index: MemoryIndexEntry[]): Promise<void> {
     const indexPath = path.join(this.squadDir, 'memory', 'index.json');
-    const tmpPath = `${indexPath}.tmp`;
-    // Write to a temp file first, then atomically rename into place.
-    // This prevents a crash mid-write from leaving a partial/corrupt index.
+    const tmpPath = `${indexPath}.${process.pid}.${randomUUID()}.tmp`;
     await this.storage.write(tmpPath, JSON.stringify(index, null, 2) + '\n');
-    await this.storage.rename(tmpPath, indexPath);
+    try {
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await this.storage.rename(tmpPath, indexPath);
+          return;
+        } catch (error) {
+          const code = typeof error === 'object' && error !== null && 'code' in error
+            ? String(error.code)
+            : undefined;
+          const retryable = process.platform === 'win32'
+            && ['EACCES', 'EBUSY', 'EPERM'].includes(code ?? '')
+            && attempt < 4;
+          if (!retryable) throw error;
+          await new Promise(resolve => setTimeout(resolve, 10 * 2 ** attempt));
+        }
+      }
+    } catch (error) {
+      try { await this.storage.delete(tmpPath); } catch { /* preserve the rename error */ }
+      throw error;
+    }
   }
 
   private async audit(record: Omit<MemoryAuditRecord, 'timestamp'>): Promise<void> {
