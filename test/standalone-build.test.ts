@@ -49,6 +49,7 @@ describe('build-standalone.mjs — runtime extraction', () => {
     expect(build).toContain('nodejs-release-keyring.kbx');
     expect(build).toContain('gpgv is required');
     expect(build).toContain('Authenticated Node ${version} checksum manifests do not match');
+    expect(build).toMatch(/replace\(\/\\r\\n\/g, '\\n'\)/);
     expect(build.indexOf('authenticatedNodeChecksums(version')).toBeLessThan(
       build.indexOf('const checksumLine'),
     );

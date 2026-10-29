@@ -30,7 +30,7 @@ import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync,
-  renameSync, rmSync, writeFileSync, chmodSync,
+  rmSync, writeFileSync, chmodSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -251,10 +251,12 @@ function authenticatedNodeChecksums(version, stagingDir) {
   run(gpgv, ['--keyring', keyringArg, '--output', gpgvPath(armoredOutput, gpgv), gpgvPath(armoredPath, gpgv)], stagingDir);
 
   const published = readFileSync(checksumsPath);
-  if (!published.equals(readFileSync(armoredOutput))) {
+  const normalizeText = content => content.toString('utf8').replace(/\r\n/g, '\n');
+  if (normalizeText(published) !== normalizeText(readFileSync(armoredOutput))) {
     throw new Error(`Authenticated Node ${version} checksum manifests do not match SHASUMS256.txt`);
   }
-  renameSync(armoredOutput, authenticatedPath);
+  writeFileSync(authenticatedPath, published);
+  rmSync(armoredOutput, { force: true });
   step(`Authenticated Node ${version} SHASUMS256.txt with signed .sig and .asc manifests`);
   return authenticatedPath;
 }
