@@ -94,6 +94,14 @@
       "types": "./dist/ralph/capabilities.d.ts",
       "import": "./dist/ralph/capabilities.js"
     },
+    "./ralph/claims": {
+      "types": "./dist/ralph/claims.d.ts",
+      "import": "./dist/ralph/claims.js"
+    },
+    "./ralph/claims-git": {
+      "types": "./dist/ralph/claims-git.d.ts",
+      "import": "./dist/ralph/claims-git.js"
+    },
     "./ralph/rate-limiting": {
       "types": "./dist/ralph/rate-limiting.d.ts",
       "import": "./dist/ralph/rate-limiting.js"

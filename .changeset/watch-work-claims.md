@@ -1,0 +1,5 @@
+---
+'@bradygaster/squad-cli': minor
+---
+
+`squad watch` can claim issues before dispatching them, so several watchers (machines, pods, dev boxes) never work on the same issue (ADR-002). Opt in with `--claims git-ref` or `watch.claims` in `.squad/config.json` (`"git-ref"` or `{ "provider": "git-ref", "ttlMs", "skewMarginMs", "remote", "refPrefix" }`); the flag overrides the config provider. The default, `none`, keeps today's behavior. With claims on, `execute` and `fleet-dispatch` dispatch only issues they won, skip issues held elsewhere or when the claim remote is unreachable, renew every `ttlMs / 3` (default 15 min lease, 2 min skew), kill the agent when its claim is fenced, and release claims when the agent finishes. `execute` now also applies `needs:*` machine capability routing, and one watch round never dispatches an issue twice across `execute` and `fleet-dispatch` (hybrid mode), whatever provider is configured. `claims` is now a reserved `watch` config key; invalid values stop watch with an error instead of being ignored.

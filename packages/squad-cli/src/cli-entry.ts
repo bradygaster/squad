@@ -206,6 +206,7 @@ async function main(): Promise<void> {
     console.log(`                    --timeout N (max minutes per issue, default 30)`);
     console.log(`                    --max-rounds N (stop after N completed rounds)`);
     console.log(`                    --max-duration 8h (stop after elapsed time)`);
+    console.log(`                    --claims <none|git-ref> (work claims, default none)`);
     console.log(`             Capabilities (opt-in via --<name> or config.json):`);
     console.log(`                    --self-pull       git fetch/pull at round start`);
     console.log(`                    --board           project board lifecycle + reconciliation`);
@@ -699,6 +700,16 @@ async function main(): Promise<void> {
     // Legacy 'external' is normalized (with a deprecation warning) inside resolveStateBackend.
     const mappedBackend = rawStateBackend as StateBackendType | undefined;
 
+    // --claims <none|git-ref> (ADR-002): overrides .squad/config.json watch.claims.provider
+    const claimsIdx = args.indexOf('--claims');
+    const rawClaims = claimsIdx !== -1 ? args[claimsIdx + 1] : undefined;
+    const { isWatchClaimProviderName, WATCH_CLAIM_PROVIDERS, WatchConfigError } = await import('./cli/commands/watch/config.js');
+    if (claimsIdx !== -1 && !isWatchClaimProviderName(rawClaims)) {
+      console.error(`\u26a0\ufe0f Invalid --claims "${rawClaims ?? ''}". Valid: ${WATCH_CLAIM_PROVIDERS.join(', ')}.`);
+      process.exit(1);
+    }
+    const claims = isWatchClaimProviderName(rawClaims) ? { provider: rawClaims } : undefined;
+
     // Resolve the full state context (paths + backend) once at entry.
     // Commands can thread this through instead of re-resolving independently.
     const stateContext: SquadStateContext | null = resolveSquadState(getSquadStartDir(), mappedBackend);
@@ -730,33 +741,42 @@ async function main(): Promise<void> {
     }
 
     // Load config: .squad/config.json merged with CLI overrides
-    const config = loadWatchConfig(getSquadStartDir(), {
-      interval,
-      maxRounds,
-      maxDuration,
-      execute,
-      maxConcurrent,
-      timeout,
-      copilotFlags,
-      agentCmd,
-      verbose,
-      dispatchMode,
-      logFile,
-      authUser,
-      notifyLevel,
-      overnightStart,
-      overnightEnd,
-      sentinelFile,
-      stateBackend: mappedBackend,
-      stateContext,
-      capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
-    });
+    let config: Awaited<ReturnType<typeof loadWatchConfig>>;
+    try {
+      config = loadWatchConfig(getSquadStartDir(), {
+        interval,
+        maxRounds,
+        maxDuration,
+        execute,
+        maxConcurrent,
+        timeout,
+        copilotFlags,
+        agentCmd,
+        verbose,
+        dispatchMode,
+        logFile,
+        authUser,
+        notifyLevel,
+        overnightStart,
+        overnightEnd,
+        sentinelFile,
+        stateBackend: mappedBackend,
+        stateContext,
+        claims,
+        capabilities: Object.keys(capabilities).length > 0 ? capabilities : undefined,
+      });
+    } catch (err) {
+      if (!(err instanceof WatchConfigError)) throw err;
+      console.error(`\u26a0\ufe0f ${err.message}`);
+      process.exit(1);
+    }
 
     // After parsing all flags, check for positional args that look like prompts.
     // Skip values that follow known value-flags (e.g. "--interval 5" → "5" is not positional).
     const knownValueFlags = new Set([
       '--interval', '--max-rounds', '--max-duration', '--copilot-flags', '--agent-cmd', '--max-concurrent', '--timeout', '--board-project', '--board-owner', '--auth-user',
       '--dispatch-mode', '--log-file', '--notify-level', '--overnight-start', '--overnight-end', '--sentinel-file', '--state-backend',
+      '--claims',
     ]);
     const watchArgStart = args.indexOf(cmd) + 1;
     const watchArgs = args.slice(watchArgStart);

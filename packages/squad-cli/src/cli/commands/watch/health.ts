@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
+import { claimCounterParts, wrapClaimParts, type ClaimCounters } from './claim-counters.js';
 
 /** Shape of the PID file written by runWatch at startup. */
 export interface WatchPidInfo {
@@ -20,6 +21,8 @@ export interface WatchPidInfo {
   interval: number;
   capabilities: string[];
   repo: string;
+  /** Work-claim counters since startup (ADR-002); only when claims exclude other executors. */
+  claims?: { provider: string; totals: ClaimCounters; updatedAt: string };
 }
 
 /**
@@ -44,6 +47,28 @@ export function writePidFile(teamRoot: string, info: WatchPidInfo): void {
 /** Remove the PID file (best-effort, swallows errors). */
 export function removePidFile(teamRoot: string): void {
   try { fs.unlinkSync(getPidPath(teamRoot)); } catch { /* already gone */ }
+}
+
+/**
+ * Record claim counters in this process's PID file so `--health` can show
+ * them. No-op when the file is missing, unreadable, or owned by another
+ * process. Best-effort: never throws.
+ */
+export function updatePidFileClaims(
+  teamRoot: string,
+  claims: { provider: string; totals: ClaimCounters },
+  pid: number = process.pid,
+): boolean {
+  const pidPath = getPidPath(teamRoot);
+  try {
+    const info = JSON.parse(fs.readFileSync(pidPath, 'utf-8')) as WatchPidInfo;
+    if (info.pid !== pid) return false;
+    info.claims = { provider: claims.provider, totals: claims.totals, updatedAt: new Date().toISOString() };
+    fs.writeFileSync(pidPath, JSON.stringify(info, null, 2));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -142,6 +167,11 @@ export function getWatchHealth(teamRoot: string): string {
     `  Repo:          ${info.repo}`,
     `  Capabilities:  ${(info.capabilities ?? []).join(', ') || '(none)'}`,
   ];
+
+  const claims = info.claims;
+  if (claims && typeof claims.provider === 'string' && claims.totals?.released) {
+    lines.push(...wrapClaimParts(`  Claims:        ${claims.provider} — `, claimCounterParts(claims.totals), ' '.repeat(17)));
+  }
 
   // Auth drift detection — compare current gh user vs recorded
   const currentUser = probeCurrentGhUser();

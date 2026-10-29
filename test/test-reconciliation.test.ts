@@ -23,6 +23,26 @@ function reportFor(
 }
 
 describe('release test reconciliation', () => {
+  it('classifies NoopClaimProvider contract sections as structurally inapplicable', () => {
+    const report = reportFor(
+      '/home/runner/work/squad/squad/test/ralph-claims.test.ts',
+      '8 concurrent acquires on one key yield exactly one acquired',
+      'skipped',
+    );
+    report.testResults[0]!.assertionResults[0]!.fullName =
+      'WorkClaimProvider contract: NoopClaimProvider exclusion 8 concurrent acquires on one key yield exactly one acquired';
+    const result = reconcile(report, { platform: 'linux' });
+
+    expect(result.summary).toMatchObject({
+      byCategory: { structural: 1 },
+      ok: true,
+    });
+    expect(result.nonPassing[0]).toMatchObject({
+      category: 'structural',
+      reason: 'NoopClaimProvider declares no exclusion, leases, or fencing, so those provider contract sections are structurally inapplicable',
+    });
+  });
+
   it('classifies the self-described Windows-only skip in a Linux-shaped report', () => {
     const title = '[platform: win32] removes the legacy raw uppercase Windows drive hash while preserving unrelated entries';
     const result = reconcile(reportFor('/home/runner/work/squad/squad/test/mcp-root-write.test.ts', title, 'skipped'), { platform: 'linux' });

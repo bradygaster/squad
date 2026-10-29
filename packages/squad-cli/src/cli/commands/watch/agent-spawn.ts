@@ -9,7 +9,7 @@
  * @see https://github.com/bradygaster/squad/issues/923
  */
 
-import { execFile, execFileSync } from 'node:child_process';
+import { execFile, execFileSync, type ChildProcess } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -34,6 +34,12 @@ export interface AgentSpawnResult {
   error?: string;
   usage?: CopilotUsageOutput;
   usageError?: string;
+  /** True when the caller aborted the run (for example, a fenced work claim). */
+  cancelled?: boolean;
+  /** True when the run was killed for exceeding its timeout. */
+  timedOut?: boolean;
+  /** Signal that terminated the child, when any. */
+  signal?: string;
 }
 
 export interface CopilotUsageCapture {
@@ -312,26 +318,265 @@ export function spawnWithTimeout(
   timeoutMs: number,
 ): Promise<void> {
   const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
-  return new Promise<void>((resolve, reject) => {
-    execFile(cmd, safeArgs, {
-      cwd,
-      timeout: timeoutMs,
-      maxBuffer: 50 * 1024 * 1024,
-      shell: IS_WINDOWS,
-    }, (err) => {
-      cleanup();
-      if (err) {
-        const execErr = err as Error & { killed?: boolean };
-        reject(new Error(
-          execErr.killed
-            ? `Timed out after ${Math.round(timeoutMs / 1000)}s`
-            : execErr.message,
-        ));
-      } else {
-        resolve();
+  return runProcessTreeCommand(cmd, safeArgs, {
+    cwd,
+    timeoutMs,
+    maxBuffer: 50 * 1024 * 1024,
+    shell: IS_WINDOWS,
+  }).then((run) => {
+    cleanup();
+    if (run.error) {
+      const timedOut = run.timedOut || (!run.cancelled && run.error.killed === true);
+      throw new Error(
+        timedOut
+          ? `Timed out after ${Math.round(timeoutMs / 1000)}s`
+          : run.error.message,
+      );
+    }
+  }, (error) => {
+    cleanup();
+    throw error;
+  });
+}
+
+export interface ProcessTreeCommandResult {
+  error?: Error & { killed?: boolean; signal?: NodeJS.Signals | null };
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+  cancelled: boolean;
+}
+
+export interface ProcessTreeCommandOptions {
+  cwd: string;
+  timeoutMs: number;
+  maxBuffer?: number;
+  shell?: boolean;
+  signal?: AbortSignal;
+  onSpawn?: (child: ChildProcess) => void;
+}
+
+/**
+ * Run a command under an explicit timeout. Timeout and abort both terminate
+ * the whole process tree, and the promise does not resolve until that
+ * termination has completed.
+ */
+export function runProcessTreeCommand(
+  cmd: string,
+  args: string[],
+  options: ProcessTreeCommandOptions,
+): Promise<ProcessTreeCommandResult> {
+  return new Promise<ProcessTreeCommandResult>((resolve) => {
+    let child: ChildProcess | undefined;
+    let callbackFinished = false;
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    let termination: Promise<void> | undefined;
+    let timedOut = false;
+    let cancelled = false;
+
+    const beginTermination = (reason: 'timeout' | 'abort'): void => {
+      if (!child || callbackFinished || termination) return;
+      timedOut = reason === 'timeout';
+      cancelled = reason === 'abort';
+      termination = terminateProcessTree(child);
+    };
+
+    const onAbort = (): void => beginTermination('abort');
+    const group = agentProcessGroupOptions();
+    child = execFile(cmd, args, {
+      cwd: options.cwd,
+      maxBuffer: options.maxBuffer ?? 50 * 1024 * 1024,
+      shell: options.shell ?? false,
+      encoding: 'utf-8',
+      ...group,
+    }, async (err, stdout, stderr) => {
+      callbackFinished = true;
+      if (timeout) clearTimeout(timeout);
+      options.signal?.removeEventListener('abort', onAbort);
+      if (termination) await termination;
+      resolve({
+        ...(err ? { error: err as ProcessTreeCommandResult['error'] } : {}),
+        stdout: String(stdout ?? ''),
+        stderr: String(stderr ?? ''),
+        timedOut,
+        cancelled,
+      });
+    });
+
+    if (group.detached) trackAgentProcessGroup(child);
+    options.onSpawn?.(child);
+
+    if (!callbackFinished) {
+      timeout = setTimeout(() => beginTermination('timeout'), options.timeoutMs);
+      timeout.unref?.();
+      if (options.signal) {
+        if (options.signal.aborted) onAbort();
+        else options.signal.addEventListener('abort', onAbort, { once: true });
+      }
+    }
+  });
+}
+
+interface PosixProcess {
+  pid: number;
+  ppid: number;
+  pgid: number;
+  state: string;
+}
+
+function readPosixProcesses(): PosixProcess[] {
+  const rows = execFileSync('ps', ['-A', '-o', 'pid=,ppid=,pgid=,stat='], {
+    encoding: 'utf-8',
+    timeout: 2_000,
+  });
+  return rows.split(/\r?\n/).flatMap((row) => {
+    const match = row.trim().match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\S+)/);
+    return match
+      ? [{
+          pid: Number(match[1]),
+          ppid: Number(match[2]),
+          pgid: Number(match[3]),
+          state: match[4]!,
+        }]
+      : [];
+  });
+}
+
+function posixDescendants(rootPid: number): number[] {
+  try {
+    const processes = readPosixProcesses();
+    const children = new Map<number, number[]>();
+    for (const process of processes) {
+      const siblings = children.get(process.ppid) ?? [];
+      siblings.push(process.pid);
+      children.set(process.ppid, siblings);
+    }
+    const descendants: number[] = [];
+    const pending = [...(children.get(rootPid) ?? [])];
+    while (pending.length > 0) {
+      const pid = pending.pop()!;
+      descendants.push(pid);
+      pending.push(...(children.get(pid) ?? []));
+    }
+    return descendants;
+  } catch {
+    return [];
+  }
+}
+
+function posixProcessTreeCanExecute(rootPid: number, descendants: ReadonlySet<number>): boolean {
+  try {
+    return readPosixProcesses().some(process =>
+      (process.pgid === rootPid || descendants.has(process.pid))
+      && !process.state.startsWith('Z'));
+  } catch {
+    try {
+      process.kill(-rootPid, 0);
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false;
+      throw error;
+    }
+  }
+}
+
+async function waitForPosixProcessTreeExit(rootPid: number, descendants: ReadonlySet<number>): Promise<void> {
+  while (true) {
+    if (!posixProcessTreeCanExecute(rootPid, descendants)) return;
+    await new Promise(resolve => setTimeout(resolve, 10));
+  }
+}
+
+/**
+ * Kill a child process tree and wait until it can no longer execute. Windows
+ * `taskkill /T /F` is synchronous; POSIX waits until the detached process
+ * group contains no process that can still execute (zombies are inert).
+ */
+export async function terminateProcessTree(
+  child: KillableChild,
+  platform: NodeJS.Platform = process.platform,
+): Promise<void> {
+  const pid = child.pid;
+  const descendants = platform !== 'win32' && pid
+    ? new Set(posixDescendants(pid))
+    : new Set<number>();
+  killProcessTree(child, platform);
+  if (platform !== 'win32' && pid && child.exitCode == null && child.signalCode == null) {
+    for (const descendant of descendants) {
+      try { process.kill(descendant, 'SIGKILL'); } catch { /* already exited */ }
+    }
+    await waitForPosixProcessTreeExit(pid, descendants);
+  }
+}
+
+/**
+ * Spawn options that make a POSIX agent the leader of its own process group
+ * (`detached: true`), so {@link killProcessTree} can kill the whole tree with
+ * `process.kill(-pid)`. Windows uses `taskkill /T` instead and is unchanged.
+ */
+export function agentProcessGroupOptions(platform: NodeJS.Platform = process.platform): { detached: boolean } {
+  return { detached: platform !== 'win32' };
+}
+
+const liveAgentGroups = new Set<number>();
+let agentGroupExitHookInstalled = false;
+
+/**
+ * Remember a detached POSIX agent until it exits so its process group is
+ * killed when watch exits: a detached group is outside the terminal's
+ * foreground group and no longer receives Ctrl+C.
+ */
+export function trackAgentProcessGroup(child: ChildProcess, platform: NodeJS.Platform = process.platform): void {
+  // Only real child processes (which report their exit) are tracked.
+  if (platform === 'win32' || !child.pid || typeof child.once !== 'function') return;
+  const pid = child.pid;
+  liveAgentGroups.add(pid);
+  child.once('exit', () => liveAgentGroups.delete(pid));
+  if (!agentGroupExitHookInstalled) {
+    agentGroupExitHookInstalled = true;
+    process.on('exit', () => {
+      for (const group of liveAgentGroups) {
+        try { process.kill(-group, 'SIGKILL'); } catch { /* group already gone */ }
       }
     });
-  });
+  }
+}
+
+export interface KillableChild {
+  pid?: number;
+  exitCode?: number | null;
+  signalCode?: NodeJS.Signals | string | null;
+  kill(signal?: NodeJS.Signals): boolean;
+}
+
+/**
+ * Kill a child and its whole process tree: `taskkill /T` on Windows (agents
+ * run through `cmd.exe` there), the child's process group on POSIX (agents
+ * are spawned detached, see {@link agentProcessGroupOptions}). Does nothing
+ * once the child has exited, because its PID may already be reused.
+ */
+export function killProcessTree(child: KillableChild, platform: NodeJS.Platform = process.platform): void {
+  if (child.exitCode != null || child.signalCode != null) return;
+  if (platform === 'win32' && child.pid) {
+    try {
+      execFileSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { stdio: 'ignore', timeout: 5_000 });
+      return;
+    } catch {
+      // Fall through to a direct kill
+    }
+  } else if (platform !== 'win32' && child.pid) {
+    try {
+      process.kill(-child.pid, 'SIGKILL');
+      return;
+    } catch {
+      // ESRCH: not a group leader (spawned without detached) — kill the child directly
+    }
+  }
+  try {
+    child.kill('SIGKILL');
+  } catch {
+    // Already exited
+  }
 }
 
 /**
@@ -342,6 +587,9 @@ export function spawnWithTimeout(
  * Pass `pidTracking` when the caller wants the child process registered
  * with a {@link WatchContext.pidTracker} for cleanup on exit/crash (e.g.
  * the `execute` capability, which spawns long-running sessions).
+ *
+ * Pass `signal` to kill the child and its process tree on abort — used
+ * when a work claim is fenced while the agent runs.
  */
 export function spawnAgent(
   cmd: string,
@@ -350,52 +598,51 @@ export function spawnAgent(
   timeoutMs: number,
   pidTracking?: { tracker: NonNullable<WatchContext['pidTracker']>; label: string },
   usageOutputFile?: string,
+  signal?: AbortSignal,
 ): Promise<AgentSpawnResult> {
   const { args: safeArgs, cleanup } = prepareArgsForSpawn(args);
-  return new Promise<AgentSpawnResult>((resolve) => {
-    const cp = execFile(
-      cmd,
-      safeArgs,
-      {
-        cwd,
-        timeout: timeoutMs,
-        maxBuffer: 50 * 1024 * 1024,
-        shell: IS_WINDOWS,
-      },
-      (err) => {
-        cleanup();
-        const usageResult = usageOutputFile
-          ? readCopilotUsageOutput(usageOutputFile)
-          : {};
-        if (usageOutputFile && existsSync(usageOutputFile)) {
-          try {
-            unlinkSync(usageOutputFile);
-          } catch (cleanupError) {
-            usageResult.error ??= `Could not remove Copilot usage output: ${(cleanupError as Error).message}`;
-          }
-        }
-        if (err) {
-          const execErr = err as Error & { killed?: boolean };
-          const msg = execErr.killed ? 'Timed out' : execErr.message;
-          resolve({
-            success: false,
-            error: msg,
-            usage: usageResult.usage,
-            usageError: usageResult.error,
-          });
-        } else {
-          resolve({
-            success: true,
-            usage: usageResult.usage,
-            usageError: usageResult.error,
-          });
-        }
-      },
-    );
-
-    if (pidTracking && cp.pid) {
-      pidTracking.tracker.track(cp.pid, pidTracking.label);
-      cp.on('exit', () => pidTracking.tracker.untrack(cp.pid!));
+  return runProcessTreeCommand(cmd, safeArgs, {
+    cwd,
+    timeoutMs,
+    maxBuffer: 50 * 1024 * 1024,
+    shell: IS_WINDOWS,
+    signal,
+    onSpawn: (cp) => {
+      if (pidTracking && cp.pid) {
+        pidTracking.tracker.track(cp.pid, pidTracking.label);
+        cp.on('exit', () => pidTracking.tracker.untrack(cp.pid!));
+      }
+    },
+  }).then((run) => {
+    cleanup();
+    const usageResult = usageOutputFile
+      ? readCopilotUsageOutput(usageOutputFile)
+      : {};
+    if (usageOutputFile && existsSync(usageOutputFile)) {
+      try {
+        unlinkSync(usageOutputFile);
+      } catch (cleanupError) {
+        usageResult.error ??= `Could not remove Copilot usage output: ${(cleanupError as Error).message}`;
+      }
     }
+    const reason = signal?.reason instanceof Error ? signal.reason.message : String(signal?.reason ?? 'aborted');
+    const timedOut = run.timedOut || (!run.cancelled && run.error?.killed === true);
+    if (run.error || run.cancelled || timedOut) {
+      const msg = run.cancelled ? `Cancelled: ${reason}` : timedOut ? 'Timed out' : run.error!.message;
+      return {
+        success: false,
+        error: msg,
+        usage: usageResult.usage,
+        usageError: usageResult.error,
+        ...(run.cancelled ? { cancelled: true } : {}),
+        ...(timedOut ? { timedOut: true } : {}),
+        ...(run.error?.signal ? { signal: run.error.signal } : {}),
+      };
+    }
+    return {
+      success: true,
+      usage: usageResult.usage,
+      usageError: usageResult.error,
+    };
   });
 }

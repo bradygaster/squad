@@ -11,6 +11,7 @@ import type { WatchContext } from '../../packages/squad-cli/src/cli/commands/wat
 
 const {
   mockExecFile,
+  mockExecFileSync,
   mockFsExistsSync,
   mockFsMkdirSync,
   mockFsReadFileSync,
@@ -24,6 +25,7 @@ const {
     if (cb) cb(null, '', '');
     return { pid: 1234, on: vi.fn() };
   }),
+  mockExecFileSync: vi.fn(),
   mockFsExistsSync: vi.fn((): boolean => false),
   mockFsMkdirSync: vi.fn(),
   mockFsReadFileSync: vi.fn((): string => ''),
@@ -33,7 +35,7 @@ const {
 
 vi.mock('node:child_process', () => ({
   execFile: mockExecFile,
-  execFileSync: vi.fn(),
+  execFileSync: mockExecFileSync,
 }));
 
 vi.mock('node:fs', () => ({
@@ -53,6 +55,7 @@ import {
   prepareArgsForSpawn,
   spawnAgent,
   spillPromptArgForCmd,
+  terminateProcessTree,
   withCopilotUsageOutput,
 } from '../../packages/squad-cli/src/cli/commands/watch/agent-spawn.js';
 
@@ -173,6 +176,50 @@ describe('agent-spawn: spawnAgent pid tracking', () => {
   it('does not touch a tracker when pidTracking is omitted', async () => {
     const result = await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000);
     expect(result.success).toBe(true);
+  });
+
+  it('spawns every POSIX agent as a killable process group for fences and timeouts', async () => {
+    const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+    try {
+      await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000, undefined, undefined, new AbortController().signal);
+      expect(mockExecFile.mock.calls.at(-1)?.[2]).toMatchObject({ detached: true });
+      await spawnAgent('copilot', ['-p', 'x'], '/repo', 1000);
+      expect(mockExecFile.mock.calls.at(-1)?.[2]).toMatchObject({ detached: true });
+    } finally {
+      platformSpy.mockRestore();
+    }
+  });
+});
+
+describe('agent-spawn: process tree termination', () => {
+  it('kills POSIX descendants even when they moved to another process group', async () => {
+    mockExecFileSync.mockReset();
+    mockExecFileSync
+      .mockReturnValueOnce([
+        '424242 1 424242 S',
+        '424243 424242 500000 S',
+        '424244 424243 500000 S',
+      ].join('\n'))
+      .mockReturnValueOnce([
+        '424242 1 424242 Z',
+        '424243 1 500000 Z',
+        '424244 1 500000 Z',
+      ].join('\n'));
+    const kill = vi.spyOn(process, 'kill').mockImplementation((() => true) as typeof process.kill);
+    const child = {
+      pid: 424242,
+      exitCode: null,
+      signalCode: null,
+      kill: vi.fn(() => true),
+    };
+    try {
+      await terminateProcessTree(child, 'linux');
+      expect(kill).toHaveBeenCalledWith(-424242, 'SIGKILL');
+      expect(kill).toHaveBeenCalledWith(424243, 'SIGKILL');
+      expect(kill).toHaveBeenCalledWith(424244, 'SIGKILL');
+    } finally {
+      kill.mockRestore();
+    }
   });
 });
 
@@ -321,4 +368,3 @@ describe('agent-spawn: Windows multiline and oversized prompt handling (#2070)',
     expect(escapeArgs(['-p', multilinePrompt], false)).toEqual(['-p', multilinePrompt]);
   });
 });
-

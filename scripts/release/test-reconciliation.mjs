@@ -9,8 +9,8 @@
  * `queued`/`pending` mode and the console summary silently drops it) is reported as
  * `unexplained` instead of disappearing into "total minus the buckets".
  *
- * Categories (release policy: keep the 7 structural upgrade-matrix skips and the F3 xfails;
- * no supported downgrade; everything else must be env-gated with the gate named, or fixed):
+ * Categories (release policy: keep reviewed structural skips and the F3 xfails; no supported
+ * downgrade; everything else must be env-gated with the gate named, or fixed):
  *   structural   the upgrade matrix declares the cell structurally inapplicable
  *   env-gated    skipped because an opt-in environment variable, binary, platform, build artifact
  *                or privilege is absent on this runner (gate named in `reason`)
@@ -31,6 +31,12 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '.
 /** Reviewed skip/xfail/todo sources. Order matters: first match wins. */
 export const CATEGORY_RULES = Object.freeze([
   { category: 'structural', file: /squad-20-upgrade-matrix\.test\.ts$/, title: /structurally inapplicable|not applicable|×.*: (no |cannot|does not)/i, reason: 'upgrade matrix: structurally inapplicable cell (7 declared in test-fixtures/spec/suite-v0.2/upgrade-matrix.json)' },
+  {
+    category: 'structural',
+    file: /ralph-claims\.test\.ts$/,
+    title: /WorkClaimProvider contract: NoopClaimProvider (?:exclusion|fencing|leases|plausibility)/,
+    reason: 'NoopClaimProvider declares no exclusion, leases, or fencing, so those provider contract sections are structurally inapplicable',
+  },
   { category: 'env-gated', file: /squad-20-upgrade-matrix\.test\.ts$/, reason: 'SQUAD_UPGRADE_MATRIX=1 not set (matrix runs only in squad-upgrade-matrix.yml)' },
   { category: 'env-gated', file: /squad-20-preview-tarball-matrix\.test\.ts$/, reason: 'SQUAD_PREVIEW_TARBALL_MATRIX=1 not set (exact-tarball matrix runs only in the attested preview workflow mode)' },
   { category: 'env-gated', file: /clients-real-cli\.test\.ts$/, reason: 'SQUAD_REAL_CLI_TESTS=1 not set / host CLI binaries absent' },

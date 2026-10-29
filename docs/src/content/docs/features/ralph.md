@@ -196,7 +196,10 @@ All new features are **opt-in** and disabled by default. Existing `squad watch` 
 | `--timeout N` | Per-issue timeout in minutes (default: 30) | `squad watch --execute --timeout 45` |
 | `--max-rounds N` | Stop after N completed rounds | `squad watch --max-rounds 20` |
 | `--max-duration D` | Stop after elapsed time; finish an active round first | `squad watch --max-duration 8h` |
+| `--claims <none\|git-ref>` | Claim each issue before dispatch (Git ref compare-and-swap on `origin`) so several watchers never work on the same issue. Default `none`. Config: `watch.claims` (`"git-ref"` or `{ "provider": "git-ref", "ttlMs", "skewMarginMs", "remote", "refPrefix" }`); the flag wins. See ADR-002. | `squad watch --execute --claims git-ref` |
 | `--copilot-flags "..."` | Pass extra flags to Copilot CLI | `squad watch --execute --copilot-flags "--model gpt-5.6-luna"` |
+
+With claims on, each round report adds a claims line when anything happened (for example `🔒 Claims (git-ref): won 2 · contended 1 · released 2 (completed 2)`): claims won, held by another watcher (`contended`), `unavailable`, `fenced` (taken over while held), `lost` (not renewed before expiry; agent killed), `released` by outcome, and `implausible` records taken over. `squad watch --health` shows the same counters since startup when the watch records a PID file. With an OTLP endpoint (`OTEL_EXPORTER_OTLP_ENDPOINT`) or `SQUAD_TELEMETRY=1`, they are also emitted as OpenTelemetry counters `squad.watch.claims.{acquired,contended,unavailable,fenced,lost,released,implausible_takeover}` with attributes `claim.provider` and, for `released`, `claim.outcome`. No issue numbers, hostnames, or actors are recorded. With `none`, output is unchanged. To run watchers on several machines or pods, see [Multi-Machine Watch with Work Claims](../scenarios/multi-machine-watch.md).
 
 #### Issue Scanning
 

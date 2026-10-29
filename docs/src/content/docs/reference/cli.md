@@ -60,6 +60,7 @@ prerequisites, all supported methods, and update commands.
 | `squad watch --timeout N` | Per-issue timeout in minutes (default: 30) | Yes |
 | `squad watch --max-rounds N` | Stop after N completed rounds | Yes |
 | `squad watch --max-duration D` | Stop after a duration such as `8h` (ms, s, m, h, d) | Yes |
+| `squad watch --claims <none\|git-ref>` | Claim issues before dispatch so several watchers never pick the same one (default: `none`; config: `watch.claims`) | Yes |
 | `squad watch --copilot-flags "..."` | Extra flags for Copilot CLI | Yes |
 | `squad shell` | **Deprecated** — Launch interactive shell explicitly. Use `copilot --agent squad` instead. | No |
 | `squad copilot` | Add the @copilot coding agent to the team | Yes |

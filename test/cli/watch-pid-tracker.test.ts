@@ -152,6 +152,31 @@ describe('PidTracker', () => {
       killSpy.mockRestore();
     });
 
+    it('POSIX: kills the tracked process group first, then the bare PID if it leads no group', () => {
+      const platformSpy = vi.spyOn(process, 'platform', 'get').mockReturnValue('linux');
+      const tracker = new PidTracker(teamRoot);
+      tracker.track(555, 'group-leader');
+      tracker.track(556, 'not-a-leader');
+      const identitySpy = vi.spyOn(tracker as unknown as { getProcessStartTime: (pid: number) => Date | null }, 'getProcessStartTime')
+        .mockReturnValue(null);
+      const killSpy = vi.spyOn(process, 'kill').mockImplementation(((pid: number, signal?: string | number) => {
+        if (signal === 0) return true;
+        if (pid === -556) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+        return true;
+      }) as typeof process.kill);
+      try {
+        expect(tracker.cleanup()).toEqual({ killed: 2, total: 2 });
+        expect(killSpy).toHaveBeenCalledWith(-555, 'SIGKILL');
+        expect(killSpy).not.toHaveBeenCalledWith(555, 'SIGKILL');
+        expect(killSpy).toHaveBeenCalledWith(-556, 'SIGKILL');
+        expect(killSpy).toHaveBeenCalledWith(556, 'SIGKILL');
+      } finally {
+        killSpy.mockRestore();
+        identitySpy.mockRestore();
+        platformSpy.mockRestore();
+      }
+    });
+
     it('deletes PID file after cleanup', () => {
       const tracker = new PidTracker(teamRoot);
       tracker.track(444, 'some-proc');
