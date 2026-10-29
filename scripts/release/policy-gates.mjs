@@ -31,7 +31,6 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parse } from 'yaml';
 import {
   assertNodeSecurityFloor,
   loadNodeSecurityFloor,
@@ -49,6 +48,21 @@ const WORKSPACE_FLAG = /(?:^|\s)(?:-w|--workspace)(?:=|\s|$)/;
 const VERIFIED_TARBALL = /npm\s+publish\s+"\$PACKS_DIR\/bradygaster-squad-(?:sdk|cli)-\$\{VERSION\}\.tgz"(?:\s|$)/;
 
 const readJson = (root, rel) => JSON.parse(readFileSync(path.join(root, rel), 'utf8'));
+
+function workflowInputDefault(text, trigger, input) {
+  const lines = text.split(/\r?\n/);
+  const triggerStart = lines.findIndex((line) => line === `  ${trigger}:`);
+  if (triggerStart < 0) return undefined;
+  const triggerEndOffset = lines.slice(triggerStart + 1).findIndex((line) => /^  \S/.test(line));
+  const triggerEnd = triggerEndOffset < 0 ? lines.length : triggerStart + 1 + triggerEndOffset;
+  const section = lines.slice(triggerStart, triggerEnd);
+  const inputStart = section.findIndex((line) => line === `      ${input}:`);
+  if (inputStart < 0) return undefined;
+  const inputEndOffset = section.slice(inputStart + 1).findIndex((line) => /^      \S/.test(line));
+  const inputEnd = inputEndOffset < 0 ? section.length : inputStart + 1 + inputEndOffset;
+  const defaultLine = section.slice(inputStart, inputEnd).find((line) => /^\s{8}default:/.test(line));
+  return defaultLine?.replace(/^\s{8}default:\s*/, '').replace(/^(['"])(.*)\1$/, '$2');
+}
 
 export function publishPolicyViolations(root = ROOT) {
   const dir = path.join(root, '.github', 'workflows');
@@ -119,10 +133,10 @@ export function runPolicyGates({ root = ROOT, mode = 'ci' } = {}) {
     try {
       const policy = loadNodeSecurityFloor(path.join(root, 'scripts', 'release', 'node-security-floor.json'));
       const workflowPath = path.join(root, '.github', 'workflows', 'squad-standalone-release.yml');
-      const workflow = parse(readFileSync(workflowPath, 'utf8'));
-      const callDefault = workflow.on?.workflow_call?.inputs?.node_version?.default;
-      const dispatchDefault = workflow.on?.workflow_dispatch?.inputs?.node_version?.default;
-      const envDefault = workflow.env?.NODE_VERSION;
+      const workflow = readFileSync(workflowPath, 'utf8');
+      const callDefault = workflowInputDefault(workflow, 'workflow_call', 'node_version');
+      const dispatchDefault = workflowInputDefault(workflow, 'workflow_dispatch', 'node_version');
+      const envDefault = workflow.match(/^\s{2}NODE_VERSION:\s*(.+)$/m)?.[1];
       const expectedEnv = `\${{ inputs.node_version || '${policy.standaloneDefault}' }}`;
 
       for (const [where, value] of [
