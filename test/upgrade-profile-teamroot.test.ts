@@ -170,6 +170,24 @@ describe('UM-F1: stale teamRoot pointing at the removed profile squad', () => {
     }
   }, 180_000);
 
+  it('normalizes an absolute self teamRoot to the portable "." form', async () => {
+    const project = await initProject('absolute-self');
+    const configPath = path.join(project, '.squad', 'config.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      ...readJson(configPath),
+      teamRoot: project,
+      customSetting: 'kept',
+    }, null, 2) + '\n');
+    clearResolveSquadCache();
+
+    const io = captureConsole();
+    try { await runUpgrade(project, { force: true }); } finally { io.restore(); }
+    expect(io.lines.join('\n')).toContain('Normalized the absolute "teamRoot" setting to "."');
+    expect(readJson(configPath)).toMatchObject({ teamRoot: '.', customSetting: 'kept' });
+    clearResolveSquadCache();
+    expect(resolveSquadPaths(project)!.mode).toBe('local');
+  }, 180_000);
+
   it('a genuine dual-root teamRoot (another repository) is preserved and still resolves in remote mode', async () => {
     const shared = await initProject('shared-team');
     const satellite = await initProject('satellite');

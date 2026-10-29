@@ -270,6 +270,34 @@ describe('squad doctor', () => {
       .toMatchObject({ status: 'fail' });
   });
 
+  it('names the migratable Squad 0.9.x casting schema instead of reporting an invalid revision', async () => {
+    await scaffold(TEST_ROOT);
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    await writeFile(join(castingDir, 'registry.json'), JSON.stringify({
+      agents: [{
+        persistent_name: 'Dutch',
+        role: 'Leader',
+        universe: 'Predator',
+        created_at: '2026-03-20T10:15:00.000Z',
+        status: 'active',
+      }],
+    }));
+    await writeFile(join(castingDir, 'history.json'), JSON.stringify({
+      assignments: [{
+        assignment_id: 'rescue-team-001',
+        universe: 'Predator',
+        timestamp: '2026-03-20T10:30:00.000Z',
+        members: [{ name: 'Dutch', role: 'Leader' }],
+      }],
+    }));
+
+    const checks = await runDoctor(TEST_ROOT);
+    const casting = checks.find(check => check.name === 'casting/registry.json exists');
+    expect(casting).toMatchObject({ status: 'fail' });
+    expect(casting?.message).toMatch(/legacy casting schema agents\[\]\/assignments\[\].*Squad 0\.9\.x.*squad upgrade --force/);
+    expect(casting?.message).not.toContain('registry revision is invalid');
+  });
+
   it('accepts manifest-backed casting files converted to CRLF by Git (#2266)', async () => {
     await scaffold(TEST_ROOT);
     const castingDir = join(TEST_ROOT, '.squad', 'casting');

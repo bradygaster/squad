@@ -34,7 +34,7 @@ function version(value: string): void {
   writeFileSync(file, readFileSync(file, 'utf8').replace(/<!-- version: [^>]+ -->/, `<!-- version: ${value} -->`));
 }
 
-describe('upgrade preflights legacy casting before managed writes', () => {
+describe('upgrade isolates legacy casting migration from the rest of the upgrade', () => {
   beforeEach(async () => {
     root = mkdtempSync(join(tmpdir(), 'squad-legacy-upgrade-'));
     home = mkdtempSync(join(tmpdir(), 'squad-legacy-home-'));
@@ -150,20 +150,25 @@ describe('upgrade preflights legacy casting before managed writes', () => {
     }
   });
 
-  it('refuses the unchanged native-shaped incomplete-universe fixture before all managed writes, including custom MCP', async () => {
+  it('keeps incomplete-universe casting byte-exact while still upgrading the bridge', async () => {
     version('0.10.0');
     const fixtureDir = join(process.cwd(), 'test', 'fixtures', 'casting-incomplete-universe');
     for (const file of ['registry.json', 'history.json']) writeFileSync(join(casting, file), readFileSync(join(fixtureDir, file)));
     writeFileSync(join(root, '.mcp.json'), '{"mcpServers":{"custom":{"command":"node","args":["custom.mjs"]}}}\n');
+    const castingBefore = tree(casting);
     const before = tree(root), homeBefore = tree(home);
-    for (const options of [{ dryRun: true }, {}, {}]) {
-      await expect(runUpgrade(root, options)).rejects.toThrow(/authoritative universe evidence.*No universe or historical usage will be invented/);
-      expect(tree(root)).toEqual(before);
-      expect(tree(home)).toEqual(homeBefore);
-    }
+    await expect(runUpgrade(root, { dryRun: true })).resolves.toBeDefined();
+    expect(tree(root)).toEqual(before);
+    expect(tree(home)).toEqual(homeBefore);
+
+    await expect(runUpgrade(root)).resolves.toBeDefined();
+    expect(tree(casting)).toEqual(castingBefore);
+    const mcp = JSON.parse(readFileSync(join(root, '.mcp.json'), 'utf8'));
+    expect(mcp.mcpServers.custom).toEqual({ command: 'node', args: ['custom.mjs'] });
+    expect(mcp.mcpServers.squad_state.args.at(-1)).toBe('state-mcp');
   });
 
-  it.each(['missing-universe', 'entries'] as const)('refuses %s provenance before managed upgrade writes', async kind => {
+  it.each(['missing-universe', 'entries'] as const)('reports %s provenance while allowing managed upgrade writes', async kind => {
     version('0.10.0');
     const registry = JSON.parse(registryRaw);
     const history = JSON.parse(historyRaw);
@@ -174,36 +179,41 @@ describe('upgrade preflights legacy casting before managed writes', () => {
     }
     writeFileSync(join(casting, 'registry.json'), JSON.stringify(kind === 'entries' ? { entries: Object.values(registry.agents) } : registry));
     writeFileSync(join(casting, 'history.json'), JSON.stringify(kind === 'entries' ? { assignments: [] } : history));
+    const castingBefore = tree(casting);
     const before = tree(root);
     const homeBefore = tree(home);
-    for (const options of [{ dryRun: true }, {}, {}]) {
-      await expect(runUpgrade(root, options)).rejects.toThrow(/Incomplete legacy provenance/);
-      expect(tree(root)).toEqual(before);
-      expect(tree(home)).toEqual(homeBefore);
-    }
+    await expect(runUpgrade(root, { dryRun: true })).resolves.toBeDefined();
+    expect(tree(root)).toEqual(before);
+    expect(tree(home)).toEqual(homeBefore);
+    await expect(runUpgrade(root)).resolves.toBeDefined();
+    expect(tree(casting)).toEqual(castingBefore);
+    expect(readFileSync(join(root, '.github', 'agents', 'squad.agent.md'), 'utf8'))
+      .toContain(`<!-- version: ${getPackageVersion()} -->`);
   });
 
-  it.each(['0.13.0', 'current'])('invalid casting on %s fails before any upgrade writes', async installed => {
+  it.each(['0.13.0', 'current'])('invalid casting on %s is preserved while the remaining upgrade completes', async installed => {
     version(installed === 'current' ? getPackageVersion() : installed);
     const malformed = JSON.parse(registryRaw);
     malformed.schema = 'unsupported/v99';
     writeFileSync(join(casting, 'registry.json'), JSON.stringify(malformed));
-    const before = tree(root);
-    await expect(runUpgrade(root)).rejects.toThrow();
-    expect(tree(root)).toEqual(before);
+    const castingBefore = tree(casting);
+    await expect(runUpgrade(root)).resolves.toBeDefined();
+    expect(tree(casting)).toEqual(castingBefore);
+    expect(readFileSync(join(root, '.github', 'agents', 'squad.agent.md'), 'utf8'))
+      .toContain(`<!-- version: ${getPackageVersion()} -->`);
   });
 
-  it.each(['archive:write', 'payload:registry-write'] as const)('%s failure leaves managed files unchanged', async failure => {
+  it.each(['archive:write', 'payload:registry-write'] as const)('%s failure leaves live casting bytes unchanged and does not block managed files', async failure => {
     version('0.13.0');
-    const managedTree = () => Object.fromEntries(Object.entries(tree(root))
-      .filter(([file]) => !file.startsWith('.squad/casting/')));
-    const before = managedTree();
+    const registryBefore = readFileSync(join(casting, 'registry.json'));
+    const historyBefore = readFileSync(join(casting, 'history.json'));
     _setCastingDurabilityHooksForTesting({
       boundary: ({ boundary }) => { if (boundary === failure) throw new Error('preflight failed'); },
     });
-    await expect(runUpgrade(root)).rejects.toThrow('preflight failed');
-    expect(managedTree()).toEqual(before);
-    expect(readFileSync(join(casting, 'registry.json'), 'utf8')).toBe(registryRaw);
-    expect(readFileSync(join(casting, 'history.json'), 'utf8')).toBe(historyRaw);
+    await expect(runUpgrade(root)).resolves.toBeDefined();
+    expect(readFileSync(join(casting, 'registry.json'))).toEqual(registryBefore);
+    expect(readFileSync(join(casting, 'history.json'))).toEqual(historyBefore);
+    expect(readFileSync(join(root, '.github', 'agents', 'squad.agent.md'), 'utf8'))
+      .toContain(`<!-- version: ${getPackageVersion()} -->`);
   });
 });

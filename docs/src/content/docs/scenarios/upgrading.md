@@ -422,9 +422,10 @@ Example: upgrading to v0.2.0 creates `.ai-team/skills/` if it doesn't already ex
 
 ### Legacy casting state (upgrades to 1.x)
 
-`squad upgrade` validates casting state **before** replacing the coordinator,
+`squad upgrade` attempts casting migration **before** replacing the coordinator,
 skills, workflows, or other upgrade-managed files, even when the installed
-coordinator already matches the CLI version.
+coordinator already matches the CLI version. A casting-only failure leaves both
+live casting files unchanged, but no longer blocks unrelated upgrade work.
 
 Supported unversioned registries have an `agents` object with persistent names,
 universes, statuses, and creation dates. Roles default to the agent ID only when
@@ -438,16 +439,19 @@ denote the same instant. The original timestamp string, including its timezone
 offset, is retained; migration never substitutes an agent creation date for an
 assignment date.
 
-The historical `entries[]` / `assignments[]` variant is also supported when
+The historical `entries[]` / `assignments[]` and `agents[]` / `assignments[]`
+variants emitted by 0.9.x coordinators are also supported when
 each registry entry's persistent name matches exactly one canonical folder's
 `charter.md` under the team's `agents/` directory. The charter must contain an
 `## Identity` section with `- **Name:**`; its optional `- **Role:**` supplies the
 role, otherwise the canonical folder ID is used. Missing, duplicated, malformed,
 or conflicting identities stop migration; names are never slugified into IDs.
 Keep the original producer's charters with the state when testing this variant.
-Each assignment's explicit persistent-name list supplies **only that historical
-membership**, not today's roster. Its recorded universe and timestamp supply
-the corresponding usage event. Missing universe or date evidence is never filled
+Each assignment's explicit persistent-name list or `{ name, role }` member list
+supplies **only that historical membership**, not today's roster. Member roles
+must agree with the authoritative charter. Its recorded universe and
+`timestamp`, `created_at`, `used_at`, or `assigned_at` value supplies the
+corresponding usage event. Missing universe or date evidence is never filled
 from the current naming policy or agent creation dates.
 
 Migration preserves agent IDs, names, original dates (including timezone offsets),
@@ -465,8 +469,11 @@ registry/history commit transaction. Repeating migration preserves managed bytes
 `squad upgrade --dry-run` validates and previews migration without creating locks,
 archives, or transaction files. Unknown schemas, damaged files, missing pair
 members, mismatched assignment evidence, or inconsistent managed transactions
-stop the upgrade before managed files change. Back up the state and seek recovery
-help; do not manually add `revision`, delete casting files, or rewrite dates.
+leave the casting pair byte-exact and produce an actionable warning. The rest of
+the upgrade continues, including client templates and the `squad_state` bridge,
+then repeats the casting warning in the completion summary. Back up the state and
+seek recovery help; do not manually add `revision`, delete casting files, or
+rewrite dates.
 
 #### Incomplete legacy provenance
 
@@ -476,12 +483,13 @@ Descriptive names alone do not prove a universe. A current coordinator's naming
 policy does not prove the policy of an older assignment. Migration will not
 invent a universe, usage entry, or historical membership.
 
-The historical `entries[]` / `assignments[]` pair requires recovery when original
-folder/charter identities are missing or ambiguous. Persistent names are not
-canonical folder IDs. Today's team roster is not evidence of which agents
-belonged to an older assignment. Restore the original authoritative `charter.md`
-files alongside the original casting pair; do not create charters from guessed
-name-to-folder mappings.
+The historical `entries[]` / `assignments[]` and `agents[]` / `assignments[]`
+pairs require recovery when original folder/charter identities are missing or
+ambiguous. The diagnostic names the unmapped persistent name and the number of
+matching folders. Persistent names are not canonical folder IDs. Today's team
+roster is not evidence of which agents belonged to an older assignment. Restore
+the original authoritative `charter.md` files alongside the original casting
+pair; do not create charters from guessed name-to-folder mappings.
 
 If either policy stops your upgrade:
 

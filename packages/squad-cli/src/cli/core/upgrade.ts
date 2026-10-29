@@ -11,6 +11,7 @@ import { FSStorageProvider, stripTeamCapabilitiesBlock, syncTeamCapabilities } f
 import { clearResolveSquadCache, isRetiredProfileTeamRoot } from '@bradygaster/squad-sdk/resolution';
 import {
   backfillCastingRegistryFromTeam,
+  detectHistoricalCastingSchema,
   ensureCastingRegistryPair,
   normalizeCastingJsonLineEndings as normalizeCastingJsonFiles,
   preflightCastingRegistryPair,
@@ -298,6 +299,18 @@ function stripRetiredProfileTeamRoot(squadDir: string, dest: string, dryRun: boo
   const teamRoot = record['teamRoot'];
   if (typeof teamRoot !== 'string' || teamRoot.length === 0 || teamRoot === '.') return;
   const target = path.resolve(dest, teamRoot);
+  const comparable = (value: string) => process.platform === 'win32' ? value.toLowerCase() : value;
+  if (comparable(target) === comparable(path.resolve(dest))) {
+    if (dryRun) {
+      info('Would normalize the absolute "teamRoot" setting to "." in .squad/config.json.');
+      return;
+    }
+    record['teamRoot'] = '.';
+    storage.writeSync(configPath, JSON.stringify(record, null, 2) + '\n');
+    clearResolveSquadCache();
+    info('Normalized the absolute "teamRoot" setting to "." in .squad/config.json.');
+    return;
+  }
   if (!isRetiredProfileTeamRoot(target)) return;
   if (dryRun) {
     info('Would remove obsolete "teamRoot" setting from .squad/config.json.');
@@ -1157,7 +1170,12 @@ function runLegacySkillMigration(dest: string, filesUpdated: string[]): void {
   }
 }
 
-async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated: string[]): Promise<void> {
+async function runEnsureChecks(
+  dest: string,
+  templatesDir: string,
+  filesUpdated: string[],
+  options: { skipCasting?: boolean } = {},
+): Promise<void> {
   const attrAdded = ensureGitattributes(dest);
   if (attrAdded.length > 0) {
     success(`ensured .gitattributes (${attrAdded.length} rules added)`);
@@ -1176,15 +1194,17 @@ async function runEnsureChecks(dest: string, templatesDir: string, filesUpdated:
     filesUpdated.push(...dirsCreated);
   }
 
-  const castingFiles = ensureCastingDefaults(dest, templatesDir);
-  if (castingFiles.length > 0) {
-    success(`scaffolded ${castingFiles.length} default casting files`);
-    filesUpdated.push(...castingFiles);
-  }
-  const normalizedCasting = normalizeCastingJsonLineEndings(dest);
-  if (normalizedCasting.length > 0) {
-    success(`normalized ${normalizedCasting.length} casting JSON file(s) to LF`);
-    filesUpdated.push(...normalizedCasting);
+  if (!options.skipCasting) {
+    const castingFiles = ensureCastingDefaults(dest, templatesDir);
+    if (castingFiles.length > 0) {
+      success(`scaffolded ${castingFiles.length} default casting files`);
+      filesUpdated.push(...castingFiles);
+    }
+    const normalizedCasting = normalizeCastingJsonLineEndings(dest);
+    if (normalizedCasting.length > 0) {
+      success(`normalized ${normalizedCasting.length} casting JSON file(s) to LF`);
+      filesUpdated.push(...normalizedCasting);
+    }
   }
 
   const memoryFiles = ensureMemoryGovernanceUpgradeDefaults(dest);
@@ -1535,6 +1555,22 @@ function warnCastingRepairSkipped(headline: string, result: RepairResult): void 
   }
 }
 
+function detectLegacyCastingFiles(castingDir: string): ReturnType<typeof detectHistoricalCastingSchema> {
+  try {
+    const registry = JSON.parse(storage.readSync(path.join(castingDir, 'registry.json')) ?? '{}') as unknown;
+    const history = JSON.parse(storage.readSync(path.join(castingDir, 'history.json')) ?? '{}') as unknown;
+    return detectHistoricalCastingSchema(registry, history);
+  } catch {
+    return undefined;
+  }
+}
+
+function reportCastingMigrationFailure(message: string | undefined): void {
+  if (!message) return;
+  warn(`Upgrade completed, but legacy casting still needs repair: ${message}`);
+  info('  The original registry.json and history.json were left unchanged. See "Incomplete legacy provenance" in the upgrading guide, then run `squad upgrade --force` again.');
+}
+
 /**
  * Run the upgrade command
  */
@@ -1573,7 +1609,10 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   // The repair reconciles a single Init Mode history snapshot; registries with real history keep failing closed.
   const castingDir = path.join(squadDirInfo.path, 'casting');
   const dryRun = options.dryRun ?? false;
-  const repair = repairHandwrittenCastingRegistry(castingDir, { dryRun });
+  const historicalSchema = detectLegacyCastingFiles(castingDir);
+  const repair: RepairResult = historicalSchema
+    ? { repaired: false, files: [] }
+    : repairHandwrittenCastingRegistry(castingDir, { dryRun });
   const handwrittenRepaired = repair.repaired;
   if (handwrittenRepaired) {
     if (dryRun) {
@@ -1586,13 +1625,22 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   }
   // Legacy registries still go through the strict preflight (and its specific errors); only the
   // preflight's generic failure is enriched with the handwritten-repair reason and fix.
-  const castingMigrated = handwrittenRepaired && dryRun
-    ? false
-    : withCastingRepairContext(repair, () => preflightCastingRegistryPair(castingDir, dryRun));
+  let castingMigrationFailure: string | undefined;
+  let castingMigrated = false;
+  try {
+    castingMigrated = handwrittenRepaired && dryRun
+      ? false
+      : withCastingRepairContext(repair, () => preflightCastingRegistryPair(castingDir, dryRun));
+  } catch (error) {
+    castingMigrationFailure = error instanceof Error ? error.message : String(error);
+    warn(`Could not migrate legacy casting; continuing with the rest of the upgrade: ${castingMigrationFailure}`);
+  }
   if (castingMigrated) {
-    info(dryRun
-      ? 'Would migrate legacy casting state to a managed registry/history pair.'
-      : 'Migrated legacy casting state to a managed registry/history pair.');
+    if (dryRun) {
+      info('Would migrate legacy casting state to a managed registry/history pair.');
+    } else {
+      warn('Migrated legacy casting state to a managed registry/history pair; byte-exact originals were preserved in its legacy archive.');
+    }
   }
 
   // --dry-run: preview what upgrade would do without writing (#1052, #2297)
@@ -1639,6 +1687,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
       warn(`Could not plan client files: ${err instanceof Error ? err.message : String(err)}`);
     }
     console.log(`\nRun without --dry-run to apply.\n`);
+    reportCastingMigrationFailure(castingMigrationFailure);
     return { fromVersion: oldVersion, toVersion: cliVersion, filesUpdated: [], migrationsRun: [] };
   }
 
@@ -1661,7 +1710,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     // to render the <!-- squad:capabilities --> block, so a 0.9.x project (empty casting/) would
     // otherwise get the block only on the SECOND upgrade (F4, upgrade matrix).
     prepareBuiltinAgents(dest, templatesDir, filesUpdated);
-    preflightCastingPair(dest, templatesDir, filesUpdated);
+    if (!castingMigrationFailure) preflightCastingPair(dest, templatesDir, filesUpdated);
 
     // Refresh squad.agent.md
     const agentSrc = path.join(templatesDir, 'squad.agent.md.template');
@@ -1675,8 +1724,9 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     }
 
     // Run infrastructure ensure checks even when already current
-    await runEnsureChecks(dest, templatesDir, filesUpdated);
+    await runEnsureChecks(dest, templatesDir, filesUpdated, { skipCasting: !!castingMigrationFailure });
     await refreshClients(dest, squadDirInfo.path, options, filesUpdated);
+    reportCastingMigrationFailure(castingMigrationFailure);
 
     return {
       fromVersion: oldVersion,
@@ -1696,7 +1746,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
 
   // See preflightCastingPair: the capabilities block needs the casting pair first (F4).
   prepareBuiltinAgents(dest, templatesDir, filesUpdated);
-  preflightCastingPair(dest, templatesDir, filesUpdated);
+  if (!castingMigrationFailure) preflightCastingPair(dest, templatesDir, filesUpdated);
 
   storage.mkdirSync(path.dirname(agentDest), { recursive: true });
   writeAgentTemplate(agentSrc, agentDest, cliVersion, mcpConfigMode, isGitHubForMcp, { squadDir: squadDirInfo.path });
@@ -1734,7 +1784,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
   }
 
   // Run infrastructure ensure checks
-  await runEnsureChecks(dest, templatesDir, filesUpdated);
+  await runEnsureChecks(dest, templatesDir, filesUpdated, { skipCasting: !!castingMigrationFailure });
   await refreshClients(dest, squadDirInfo.path, options, filesUpdated);
 
   console.log();
@@ -1745,6 +1795,7 @@ export async function runUpgrade(dest: string, options: UpgradeOptions = {}): Pr
     dim('Preserves user state: team.md, decisions/, agents/*/history.md');
   }
   console.log();
+  reportCastingMigrationFailure(castingMigrationFailure);
 
   return {
     fromVersion: fromLabel,

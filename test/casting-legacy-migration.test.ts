@@ -51,12 +51,82 @@ function entriesFixture(dir: string, crlf = false) {
   return { registry, history, identities };
 }
 
+function agentsArrayFixture(dir: string) {
+  const fixtureDir = join(process.cwd(), 'test', 'fixtures', 'casting-agents-array');
+  const registryRaw = readFileSync(join(fixtureDir, 'registry.json'));
+  const historyRaw = readFileSync(join(fixtureDir, 'history.json'));
+  const registry = JSON.parse(registryRaw.toString());
+  const history = JSON.parse(historyRaw.toString());
+  const identities: Record<string, string> = JSON.parse(
+    readFileSync(join(fixtureDir, 'identities.json'), 'utf8'),
+  );
+  writeFileSync(join(dir, 'registry.json'), registryRaw);
+  writeFileSync(join(dir, 'history.json'), historyRaw);
+  for (const [id, charter] of Object.entries(identities)) {
+    const folder = join(dir, '..', 'agents', id);
+    mkdirSync(folder, { recursive: true });
+    writeFileSync(join(folder, 'charter.md'), charter);
+  }
+  return { registry, history, identities, registryRaw, historyRaw };
+}
+
 afterEach(() => {
   _setCastingDurabilityHooksForTesting(null);
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
 describe('historical casting migration', () => {
+  it('migrates the Squad 0.9.x agents[]/assignments[] shape with object membership and byte-exact backups', () => {
+    const dir = castingDir();
+    const source = agentsArrayFixture(dir);
+    expect(preflightCastingRegistryPair(dir, true)).toBe(true);
+    expect(readFileSync(join(dir, 'registry.json'))).toEqual(source.registryRaw);
+    expect(readFileSync(join(dir, 'history.json'))).toEqual(source.historyRaw);
+
+    expect(preflightCastingRegistryPair(dir)).toBe(true);
+    const pair = readCastingRegistryPair(dir);
+    expect(pair.registry!.agents).toMatchObject({
+      dutch: {
+        persistent_name: 'Dutch',
+        display_name: 'Dutch',
+        role: 'Leader',
+        producer_note: 'preserve me',
+      },
+      mac: { persistent_name: 'Mac', role: 'Heavy Weapons' },
+      dillon: { persistent_name: 'Dillon', role: 'Operations' },
+      hawkins: { persistent_name: 'Hawkins', role: 'Communications' },
+    });
+    expect(pair.history).toMatchObject({
+      assignment_cast_snapshots: {
+        'rescue-team-001': {
+          universe: 'Predator',
+          created_at: '2026-03-20T10:30:00.000Z',
+          agents: ['dutch', 'mac', 'dillon'],
+        },
+      },
+      universe_usage_history: [{
+        universe: 'Predator',
+        used_at: '2026-03-20T10:30:00.000Z',
+      }],
+    });
+    const archive = readdirSync(dir).find(name => name.startsWith('legacy-archive-'))!;
+    expect(readFileSync(join(dir, archive, 'registry.json'))).toEqual(source.registryRaw);
+    expect(readFileSync(join(dir, archive, 'history.json'))).toEqual(source.historyRaw);
+  });
+
+  it('names the unmapped agents[] entry and leaves both originals byte-exact', () => {
+    const dir = castingDir();
+    const source = agentsArrayFixture(dir);
+    rmSync(join(dir, '..', 'agents', 'hawkins'), { recursive: true });
+    expect(() => preflightCastingRegistryPair(dir, true))
+      .toThrow(/agents\[\]\/assignments\[\].*"Hawkins".*matched 0 canonical agent folders/);
+    expect(() => preflightCastingRegistryPair(dir))
+      .toThrow(/agents\[\]\/assignments\[\].*"Hawkins".*matched 0 canonical agent folders/);
+    expect(readFileSync(join(dir, 'registry.json'))).toEqual(source.registryRaw);
+    expect(readFileSync(join(dir, 'history.json'))).toEqual(source.historyRaw);
+    expect(readdirSync(dir).sort()).toEqual(['history.json', 'registry.json']);
+  });
+
   it.each([false, true])('maps anonymized native entries using authoritative charters (CRLF=%s), not name slugs or today’s roster', crlf => {
     const dir = castingDir();
     const source = entriesFixture(dir, crlf);

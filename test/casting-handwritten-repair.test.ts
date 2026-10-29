@@ -654,7 +654,7 @@ describe('Layer 2: Handwritten casting registry repair & backfill', () => {
       }
     }, 120_000);
 
-    it('runUpgrade(..., { dryRun: true }) still fails closed on unrepairable/corrupt registries', async () => {
+    it('runUpgrade(..., { dryRun: true }) reports corrupt registries without writing', async () => {
       const dest = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-upgrade-dryrun-corrupt-'));
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'squad-upgrade-dryrun-home2-'));
       const quiet = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -668,7 +668,7 @@ describe('Layer 2: Handwritten casting registry repair & backfill', () => {
         fs.writeFileSync(path.join(dir, 'registry.json'), '{ malformed json');
         const beforeTree = snapshotTree(dest);
 
-        await expect(runUpgrade(dest, { dryRun: true })).rejects.toThrow();
+        await expect(runUpgrade(dest, { dryRun: true })).resolves.toBeDefined();
         expect(snapshotTree(dest)).toEqual(beforeTree);
       } finally {
         delete process.env.SQUAD_HOME_DIR_OVERRIDE;

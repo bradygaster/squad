@@ -1,0 +1,37 @@
+{
+  "agents": [
+    {
+      "persistent_name": "Dutch",
+      "role": "Leader",
+      "universe": "Predator",
+      "created_at": "2026-03-20T10:15:00.000Z",
+      "legacy_named": false,
+      "status": "active",
+      "producer_note": "preserve me"
+    },
+    {
+      "persistent_name": "Mac",
+      "role": "Heavy Weapons",
+      "universe": "Predator",
+      "created_at": "2026-03-20T10:15:00.000Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    {
+      "persistent_name": "Dillon",
+      "role": "Operations",
+      "universe": "Predator",
+      "created_at": "2026-03-20T10:15:00.000Z",
+      "legacy_named": false,
+      "status": "active"
+    },
+    {
+      "persistent_name": "Hawkins",
+      "role": "Communications",
+      "universe": "Predator",
+      "created_at": "2026-03-20T10:15:00.000Z",
+      "legacy_named": false,
+      "status": "active"
+    }
+  ]
+}
