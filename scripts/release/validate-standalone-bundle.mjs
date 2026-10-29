@@ -22,10 +22,14 @@ const archivePath = path.resolve(arg('--archive'));
 const expectedNode = arg('--expected-node').replace(/^v/, '');
 const expectedCli = arg('--expected-cli');
 const target = arg('--target');
+const sourceSha = arg('--source-sha');
 const rootDelete = arg('--root-delete');
 const outputPath = path.resolve(arg('--output'));
 const expectedTarget = `${process.platform}-${process.arch}`;
 
+if (!/^[0-9a-f]{40}$/.test(sourceSha)) {
+  throw new Error(`Invalid source SHA ${JSON.stringify(sourceSha)}`);
+}
 if (target !== expectedTarget) {
   throw new Error(`Target ${target} is UNEXECUTED: runner is ${expectedTarget}`);
 }
@@ -106,7 +110,7 @@ const report = {
   execution: 'EXECUTED',
   target,
   runner: { platform: process.platform, arch: process.arch },
-  sourceSha: process.env.GITHUB_SHA ?? '',
+  sourceSha,
   processVersion,
   squadVersion,
   archive: {

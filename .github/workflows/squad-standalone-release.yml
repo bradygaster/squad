@@ -136,7 +136,9 @@ jobs:
           [ -z "$PACKAGE_VERSION" ] || [[ "$PACKAGE_VERSION" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-insider\.(0|[1-9][0-9]*)$ ]] || {
             echo "::error::package_version must be empty or X.Y.Z-insider.N"; exit 1;
           }
-          test "$(git rev-parse HEAD)" = "$SOURCE_SHA" || { echo "::error::checkout differs from source_sha"; exit 1; }
+          head_sha="$(git rev-parse HEAD)"
+          echo "Verified checkout HEAD: ${head_sha}"
+          test "$head_sha" = "$SOURCE_SHA" || { echo "::error::checkout differs from source_sha"; exit 1; }
           test "$DISPATCH_SHA" = "$SOURCE_SHA" || { echo "::error::dispatch SHA differs from source_sha"; exit 1; }
           test "$WORKFLOW_SHA" = "$SOURCE_SHA" || { echo "::error::workflow definition differs from source_sha"; exit 1; }
           tag="$RELEASE_TAG"
@@ -225,7 +227,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ inputs.source_ref || inputs.release_tag || github.ref }}
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact source checkout
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          echo "Verified checkout HEAD: ${head_sha}"
+          test "${head_sha}" = "${SOURCE_SHA}" || {
+            echo "::error::checkout HEAD ${head_sha} differs from source_sha ${SOURCE_SHA}"
+            exit 1
+          }
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
@@ -300,9 +315,15 @@ jobs:
         env:
           TARGET: ${{ matrix.target }}
           ASSET: ${{ steps.package.outputs.asset }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
           ROOT_DELETE_STATUS: "${{ (matrix.target == 'linux-x64' || matrix.target == 'win32-x64') && 'EXECUTED: state-backend-root-guard.test.ts passed' || 'UNEXECUTED on this target; covered on linux-x64 and win32-x64' }}"
         run: |
           set -euo pipefail
+          verified_head="$(git rev-parse HEAD)"
+          test "${verified_head}" = "${SOURCE_SHA}" || {
+            echo "::error::checkout HEAD ${verified_head} differs from source_sha ${SOURCE_SHA}"
+            exit 1
+          }
           bundle="dist-standalone/squad-${TARGET}"
           cli_version="$(node -p 'require("./packages/squad-cli/package.json").version')"
           node scripts/release/validate-standalone-bundle.mjs \
@@ -311,12 +332,13 @@ jobs:
             --expected-node "${NODE_VERSION}" \
             --expected-cli "${cli_version}" \
             --target "${TARGET}" \
+            --source-sha "${verified_head}" \
             --root-delete "${ROOT_DELETE_STATUS}" \
             --output "dist-standalone/squad-${TARGET}-validation.json"
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
         with:
-          name: squad-${{ matrix.target }}
+          name: squad-${{ matrix.target }}-${{ inputs.source_sha }}
           path: |
             dist-standalone/${{ steps.package.outputs.asset }}
             dist-standalone/${{ steps.package.outputs.asset }}.sha256
@@ -337,9 +359,21 @@ jobs:
         with:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
+      - name: Verify exact source checkout
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          echo "Verified checkout HEAD: ${head_sha}"
+          test "${head_sha}" = "${SOURCE_SHA}" || {
+            echo "::error::checkout HEAD ${head_sha} differs from source_sha ${SOURCE_SHA}"
+            exit 1
+          }
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
         with:
           path: artifacts
+          pattern: squad-*-${{ inputs.source_sha }}
           merge-multiple: true
 
       - name: Upload to release
@@ -421,7 +455,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
         with:
-          name: standalone-release-checksums
+          name: standalone-release-checksums-${{ inputs.source_sha }}
           path: artifacts/SHA256SUMS.txt
           retention-days: 30
           if-no-files-found: error
@@ -439,7 +473,20 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
-          ref: ${{ inputs.source_ref || inputs.release_tag || github.ref }}
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+
+      - name: Verify exact source checkout
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          echo "Verified checkout HEAD: ${head_sha}"
+          test "${head_sha}" = "${SOURCE_SHA}" || {
+            echo "::error::checkout HEAD ${head_sha} differs from source_sha ${SOURCE_SHA}"
+            exit 1
+          }
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 #v6
         with:
@@ -447,7 +494,7 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
         with:
-          name: standalone-release-checksums
+          name: standalone-release-checksums-${{ inputs.source_sha }}
           path: release-metadata
 
       - name: Generate manifests
@@ -483,7 +530,7 @@ jobs:
 
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
         with:
-          name: packaging-manifests
+          name: packaging-manifests-${{ inputs.source_sha }}
           path: dist-packaging/
           retention-days: 30
           if-no-files-found: error
@@ -502,6 +549,18 @@ jobs:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
           path: release-source
+      - name: Verify exact source checkout
+        working-directory: release-source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          echo "Verified checkout HEAD: ${head_sha}"
+          test "${head_sha}" = "${SOURCE_SHA}" || {
+            echo "::error::checkout HEAD ${head_sha} differs from source_sha ${SOURCE_SHA}"
+            exit 1
+          }
       - name: Require Homebrew tap credential
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
@@ -536,7 +595,7 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
         with:
-          name: packaging-manifests
+          name: packaging-manifests-${{ inputs.source_sha }}
           path: packaging
 
       - name: Clone Homebrew tap (anonymous read; bradygaster/homebrew-squad is public)
@@ -673,6 +732,18 @@ jobs:
           ref: ${{ inputs.source_sha }}
           fetch-depth: 0
           path: release-source
+      - name: Verify exact source checkout
+        working-directory: release-source
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          head_sha="$(git rev-parse HEAD)"
+          echo "Verified checkout HEAD: ${head_sha}"
+          test "${head_sha}" = "${SOURCE_SHA}" || {
+            echo "::error::checkout HEAD ${head_sha} differs from source_sha ${SOURCE_SHA}"
+            exit 1
+          }
       - name: Require WinGet publication credential
         env:
           WINGET_CREATE_GITHUB_TOKEN: ${{ secrets.WINGET_CREATE_GITHUB_TOKEN }}
@@ -707,7 +778,7 @@ jobs:
 
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 #v8
         with:
-          name: packaging-manifests
+          name: packaging-manifests-${{ inputs.source_sha }}
           path: packaging
 
       - name: Resolve WinGet release metadata

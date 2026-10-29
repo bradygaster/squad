@@ -326,10 +326,73 @@ describe('standalone release handoff', () => {
       expect(standaloneWorkflow.on?.workflow_call?.inputs).toHaveProperty(inputName);
       expect(standaloneWorkflow.on?.workflow_dispatch?.inputs).toHaveProperty(inputName);
     }
-    expect(standalone).toContain(
-      'ref: ${{ inputs.source_ref || inputs.release_tag || github.ref }}',
-    );
     expect(standaloneWorkflow.on?.release).toBeUndefined();
+  });
+
+  it('pins every standalone checkout and cross-job artifact to source_sha', () => {
+    for (const [jobName, job] of Object.entries(standaloneWorkflow.jobs)) {
+      const steps = job.steps ?? [];
+      for (const [index, step] of steps.entries()) {
+        if (!step.uses?.startsWith('actions/checkout@')) continue;
+        expect(step.with?.ref, `${jobName} checkout ref`).toBe('${{ inputs.source_sha }}');
+        const verify = steps[index + 1];
+        if (jobName === 'guard') {
+          const validate = stepNamed(job, 'Validate inputs').run ?? '';
+          expect(validate).toContain('head_sha="$(git rev-parse HEAD)"');
+          expect(validate).toContain('test "$head_sha" = "$SOURCE_SHA"');
+          expect(validate).toContain('echo "Verified checkout HEAD: ${head_sha}"');
+        } else {
+          expect(verify?.name, `${jobName} checkout verification`).toBe(
+            'Verify exact source checkout',
+          );
+          expect(verify?.run).toContain('test "${head_sha}" = "${SOURCE_SHA}"');
+        }
+      }
+    }
+
+    const build = standaloneWorkflow.jobs.build;
+    const upload = build.steps?.find((step) => step.uses?.startsWith('actions/upload-artifact@'));
+    expect(upload?.with?.name).toBe('squad-${{ matrix.target }}-${{ inputs.source_sha }}');
+    const executeBundle = stepNamed(build, 'Execute bundle and bounded bridge lifecycle smoke').run
+      ?? '';
+    expect(executeBundle).toContain('verified_head="$(git rev-parse HEAD)"');
+    expect(executeBundle).toContain('test "${verified_head}" = "${SOURCE_SHA}"');
+    expect(executeBundle).toContain('--source-sha "${verified_head}"');
+
+    const publishDownload = standaloneWorkflow.jobs.publish.steps?.find(
+      (step) => step.uses?.startsWith('actions/download-artifact@'),
+    );
+    expect(publishDownload?.with?.pattern).toBe('squad-*-${{ inputs.source_sha }}');
+
+    const checksumsUpload = standaloneWorkflow.jobs.publish.steps?.find(
+      (step) => step.uses?.startsWith('actions/upload-artifact@'),
+    );
+    expect(checksumsUpload?.with?.name).toBe(
+      'standalone-release-checksums-${{ inputs.source_sha }}',
+    );
+
+    const packagingDownload = standaloneWorkflow.jobs.packaging.steps?.find(
+      (step) => step.uses?.startsWith('actions/download-artifact@'),
+    );
+    expect(packagingDownload?.with?.name).toBe(
+      'standalone-release-checksums-${{ inputs.source_sha }}',
+    );
+
+    const packagingUpload = standaloneWorkflow.jobs.packaging.steps?.find(
+      (step) => step.uses?.startsWith('actions/upload-artifact@'),
+    );
+    expect(packagingUpload?.with?.name).toBe(
+      'packaging-manifests-${{ inputs.source_sha }}',
+    );
+
+    for (const jobName of ['publish-homebrew', 'publish-winget']) {
+      const download = standaloneWorkflow.jobs[jobName].steps?.find(
+        (step) => step.uses?.startsWith('actions/download-artifact@'),
+      );
+      expect(download?.with?.name, `${jobName} artifact`).toBe(
+        'packaging-manifests-${{ inputs.source_sha }}',
+      );
+    }
   });
 
   it('vendors the patched Node default and refuses versions below the security floor', () => {
@@ -750,14 +813,14 @@ describe('automated package publication', () => {
 
     const packagingUpload = packaging.steps?.find(
       (step) => step.uses?.startsWith('actions/upload-artifact@')
-        && step.with?.name === 'packaging-manifests',
+        && step.with?.name === 'packaging-manifests-${{ inputs.source_sha }}',
     );
     expect(packagingUpload).toBeDefined();
     const checksumDownload = packaging.steps?.find(
       (step) => step.uses?.startsWith('actions/download-artifact@'),
     );
     expect(checksumDownload?.with).toMatchObject({
-      name: 'standalone-release-checksums',
+      name: 'standalone-release-checksums-${{ inputs.source_sha }}',
       path: 'release-metadata',
     });
     expect(stepNamed(packaging, 'Generate manifests').run).toContain(
@@ -768,7 +831,9 @@ describe('automated package publication', () => {
       const artifactDownload = job.steps?.find(
         (step) => step.uses?.startsWith('actions/download-artifact@'),
       );
-      expect(artifactDownload?.with?.name).toBe('packaging-manifests');
+      expect(artifactDownload?.with?.name).toBe(
+        'packaging-manifests-${{ inputs.source_sha }}',
+      );
       expect(serialized(job)).not.toContain('generate-packaging.mjs');
     }
 
@@ -796,7 +861,7 @@ describe('automated package publication', () => {
 
     const checksumUpload = publish.steps?.find(
       (step) => step.uses?.startsWith('actions/upload-artifact@')
-        && step.with?.name === 'standalone-release-checksums',
+        && step.with?.name === 'standalone-release-checksums-${{ inputs.source_sha }}',
     );
     expect(checksumUpload?.with?.path).toBe('artifacts/SHA256SUMS.txt');
   });
@@ -826,15 +891,12 @@ describe('automated package publication', () => {
     expect(winget.if).toBe('inputs.publish_package_managers');
   });
 
-  it('checks out packaging at the same explicit source ref as the build', () => {
-    const expectedRef =
-      '${{ inputs.source_ref || inputs.release_tag || github.ref }}';
-
+  it('checks out packaging and builds at the exact source SHA', () => {
     for (const jobName of ['build', 'packaging']) {
       const checkout = standaloneWorkflow.jobs[jobName].steps?.find((step) =>
         step.uses?.startsWith('actions/checkout@'),
       );
-      expect(checkout?.with?.ref, jobName).toBe(expectedRef);
+      expect(checkout?.with?.ref, jobName).toBe('${{ inputs.source_sha }}');
     }
   });
 
