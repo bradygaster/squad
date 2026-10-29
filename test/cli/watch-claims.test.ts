@@ -426,6 +426,76 @@ describe('watch claims: fencing kills the agent', () => {
     expect(released).toEqual(['cancelled']);
   });
 
+  it('releases a remotely applied renewal whose response is still delayed', async () => {
+    const ttlMs = 300;
+    let live: ClaimRecord | null = {
+      key: { platform: 'github', repo: 'acme/widgets', id: '1' },
+      handle: 'old',
+      holder: identity('A'),
+      epoch: 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + ttlMs,
+    };
+    let acknowledgeRenewal!: () => void;
+    const renewalAcknowledged = new Promise<void>(resolve => {
+      acknowledgeRenewal = resolve;
+    });
+    let renewalApplied!: () => void;
+    const applied = new Promise<void>(resolve => {
+      renewalApplied = resolve;
+    });
+    const releases: string[] = [];
+    const provider: WorkClaimProvider = {
+      name: 'git-ref',
+      guarantees: { exclusion: 'distributed', leases: true, fencing: true },
+      acquire: async () => ({ status: 'acquired', claim: live! }),
+      renew: async (claim) => {
+        const renewed: ClaimRecord = {
+          ...claim,
+          handle: 'new',
+          epoch: claim.epoch + 1,
+          expiresAt: Date.now() + ttlMs,
+        };
+        live = renewed;
+        renewalApplied();
+        await renewalAcknowledged;
+        return { status: 'renewed', claim: renewed };
+      },
+      release: async (claim) => {
+        releases.push(claim.handle);
+        if (!live) return { status: 'already-released' };
+        if (live.handle !== claim.handle) return { status: 'fenced' };
+        live = null;
+        return { status: 'released' };
+      },
+      inspect: async () => live,
+    };
+    const ctx = makeContext(teamDir('delayed-renewal-release'), {
+      claims: provider,
+      claimTiming: { ttlMs, skewMarginMs: 0 },
+    });
+
+    const held = await holdClaimsWhile(
+      ctx,
+      [live],
+      async () => {
+        await applied;
+        return 'done';
+      },
+      () => 'completed',
+      { debug: () => {}, warn: () => {} },
+    );
+
+    expect(held.result).toBe('done');
+    expect(releases).toEqual(['old', 'new']);
+    expect(live).toBeNull();
+
+    acknowledgeRenewal();
+    await renewalAcknowledged;
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(live).toBeNull();
+  });
+
   it('releases with "completed" when the agent exits 0 and "abandoned" when it fails', async () => {
     const outcomes: FinishOutcome[] = [];
     const recording = (): WorkClaimProvider => {

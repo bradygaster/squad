@@ -323,6 +323,9 @@ export async function holdClaimsWhile<R>(
   let renewTimer: ReturnType<typeof setTimeout> | undefined;
   let deadlineTimer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | undefined;
+  let finishOutcome: FinishOutcome | undefined;
+  const releaseAttempts = new Map<string, Promise<void>>();
+  const released = new Set<number>();
 
   const fence = (reason: string): void => {
     if (fencedReason) return;
@@ -332,6 +335,58 @@ export async function holdClaimsWhile<R>(
   };
 
   const label = (c: ClaimRecord): string => `#${c.key.id}`;
+  const sameHolder = (a: ClaimRecord, b: ClaimRecord): boolean =>
+    a.holder.machineId === b.holder.machineId && a.holder.instanceId === b.holder.instanceId;
+
+  const releaseClaim = (c: ClaimRecord, idx: number, outcome: FinishOutcome): Promise<void> => {
+    const attemptKey = `${idx}:${c.handle}`;
+    const existing = releaseAttempts.get(attemptKey);
+    if (existing) return existing;
+
+    const attempt = (async (): Promise<void> => {
+      try {
+        const r = await provider.release(c, outcome);
+        if (r.status === 'fenced') {
+          if (provider.inspect) {
+            try {
+              const observed = await provider.inspect(c.key);
+              if (!observed) {
+                if (!released.has(idx)) {
+                  released.add(idx);
+                  metrics?.recordRelease(outcome);
+                }
+                log.debug(`claim ${label(c)} already-released (${outcome})`);
+                return;
+              }
+              if (sameHolder(c, observed) && observed.epoch > c.epoch) {
+                current[idx] = observed;
+                log.debug(`claim ${label(c)} cleanup advanced to epoch ${observed.epoch}`);
+                await releaseClaim(observed, idx, outcome);
+                return;
+              }
+            } catch (e) {
+              log.warn(`claim ${label(c)} cleanup inspection failed: ${(e as Error).message}`);
+            }
+          }
+          if (!lostOrFenced.has(idx)) {
+            lostOrFenced.add(idx);
+            metrics?.record('fenced');
+          }
+          log.warn(`claim ${label(c)} was fenced before release (${outcome})`);
+          return;
+        }
+        if (!released.has(idx)) {
+          released.add(idx);
+          metrics?.recordRelease(outcome);
+        }
+        log.debug(`claim ${label(c)} ${r.status} (${outcome})`);
+      } catch (e) {
+        log.warn(`claim ${label(c)} release failed (${outcome}): ${(e as Error).message}`);
+      }
+    })();
+    releaseAttempts.set(attemptKey, attempt);
+    return attempt;
+  };
 
   const armDeadline = (): void => {
     if (deadlineTimer) clearTimeout(deadlineTimer);
@@ -363,11 +418,15 @@ export async function holdClaimsWhile<R>(
     await Promise.all(current.map(async (c, idx) => {
       try {
         const r = await provider.renew(c, { ttlMs: timing.ttlMs });
-        if (stopped || fencedReason) return;
         if (r.status === 'renewed') {
-          current[idx] = r.claim;
-          log.debug(`claim ${label(c)} renewed (epoch ${r.claim.epoch})`);
+          if (r.claim.epoch > current[idx]!.epoch) current[idx] = r.claim;
+          if (stopped) {
+            await releaseClaim(r.claim, idx, finishOutcome ?? 'cancelled');
+          } else if (!fencedReason) {
+            log.debug(`claim ${label(c)} renewed (epoch ${r.claim.epoch})`);
+          }
         } else {
+          if (stopped || fencedReason) return;
           const by = r.by ? ` by ${r.by.holder.machineId}/${r.by.holder.instanceId}` : '';
           if (!lostOrFenced.has(idx)) {
             lostOrFenced.add(idx);
@@ -432,24 +491,8 @@ export async function holdClaimsWhile<R>(
     if (renewTimer) clearTimeout(renewTimer);
     if (deadlineTimer) clearTimeout(deadlineTimer);
     void inflight?.catch(() => undefined);
-    const outcome = outcomeOf(result, fencedReason !== undefined);
-    await Promise.all(current.map(async (c, idx) => {
-      try {
-        const r = await provider.release(c, outcome);
-        if (r.status === 'fenced') {
-          if (!lostOrFenced.has(idx)) {
-            lostOrFenced.add(idx);
-            metrics?.record('fenced');
-          }
-          log.warn(`claim ${label(c)} was fenced before release (${outcome})`);
-        } else {
-          metrics?.recordRelease(outcome);
-          log.debug(`claim ${label(c)} ${r.status} (${outcome})`);
-        }
-      } catch (e) {
-        log.warn(`claim ${label(c)} release failed (${outcome}): ${(e as Error).message}`);
-      }
-    }));
+    finishOutcome = outcomeOf(result, fencedReason !== undefined);
+    await Promise.all(current.map((c, idx) => releaseClaim(c, idx, finishOutcome!)));
   }
 }
 
