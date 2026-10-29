@@ -154,7 +154,7 @@ squad plugin enable my-extension
 
 **Step 8: Test locally**
 
-Run `squad plugin verify`, then run `squad plugin refresh <plugin-id>` if your plugin declares an approved built-in provider. Load your Squad session and verify the installed Squad knowledge, workflows, and generated artifacts appear and work as expected. If you declared Copilot dependencies, verify those are installed separately through Copilot.
+Run `squad plugin verify`, then run `squad plugin refresh <plugin-id>` if your plugin declares an approved built-in provider. Run `squad plugin list --json` to confirm the plugin is enabled and its files are installed under `.squad/`. Agents spawned by the Squad coordinator in GitHub Copilot, or by the Squad interactive shell (`squad` with no arguments), do not read plugin files automatically yet, so to check behavior in a session, point an agent at an installed file or reference it from a charter or skill (see [Runtime behavior](../features/plugins.md#runtime-behavior)). If you declared Copilot dependencies, verify those are installed separately through Copilot.
 
 ---
 

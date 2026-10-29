@@ -379,6 +379,7 @@ describe('CLI: upgrade command', () => {
     const content = readFileSync(join(dir, '.gitattributes'), 'utf8');
     expect(content).toContain('.squad/decisions.md merge=union');
     expect(content).toContain('.squad/log/** merge=union');
+    expect(content).toContain('.squad/casting/*.json text eol=lf');
     rmSync(dir, { recursive: true, force: true });
   });
 
@@ -394,6 +395,26 @@ describe('CLI: upgrade command', () => {
     expect(content).toContain('.squad/orchestration-log/** merge=union');
     rmSync(dir, { recursive: true, force: true });
   });
+
+  it('upgrade accepts CRLF manifest-backed casting files and normalizes every casting JSON file to LF (#2266)', async () => {
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    const names = readdirSync(castingDir).filter(name => name.endsWith('.json'));
+    expect(names).toContain('registry-history.commit.json');
+    for (const name of names) {
+      const filePath = join(castingDir, name);
+      writeFileSync(filePath, readFileSync(filePath, 'utf8').replace(/\r?\n/g, '\r\n'));
+      expect(readFileSync(filePath, 'utf8')).toContain('\r\n');
+    }
+
+    const result = await runUpgrade(TEST_ROOT);
+
+    expect(readFileSync(join(TEST_ROOT, '.gitattributes'), 'utf8'))
+      .toContain('.squad/casting/*.json text eol=lf');
+    for (const name of names) {
+      expect(readFileSync(join(castingDir, name), 'utf8')).not.toContain('\r\n');
+      expect(result.filesUpdated).toContain(`.squad/casting/${name}`);
+    }
+  }, 20_000);
 
   it('ensureGitattributes is idempotent', () => {
     const dir = join(TEST_ROOT, 'gitattr-test-idempotent');
@@ -635,6 +656,53 @@ describe('CLI: upgrade command', () => {
     expect(history.registry_revision).toBe(registry.revision);
     expect(existsSync(join(castingDir, 'registry-history.commit.json'))).toBe(true);
     rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('continues bridge and template upgrades when a legacy casting identity is unmapped', async () => {
+    const castingDir = join(TEST_ROOT, '.squad', 'casting');
+    const registryRaw = JSON.stringify({
+      agents: [{
+        persistent_name: 'Missing Agent',
+        role: 'Specialist',
+        universe: 'descriptive',
+        created_at: '2024-02-03T12:00:00.000Z',
+        status: 'active',
+      }],
+    }, null, 2) + '\n';
+    const historyRaw = JSON.stringify({
+      assignments: [{
+        assignment_id: 'historical-001',
+        universe: 'descriptive',
+        timestamp: '2024-02-03T12:30:00.000Z',
+        members: [{ name: 'Missing Agent', role: 'Specialist' }],
+      }],
+    }, null, 2) + '\n';
+    writeFileSync(join(castingDir, 'registry.json'), registryRaw);
+    writeFileSync(join(castingDir, 'history.json'), historyRaw);
+    rmSync(join(castingDir, 'registry-history.commit.json'), { force: true });
+    writeFileSync(join(TEST_ROOT, '.mcp.json'), JSON.stringify({
+      mcpServers: {
+        squad_state: {
+          command: '"npx"',
+          args: ['-y', '@bradygaster/squad-cli@0.9.1', 'state-mcp'],
+        },
+      },
+    }));
+    const output: string[] = [];
+    const log = vi.spyOn(console, 'log').mockImplementation((...args) => output.push(args.join(' ')));
+    try {
+      await expect(runUpgrade(TEST_ROOT, { force: true })).resolves.toBeDefined();
+    } finally {
+      log.mockRestore();
+    }
+
+    const mcp = JSON.parse(readFileSync(join(TEST_ROOT, '.mcp.json'), 'utf8'));
+    expect(mcp.mcpServers.squad_state.command).not.toContain('"');
+    expect(mcp.mcpServers.squad_state.args.at(-1)).toBe('state-mcp');
+    expect(readFileSync(join(castingDir, 'registry.json'), 'utf8')).toBe(registryRaw);
+    expect(readFileSync(join(castingDir, 'history.json'), 'utf8')).toBe(historyRaw);
+    expect(output.join('\n')).toMatch(/continuing with the rest of the upgrade.*"Missing Agent".*matched 0 canonical agent folders/s);
+    expect(output.join('\n')).toMatch(/Upgrade completed, but legacy casting still needs repair/);
   });
 
   it('upgrade scaffolds casting defaults for repos init before casting existed', async () => {

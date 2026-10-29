@@ -126,4 +126,51 @@ describe('UsageLedger', () => {
 
     expect(await storage.read(USAGE_LEDGER_PATH)).toBeUndefined();
   });
+
+  it('stamps the Squad session id on turn starts and usage', async () => {
+    await ledger.recordTurnStart({
+      turnId: 'turn-1',
+      sessionId: 'sdk-session-1',
+      squadSessionId: 'shell-session-1',
+      agentName: 'fenster',
+      timestamp: new Date('2026-09-15T16:59:59.000Z'),
+    });
+    await ledger.append({
+      type: 'usage',
+      sessionId: 'sdk-session-1',
+      turnId: 'turn-1',
+      agentName: 'fenster',
+      model: 'claude-sonnet-5',
+      inputTokens: 1200,
+      outputTokens: 300,
+      estimatedCost: 0.0125,
+      timestamp: new Date('2026-09-15T17:00:00.000Z'),
+    }, { squadSessionId: 'shell-session-1' });
+
+    const result = await ledger.read();
+
+    expect(result.invalidRecordCount).toBe(0);
+    expect(result.turnStarts[0]?.squadSessionId).toBe('shell-session-1');
+    expect(result.records[0]?.squadSessionId).toBe('shell-session-1');
+  });
+
+  it('rejects an empty Squad session id before writing it', async () => {
+    await expect(ledger.recordTurnStart({
+      turnId: 'turn-1',
+      sessionId: 'sdk-session-1',
+      squadSessionId: '',
+      timestamp: new Date('2026-09-15T17:00:00.000Z'),
+    })).rejects.toThrow('invalid usage turn start');
+    await expect(ledger.append({
+      type: 'usage',
+      sessionId: 'sdk-session-1',
+      model: 'gpt-5.6-sol',
+      inputTokens: 100,
+      outputTokens: 25,
+      estimatedCost: 0.001,
+      timestamp: new Date('2026-09-15T17:00:00.000Z'),
+    }, { squadSessionId: '' })).rejects.toThrow('invalid usage event');
+
+    expect(await storage.read(USAGE_LEDGER_PATH)).toBeUndefined();
+  });
 });

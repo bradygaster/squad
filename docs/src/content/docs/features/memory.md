@@ -126,9 +126,14 @@ Each agent has its own history file at `.squad/agents/{name}/history.md`. After 
 
 After a few sessions, agents stop asking questions they've already answered.
 
-### Progressive summarization
+### Keeping history small (15 KB)
 
-Histories grow over time. When an agent's `history.md` exceeds ~12KB, older entries are archived into a summary section. Recent entries stay detailed; older entries are condensed. This keeps the file within a useful context budget without losing accumulated knowledge.
+Histories grow over time, and no code shrinks them on its own. A `history.md` over 15 KB gets smaller only when:
+
+- **You run `squad nap`** (or `/nap` in the Squad interactive shell). Each `history.md` over 15 KB keeps its `## Core Context` section and its last 5 other `##` sections (3 with `--deep`). Older `##` sections move word for word to `history-archive.md` in the same folder. Nap does not summarize. Entries written as `###` headings under one `## Learnings` section count as one section, so they stay in place.
+- **You ask for a summary.** You can ask the coordinator to summarize a member's history. An AI agent does the work, so the result varies. Scribe doesn't touch histories: its charter limits it to merging decisions.
+
+Agents do not load `history-archive.md` at spawn. See [Memory & Knowledge](/squad/docs/concepts/memory-and-knowledge/) for details.
 
 ---
 

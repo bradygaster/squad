@@ -1,0 +1,14 @@
+{
+  "assignments": [
+    {
+      "assignment_id": "rescue-team-001",
+      "universe": "Predator",
+      "timestamp": "2026-03-20T10:30:00.000Z",
+      "members": [
+        { "name": "Dutch", "role": "Leader" },
+        { "name": "Mac", "role": "Heavy Weapons" },
+        { "name": "Dillon", "role": "Operations" }
+      ]
+    }
+  ]
+}

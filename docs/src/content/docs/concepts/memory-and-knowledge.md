@@ -39,8 +39,13 @@ The first session is always the least capable. Give the team a few sessions to b
 ## Personal Memory: `history.md`
 Each agent has its own history file at `.squad/agents/{name}/history.md`. After every session, agents append what they learned — architecture decisions, conventions, file paths, user preferences.
 **Only that agent reads its own history.** This means each team member builds specialized knowledge about their domain. Kane learns the auth system inside and out. Dallas masters the component library. Lambert memorizes the test infrastructure.
-### Progressive Summarization
-When an agent's `history.md` exceeds ~12KB, older entries get archived into a summary section. Recent entries stay detailed; older entries condense. This keeps files within a useful context budget without losing accumulated knowledge.
+### Keeping history small (15 KB)
+No code shrinks `history.md` on a timer or after each session. A history over 15 KB gets smaller only in these cases:
+
+- **You run `squad nap`.** For each `history.md` over 15 KB, `squad nap` (or `/nap` in the Squad interactive shell, which `squad` with no arguments opens) keeps the text before the first `##` heading, the `## Core Context` section and the last 5 other `##` sections (3 with `--deep`). It moves the older `##` sections, word for word, to the end of `history-archive.md` in the same folder. It does not summarize. It only splits on `##` headings, so entries written as `###` headings under a single `## Learnings` section count as one section and stay in place.
+- **You ask for it.** You can ask the coordinator to summarize one member's history, for example "summarize Kane's history". An AI agent does the work, so the result varies.
+
+Agents do not load `history-archive.md` at spawn.
 
 ---
 ## Shared Decisions: `decisions.md`
@@ -159,18 +164,18 @@ Skills export and import with your team. Move a trained team to a new repo, and 
 
 ---
 ## Knowledge persistence
-Not all knowledge in `.squad/` lasts forever. When files grow large, Squad compacts them to keep performance fast. Here's what persists and what gets summarized:
+Not all knowledge in `.squad/` lasts forever. Large files are compacted to keep spawns fast, but only when you run `squad nap` or an agent does it (see Keeping history small, above). Here's what persists and what gets compacted:
 
 | What | File | Compacted? | Where old content goes | Who reads it |
 |------|------|-----------|----------------------|-------------|
-| Personal history | `history.md` | Yes, at ~12 KB | `history-archive.md` (preserved, read-only) | Owning agent |
-| Shared decisions | `decisions.md` | Yes, when large | `decisions-archive.md` (preserved, not loaded) | All agents |
+| Personal history | `history.md` | Only above 15 KB, when you run `squad nap` or an agent summarizes it | `history-archive.md` in the agent's folder (not loaded at spawn) | Owning agent |
+| Shared decisions | `decisions.md` | Above 20 KB, when you run `squad nap` | `decisions-archive.md` (preserved, not loaded) | All agents |
 | Skills | `skills/{name}/SKILL.md` | Never | Grows indefinitely | All agents |
 | Directives | In `decisions.md` | With decisions | Archived with decisions | All agents |
 | Wisdom | `identity/wisdom.md` | Never | Permanent | All agents |
 | Casting registry | `casting/registry.json` | Never | Permanent | Coordinator |
-| Session logs | `log/*.md` | Never edited | Append-only archive | Read-only |
-| Orchestration logs | `orchestration-log/*.md` | Never edited | Append-only archive | Read-only |
+| Session logs | `log/*.md` | Never edited; `squad nap` deletes files older than 7 days | Deleted, not archived | Read-only |
+| Orchestration logs | `orchestration-log/*.md` | Never edited; `squad nap` deletes files older than 7 days | Deleted, not archived | Read-only |
 
 Knowledge that needs to survive compaction belongs in **skills**. Reusable patterns, code conventions, and technical techniques live here because they grow without limits. Team rules and preferences go in directives (stored in `decisions.md`) — they persist through compaction cycles because directives are preserved when decisions get summarized.
 

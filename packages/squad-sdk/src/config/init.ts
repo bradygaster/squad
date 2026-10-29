@@ -1368,20 +1368,20 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
   }
 
   // -------------------------------------------------------------------------
-  // Create .gitattributes for merge drivers
+  // Create .gitattributes for merge drivers and stable casting hashes
   // Append-only mutable state files use union merge to handle concurrent appends.
-  // Note: .squad/casting/* files are identity (not mutable) so they don't need
-  // union merge and are NOT listed here.
+  // Casting JSON is authoritative identity whose commit manifest hashes LF bytes.
   // -------------------------------------------------------------------------
 
   const gitattributesPath = join(teamRoot, '.gitattributes');
-  const unionRules = [
+  const gitattributesRules = [
     '.squad/decisions.md merge=union',
     '.squad/agents/*/history.md merge=union',
     '.squad/log/** merge=union',
     '.squad/orchestration-log/** merge=union',
     '.squad/rai/audit-trail.md merge=union',
     '.squad/fact-checker/audit-trail.md merge=union',
+    '.squad/casting/*.json text eol=lf',
   ];
 
   let existingAttrs = '';
@@ -1389,10 +1389,10 @@ ${projectDescription ? `- **Description:** ${projectDescription}\n` : ''}- **Cre
     existingAttrs = storage.readSync(gitattributesPath) ?? '';
   }
 
-  const missingRules = unionRules.filter(rule => !existingAttrs.includes(rule));
+  const missingRules = gitattributesRules.filter(rule => !existingAttrs.includes(rule));
   if (missingRules.length > 0) {
     const block = (existingAttrs && !existingAttrs.endsWith('\n') ? '\n' : '')
-      + '# Squad: union merge for append-only team state files\n'
+      + '# Squad: merge and line-ending rules for team state files\n'
       + missingRules.join('\n') + '\n';
     await storage.append(gitattributesPath, block);
     createdFiles.push(toRelativePath(gitattributesPath));

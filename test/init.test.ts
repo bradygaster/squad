@@ -310,6 +310,7 @@ describe('Squad Initialization', () => {
       const content = await readFile(gitattributesPath, 'utf-8');
       expect(content).toContain('history.md merge=union');
       expect(content).toContain('.squad/decisions.md merge=union');
+      expect(content).toContain('.squad/casting/*.json text eol=lf');
     });
 
     it('should install the squad-help disambiguation skill (regression: #1297 / supersedes squad name collision)', async () => {

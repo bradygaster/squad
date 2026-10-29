@@ -10,7 +10,7 @@ squad plugin enable my-plugin
 squad plugin refresh my-plugin
 ```
 
-After that, spawned agents can receive the plugin's enabled context. For a knowledge plugin such as Graphify, refresh can generate approved artifacts under `.squad/knowledge/graphify/` so agents have a relationship map across code, docs, and decisions.
+After that, the plugin's static files are installed under `.squad/` and its roles are active. Agents spawned through the SDK's `AgentLifecycleManager` receive the enabled plugin context automatically. Agents spawned by the Squad coordinator (in GitHub Copilot or another supported host) or by the Squad interactive shell (`squad` with no arguments) do not yet; see [Runtime behavior](#runtime-behavior). For a knowledge plugin such as Graphify, refresh can generate approved artifacts under `.squad/knowledge/graphify/` that give agents a relationship map across code, docs, and decisions when they read them.
 
 The MVP is declarative-first with a narrow governed runtime for Squad-owned built-in providers. Squad records hook, adapter, and provider metadata, and approved providers can generate static artifacts. It does not execute plugin-supplied code.
 
@@ -158,19 +158,32 @@ Squad validates and records these dependencies so users know what Copilot plugin
 
 External integration metadata is also record-only. Fields such as `repository`, `upstream.installCommand`, and `mcp.installCommand` explain how a human can install external tools separately; Squad never runs those commands.
 
-Provider contracts are the typed extension seam for memory and knowledge systems. A contract declares the provider `type` (`memory`, `knowledge`, `persistence`, `event`, or `policy`), access `mode` (`read`, `write`, or `read-write`), `protocol` (`static-artifact` or `mcp`), optional static artifact binding, optional MCP binding metadata, and capability labels. These fields let spawned agents understand that a plugin represents a memory or knowledge provider without letting the plugin run code. During the MVP, provider contracts are prompt metadata only: Squad does not start MCP servers, call provider tools, query live memory backends, or install provider packages.
+Provider contracts are the typed extension seam for memory and knowledge systems. A contract declares the provider `type` (`memory`, `knowledge`, `persistence`, `event`, or `policy`), access `mode` (`read`, `write`, or `read-write`), `protocol` (`static-artifact` or `mcp`), optional static artifact binding, optional MCP binding metadata, and capability labels. These fields describe a memory or knowledge provider to agents, on spawn paths that inject plugin context, without letting the plugin run code. During the MVP, provider contracts are prompt metadata only: Squad does not start MCP servers, call provider tools, query live memory backends, register a Squad memory provider, or install provider packages.
 
 ---
 
 ## Runtime behavior
 
-Enabled plugins affect spawned Squad agents through their installed static artifacts and provider contracts. When an agent session is spawned, Squad reads `.squad/plugins/runtime.json`, finds enabled active plugin roles, and injects the installed guidance/metadata files plus provider contract summaries into the agent system context under a `Plugin Context` section.
+Enabled plugins can affect spawned agents through their installed static artifacts and provider contracts, but only on spawn paths that inject plugin context. On those paths, Squad reads `.squad/plugins/runtime.json`, finds enabled active plugin roles, and appends the installed guidance/metadata files plus provider contract summaries to the agent system prompt under a `Plugin Context` section.
 
-This is still declarative-first behavior: Squad consumes copied Markdown/metadata from `.squad/`, but it does not install upstream packages, start MCP servers, execute plugin-supplied commands, call provider tools, or query external tools during plugin install or agent spawn.
+Today only one spawn path does this:
+
+| How the agent is spawned | Plugin context injected? |
+| --- | --- |
+| Your own code calls the SDK's `AgentLifecycleManager.spawnAgent()` | Yes |
+| Your own code uses another SDK spawn helper, such as `spawnParallel` or `SquadCoordinator` | No. These helpers do not read plugin state. |
+| The Squad coordinator (`squad.agent.md`) in GitHub Copilot CLI, VS Code, or another supported host | No. The coordinator's spawn prompt does not read plugin state or plugin artifacts. |
+| The Squad interactive shell (`squad` with no arguments) | No. Agent sessions receive the charter only. |
+| `squad watch` | No. It runs `copilot -p` with a prompt built from Ralph's charter and the issue instructions. |
+| `squad loop` | No. It runs `copilot -p` with the prompt in your `loop.md`. |
+
+On the paths marked No, installed plugin files still sit under `.squad/`, but agents only see them if something points them there. For example, name the file in your request, or add a line such as "Read `.squad/knowledge/graphify/graphify-integration.md` before code relationship work" to the relevant agent charter or skill.
+
+Where plugin context is injected, it is still declarative-first behavior: Squad consumes copied Markdown/metadata from `.squad/`, but it does not install upstream packages, start MCP servers, execute plugin-supplied commands, call provider tools, or query external tools during plugin install or agent spawn.
 
 The MVP also includes a narrow governed runtime for Squad-owned built-in providers. `squad plugin refresh <plugin-id>` and `squad plugin run-lifecycle <plugin-id> <event>` can generate artifacts only when the provider name, lifecycle event, and output paths are allowlisted by Squad. The current approved provider is Graphify, which can refresh deterministic knowledge artifacts under `.squad/knowledge/graphify/`.
 
-Disabled plugins do not contribute prompt context, even if their files remain installed on disk.
+Disabled plugins do not contribute to the `Plugin Context` section, even if their files remain installed on disk.
 
 ---
 
@@ -184,7 +197,7 @@ The repository includes local sample plugins that exercise external integration 
 | `samples/plugin-knowledge-index-server` | Instruction and knowledge MCP profile for the real `jagilber-org/index-server` project and npm package `@jagilber-org/index-server`. It declares a metadata-only `knowledge` provider contract for the Index Server MCP catalog. |
 | `samples/plugin-memory-mempalace` | Memory-palace-style provider profile for the real `MemPalace/mempalace` CLI and optional `mempalace-mcp` server. It declares a metadata-only `memory` provider contract for spatial memory. |
 
-Graphify's Copilot support is a separately installed skill/integration, not a Squad memory provider or a Squad-managed Copilot plugin. Index Server is an MCP-governed instruction/knowledge catalog, not a memory provider, although it is adjacent because agents can persist validated knowledge across sessions and repositories. MemPalace is a real memory system, but Squad still does not install its package, start MCP, or configure assistant hooks.
+Graphify's Copilot support is a separately installed skill/integration, not a Squad memory provider or a Squad-managed Copilot plugin. Index Server is an MCP-governed instruction/knowledge catalog, not a memory provider, although it is adjacent because agents can persist validated knowledge across sessions and repositories. MemPalace is a real memory system, but Squad still does not install its package, start MCP, or configure assistant hooks. Installing the MemPalace sample does not give agents a memory: it adds no tools, is not wired into `squad memory` or the `memory.*` tools, and does not change your MCP configuration. To let agents use MemPalace, install it and add `mempalace-mcp` to your assistant's MCP configuration yourself.
 
 ---
 

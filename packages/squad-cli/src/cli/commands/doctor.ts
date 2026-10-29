@@ -14,7 +14,7 @@ import path from 'node:path';
 import { lstatSync, readFileSync, readdirSync, type Dirent } from 'node:fs';
 import { exec, execFileSync } from 'node:child_process';
 import { FSStorageProvider, resolveStateBackend, type StateBackendType } from '@bradygaster/squad-sdk';
-import { readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
+import { detectHistoricalCastingSchema, readCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 import { resolveSquad, resolveSquadPaths, clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
 import { fatalNoSquad } from '../core/errors.js';
 import { isMutableStateKey, MUTABLE_STATE_PATHS } from '@bradygaster/squad-sdk/tools';
@@ -292,12 +292,30 @@ function checkAgentsDir(squadDir: string): DoctorCheck {
 }
 
 function checkCastingRegistry(squadDir: string): DoctorCheck {
-  const registryPath = path.join(squadDir, 'casting', 'registry.json');
+  const castingDir = path.join(squadDir, 'casting');
+  const registryPath = path.join(castingDir, 'registry.json');
   if (!fileExists(registryPath)) {
     return { name: 'casting/registry.json exists', status: 'fail', message: 'file not found' };
   }
   try {
-    readCastingRegistryPair(path.join(squadDir, 'casting'));
+    const registry = JSON.parse(storage.readSync(registryPath) ?? '{}') as unknown;
+    const history = JSON.parse(storage.readSync(path.join(castingDir, 'history.json')) ?? '{}') as unknown;
+    const legacySchema = detectHistoricalCastingSchema(registry, history);
+    if (legacySchema) {
+      return {
+        name: 'casting/registry.json exists',
+        status: 'fail',
+        message:
+          `detected legacy casting schema ${legacySchema} from a Squad 0.9.x coordinator. `
+          + 'Run `squad upgrade --force` to map persistent names through the existing agent folders, '
+          + 'preserve byte-exact originals, and create the managed durable pair.',
+      };
+    }
+  } catch {
+    // The strict pair reader below reports malformed JSON and missing history precisely.
+  }
+  try {
+    readCastingRegistryPair(castingDir);
   } catch (error) {
     return {
       name: 'casting/registry.json exists',

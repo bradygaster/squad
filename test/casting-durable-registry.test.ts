@@ -19,8 +19,11 @@ import {
   CastingCommitInDoubtError,
   commitCastingRegistryPair,
   ensureCastingRegistryPair,
+  normalizeCastingJsonLineEndings,
+  preflightCastingRegistryPair,
   readCastingRegistryPair,
   recoverCastingRegistryTransaction,
+  validateCastingRegistryPairRaw,
   type CastingDurabilityBoundary,
 } from '../packages/squad-sdk/src/casting/durable-registry.js';
 
@@ -807,6 +810,76 @@ describe('casting registry/history roll-forward transaction', () => {
     expect(() => readCastingRegistryPair(castingDir, 1)).toThrow(
       /do not match the stable commit manifest/,
     );
+  });
+
+  it('accepts a stable manifest when Git converts all casting JSON files to CRLF (#2266)', () => {
+    const castingDir = temporaryCastingDir('crlf-manifest');
+    const old = initialPair();
+    writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
+    writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
+    commitCastingRegistryPair(
+      castingDir,
+      old.registryRaw,
+      { ...old.registry, revision: 2 },
+      old.historyRaw,
+      { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
+      2,
+    );
+
+    for (const name of ['registry.json', 'history.json', 'registry-history.commit.json']) {
+      const filePath = join(castingDir, name);
+      writeFileSync(filePath, readFileSync(filePath, 'utf8').replace(/\r?\n/g, '\r\n'));
+    }
+
+    const registryRaw = readFileSync(join(castingDir, 'registry.json'), 'utf8');
+    const historyRaw = readFileSync(join(castingDir, 'history.json'), 'utf8');
+    const manifestRaw = readFileSync(join(castingDir, 'registry-history.commit.json'), 'utf8');
+    expect(() => validateCastingRegistryPairRaw(
+      registryRaw,
+      historyRaw,
+      undefined,
+      manifestRaw,
+    )).not.toThrow();
+    expect(preflightCastingRegistryPair(castingDir)).toBe(false);
+    expect(readCastingRegistryPair(castingDir, 1)).toMatchObject({
+      registry: { revision: 2 },
+      history: { registry_revision: 2 },
+    });
+  });
+
+  it('holds the writer lock and leaves the live file intact when normalization fails before rename', () => {
+    const castingDir = temporaryCastingDir('normalization-atomic');
+    const old = initialPair();
+    writeFileSync(join(castingDir, 'registry.json'), old.registryRaw);
+    writeFileSync(join(castingDir, 'history.json'), old.historyRaw);
+    commitCastingRegistryPair(
+      castingDir,
+      old.registryRaw,
+      { ...old.registry, revision: 2 },
+      old.historyRaw,
+      { ...old.history, assignment_cast_snapshots: { next: historySnapshot() } },
+      2,
+    );
+    const policyPath = join(castingDir, 'policy.json');
+    const crlfPolicy = '{\r\n  "version": 1\r\n}\r\n';
+    writeFileSync(policyPath, crlfPolicy);
+
+    let observedLock = false;
+    _setCastingDurabilityHooksForTesting({
+      boundary: ({ boundary, path }) => {
+        if (boundary === 'normalization:rename' && path === policyPath) {
+          observedLock = existsSync(join(castingDir, 'registry.lock'));
+          throw new Error('injected normalization failure');
+        }
+      },
+    });
+
+    expect(() => normalizeCastingJsonLineEndings(castingDir))
+      .toThrow(/injected normalization failure/);
+    expect(observedLock).toBe(true);
+    expect(readFileSync(policyPath, 'utf8')).toBe(crlfPolicy);
+    expect(readdirSync(castingDir).some(name => name.includes('.tmp-'))).toBe(false);
+    expect(existsSync(join(castingDir, 'registry.lock'))).toBe(false);
   });
 
   it('fails before journal publication when an external writer mutates the pair', () => {
