@@ -24,7 +24,7 @@ Key terms defined in one sentence each. Alphabetical order.
 
 **Routing** — Rules in `.squad/routing.md` that define which agent handles which type of work, read by the coordinator before spawning.
 
-**Scribe** — The silent agent that tracks decisions and logs sessions, merging proposals from all agents into `.squad/decisions.md`.
+**Scribe** — The silent built-in agent that merges accepted decisions from `.squad/decisions/inbox/` into `.squad/decisions.md`. It does not write session logs or agent histories.
 
 **Skill** — A reusable capability stored in `.copilot/skills/` that agents can learn and execute.
 

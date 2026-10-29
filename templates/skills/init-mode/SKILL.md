@@ -36,7 +36,7 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 ⚛️  Frontend     — Frontend Dev  React, UI, components
 🔧  Backend      — Backend Dev   APIs, database, services
 🧪  Tester       — Tester        Tests, quality, edge cases
-📋  Scribe       — (silent)      Memory, decisions, session logs
+📋  Scribe       — (silent)      Durable decision merging
 🔄  Ralph        — (monitor)     Work queue, backlog, keep-alive
 ```
 
@@ -56,7 +56,7 @@ No team exists yet. Propose one — but **DO NOT create any files until the user
 
 **Casting state initialization:** Copy `.squad/templates/casting-policy.json` to `.squad/casting/policy.json` (or create from defaults). Create `registry.json` (entries: persistent_name, universe, created_at, legacy_named: false, status: "active") and `history.json` (first assignment snapshot with unique assignment_id).
 
-**Seeding:** Each agent's `history.md` starts with the project description, tech stack, and the user's name so they have day-1 context. Agent folder names are the cast name in lowercase (e.g., `.squad/agents/ripley/`). The Scribe's charter includes maintaining `decisions.md` and cross-agent context sharing.
+**Seeding:** Each agent's `history.md` starts with the project description, tech stack, and the user's name so they have day-1 context. Agent folder names are the cast name in lowercase (e.g., `.squad/agents/ripley/`). The Scribe's charter covers only merging accepted durable decisions into `decisions.md`.
 
 **Team.md structure:** `team.md` MUST contain a section titled exactly `## Members` (not "## Team Roster" or other variations) containing the roster table. This header is hard-coded in GitHub workflows (`squad-heartbeat.yml`, `squad-issue-assign.yml`, `squad-triage.yml`, `sync-squad-labels.yml`) for label automation. If the header is missing or titled differently, label routing breaks.
 
