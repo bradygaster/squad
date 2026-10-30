@@ -4,6 +4,34 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [2.0.0-preview.3] - 2026-10-29
+
+Third Squad 2.0 preview. npm continues to use `insider` as the canonical dist-tag with `preview` as a compatibility alias; `latest` remains on 1.1.0. Homebrew, WinGet, and stable promotion remain held. Optional built-in roster members remain opt-in through `squad roster add`, and multi-machine watch claims remain off by default.
+
+### Added
+
+- Add the ADR-002 work-claim contract and the git-ref claim provider. `squad watch` can opt in with `--claims git-ref` to coordinate several watchers through fenced, renewable leases; the default `none` provider adds no cross-watcher exclusion (see **Changed** for default-path compatibility). Claimed-work prompts, bounded watch runs, stale-before-dispatch renewal, privacy-preserving counters, and process-group fencing make the opt-in path observable and fail closed (#2302, #2337).
+
+### Changed
+
+- Default-path `squad watch` compatibility: these changes apply even with the default `none` claim provider. A malformed, empty, or unreadable `.squad/config.json` now stops `squad watch` instead of silently falling back to defaults; only an absent file selects defaults. `watch.claims` is now a reserved key, and an invalid value stops watch with an error instead of being ignored. `execute` now applies `needs:*` machine capability routing (with no capabilities manifest, every issue still passes), and one watch round never dispatches the same issue twice across `execute` and `fleet-dispatch`, whatever provider is configured (#2337).
+- Point MCP guidance at the configuration files each supported host actually reads, let the Claude coordinator inherit all MCP tools already present in its session, keep Copilot tool permissions independent from MCP injection, and mark the old cross-machine task-file skill as an unimplemented proposal in favor of opt-in watch claims (#2312, #2329, #2331).
+- Scope `squad cost` to the newest Squad shell session by carrying the shell session id in usage records, while retaining fallback behavior for older ledgers (#2348).
+- Make governed memory class names case-insensitive, reject unknown classes, open the same backend-aware memory store from `squad memory` and `squad_state`, degrade safely when an optional host memory adapter is unavailable, and bound registered provider calls with governance checks on recalled data. The `memory.promote` tool now requires `targetClass` and refuses `FORBIDDEN` and `TRANSIENT` targets. `squad memory` commands, including `squad memory classify`, now fail outside a squad instead of creating a stray `.squad/`; like `squad_state`, they do not yet support a linked project on the `orphan` or `two-layer` backend, tracked in #2320 (#2315, #2317, #2319, #2333).
+
+### Fixed
+
+- Migrate legacy Squad 0.9.x casting registries whose agents and assignments are arrays when identity, role, membership, and timestamp evidence is unambiguous. The migration preserves byte-exact originals and assignments, is idempotent, and performs no writes in dry-run mode. Malformed or ambiguous casting stays unchanged and is reported as still needing repair; it no longer blocks the rest of `squad upgrade`, including managed bridge rewrites, so the command does not falsely claim a complete casting repair. `squad upgrade` also rewrites a `teamRoot` in `.squad/config.json` that points at the project itself (for example, an absolute path) to `"."`; `--dry-run` only reports the change (#2365).
+- Accept CRLF-normalized casting manifests and normalize managed casting JSON to LF without changing its meaning (#2269).
+- Detect missing, untracked, or modified history archives in `squad doctor`, and refuse `squad nap` history compaction when an ignored archive would make a tracked history trim uncommittable (#2325, #2350).
+- Preserve draft publication after a best-effort npm staging-tag cleanup returns 403; recovery remains read-only when the package pair is already complete and does not expand credentials or blindly retry the denied mutation (#2353).
+- Increase the Windows import-check allowance without changing shipped runtime behavior (#2352).
+- Correct plugin spawn-path documentation and history compaction documentation (#2324, #2327).
+
+### Security
+
+- Standalone archives now vendor Node.js 22.23.4. The official [Node.js October 21, 2026 security advisory](https://nodejs.org/en/blog/vulnerability/october-2026-security-releases) identifies fixes for CVE-2026-111497 (Brotli decoder out-of-bounds write with possible remote code execution), CVE-2026-106074 (reused entropy caches in snapshots and SEAs), CVE-2026-105481, CVE-2026-105482, CVE-2026-106069, CVE-2026-106072, and CVE-2026-106073 in the 22.x line; the official [Node.js v22.23.4 release notes](https://github.com/nodejs/node/releases/tag/v22.23.4) record the corresponding 22.x fixes, including both Brotli remediation changes. Runtime downloads are bound to Node's signed `SHASUMS256` data and fail closed without falling back to an older runtime. Preview.1 and preview.2 standalone archives embedded Node.js 22.20.0; standalone users should download preview.3 again. npm packages do not embed Node, so npm users must run a patched host Node.js version (22.23.4 or a newer patched release). The package `engines` field remains a compatibility floor, not a security-patch guarantee (#2368).
+
 ## [2.0.0-preview.2] - 2026-10-25
 
 Second Squad 2.0 preview. Published primarily to the npm `insider` dist-tag, which powers `squad upgrade --self --insider`, with `preview` retained as a compatibility alias; `latest` stays at 1.1.0. This release focuses on upgrade safety, state-bridge lifecycle, health compatibility, and dogfood fixes discovered after preview.1.
