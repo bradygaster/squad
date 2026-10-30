@@ -2,6 +2,26 @@
 
 <!-- cspell:words ambiently -->
 
+## 2.0.0-preview.3
+
+### Minor Changes
+
+- Export the ADR-002 work-claim contract (`WorkClaimProvider`, fenced handles, canonical work keys, executor identity, and in-memory/no-op providers) plus `GitRefClaimProvider`, which coordinates distributed leases with compare-and-swap git refs and never touches the worktree or index. `getPodId()` now accepts an optional `env` argument.
+
+- Treat governed memory class names case-insensitively, reject unknown classes, and export `MEMORY_CLASSES`, `parseMemoryClass`, and `UnknownMemoryClassError`. The `memory.promote` tool now requires `targetClass` and refuses `FORBIDDEN` and `TRANSIENT` targets.
+
+### Patch Changes
+
+- Migrate evidence-backed Squad 0.9.x casting arrays without guessing identities or assignments, preserve byte-exact originals and assignment semantics, tolerate CRLF manifests, and keep unresolved casting isolated so other upgrade work can continue.
+
+- Carry an optional Squad shell session id in usage records so CLI cost reporting can group one shell run without breaking older ledgers.
+
+- Make governed memory search degrade to local results when an optional host-injected adapter is absent or fails, and guard registered provider calls with timeouts, status isolation, and governance checks on recalled data.
+
+- Let the Claude coordinator inherit all MCP tools present in the session, correct MCP configuration guidance, mark the old cross-machine task-file skill as an unimplemented proposal, and tell claimed-work agents to operate only on their fenced assignment.
+
+- Validate lease timing and claim records, cap claim output, use a fixed non-personal commit identity, pseudonymize hostname-derived machine ids, and expose whole-process-group fencing for lost claims.
+
 ## 2.0.0-preview.2
 
 ### Minor Changes
