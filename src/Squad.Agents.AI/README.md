@@ -171,8 +171,18 @@ Parsed URI query keys: `teamRoot`, `cliPath`, `cwd`, `cliArgs` (semicolon-separa
 | Consumer sets `AgentFileName = "data"` (and file exists) | Auto-adds `--agent data` |
 | Consumer sets `AgentFileName = null` | Skips `--agent` entirely |
 | Consumer already supplied `--agent X` in `CliArgs` | Respects the explicit value; does not add a second `--agent` |
+| `CliPath` not set (SDK bundled runtime) | Skips `--agent`; see below |
 
-> SDK note: `SessionConfigBase.Agent` exists but looks up the name in the SDK's `CustomAgents` registry, NOT in `.github/agents/*.agent.md` files on disk. The CLI `--agent` flag is currently the only path that reads the on-disk agent definition.
+### Bundled runtime (no `CliPath`)
+
+When `CliPath` is not set, the Copilot SDK launches its bundled `copilot-runtime` embedded host instead of a full interactive Copilot CLI. That host accepts only SDK host flags and exits with `copilot-runtime: unsupported argument '--allow-all'` for interactive-CLI flags, so `SquadAgent` does not inject `--allow-all` or `--agent` in this mode:
+
+- The coordinator is still selected: the session sets `EnableConfigDiscovery = true` and `Agent = "Squad"`, which resolves `.github/agents/squad.agent.md` from the team root.
+- Tool permissions flow through `OnPermissionRequest = PermissionHandler.ApproveAll`.
+- `RequestExtensions` is set to `false`, because the bundled runtime otherwise fails session creation with `extensionSdkPath is required when standalone extensions are requested`. Override it via `ConfigureSession` if you supply an extension SDK.
+- Host-supplied `CliArgs` are still passed through verbatim, so only use flags the bundled runtime supports.
+
+Set `CliPath` to a full Copilot CLI to get the `--allow-all` / `--agent` defaults described above.
 
 ## Subagent observability — first-class OpenTelemetry
 
@@ -212,7 +222,7 @@ builder.Services.AddSquadAgent(o =>
 | Option | Purpose |
 |---|---|
 | `SquadFolderPath` | Squad team root; PATH connection strings set this and `Cwd`. |
-| `CliPath` / `CliArgs` | Override the Copilot CLI executable and add extra CLI flags. |
+| `CliPath` / `CliArgs` | Override the Copilot CLI executable and add extra CLI flags. When `CliPath` is unset, the SDK's bundled runtime is used and `SquadAgent` does not inject `--allow-all` / `--agent` (see [Bundled runtime](#bundled-runtime-no-clipath)). |
 | `Cwd` | Working directory for the Copilot CLI process; defaults to `SquadFolderPath`. |
 | `Environment` | Additional environment variables for the CLI process. Excluded from JSON serialization; token-pattern keys are redacted in `ToString()`. |
 | `GitHubToken` | Advanced direct token escape hatch; excluded from JSON serialization and redacted by `ToString()`. |

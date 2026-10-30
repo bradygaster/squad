@@ -108,6 +108,12 @@ public sealed class SquadAgentOptions
     /// already supplied <c>--agent</c> in <see cref="CliArgs"/>, that explicit value wins and
     /// the default is not added.
     /// </para>
+    /// <para>
+    /// The <c>--agent</c> argument is only injected when <see cref="CliPath"/> points at a full
+    /// Copilot CLI. The SDK's bundled runtime (used when <see cref="CliPath"/> is unset) rejects
+    /// interactive-CLI flags; in that mode the coordinator is resolved through session config
+    /// discovery instead.
+    /// </para>
     /// </remarks>
     public string? AgentFileName { get; set; } = "squad";
 
