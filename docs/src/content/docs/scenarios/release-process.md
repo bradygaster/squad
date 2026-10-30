@@ -5,7 +5,7 @@ Squad has three automated release channels:
 | Channel | Source | Version | npm tag | Package managers |
 |---------|--------|---------|---------|------------------|
 | Insider | Manual insider dispatch from `dev` | `X.Y.Z-insider.N` | `insider` | Homebrew and WinGet |
-| Preview | Manual release dispatch from `dev` (exact SHA) | `X.Y.Z-preview.N` | `insider` (+ `preview` alias) | Opt-in |
+| Preview | Manual release dispatch from `dev` (exact SHA) | `X.Y.Z-preview.N` | `insider` (+ `preview` alias) | Held |
 | Stable | Sanitized promotion to `main` | `X.Y.Z` | `latest` | Homebrew and WinGet |
 
 There is no staging `preview` branch. The word preview refers to a GitHub
@@ -17,7 +17,7 @@ Create a normal release-preparation PR targeting `dev`. Keep the root, SDK, and
 CLI versions in lockstep:
 
 ```bash
-VERSION=2.0.0-preview.2
+VERSION=2.0.0-preview.3
 npm version "$VERSION" --workspaces --include-workspace-root --no-git-tag-version
 npm pkg set "dependencies.@bradygaster/squad-sdk=>=$VERSION" \
   --workspace @bradygaster/squad-cli
@@ -27,7 +27,7 @@ npm install --package-lock-only
 Add an exact changelog heading:
 
 ```markdown
-## [2.0.0-preview.2] - YYYY-MM-DD
+## [2.0.0-preview.3] - YYYY-MM-DD
 ```
 
 Before merging, verify:
@@ -45,11 +45,11 @@ Wait for `dev` CI to pass after the PR merges.
 
 ## Publish a preview
 
-Use a unique prerelease version such as `2.0.0-preview.2`. The release trigger
+Use a unique prerelease version such as `2.0.0-preview.3`. The release trigger
 is human-only and pins the exact reviewed commit:
 
 ```bash
-VERSION=2.0.0-preview.2
+VERSION=2.0.0-preview.3
 SHA=$(git rev-parse origin/dev)   # the reviewed dev tip, full 40-hex SHA
 gh workflow run squad-release.yml \
   --ref dev \
@@ -62,11 +62,11 @@ gh workflow run squad-release.yml \
 gh run watch
 ```
 
-For `2.0.0-preview.2`, reviewers and release owners explicitly hold Homebrew,
-WinGet, and stable promotion. This dispatch publishes the npm pair (`insider`
-canonical plus the `preview` alias) and standalone artifacts only. Keep
-`publish_package_managers=false` until those channels receive separate
-authorization after attestation and receipt review.
+For `2.0.0-preview.3`, reviewers and release owners explicitly hold Homebrew,
+WinGet, `latest`, and stable promotion. This dispatch publishes the npm pair
+(`insider` canonical plus the `preview` alias) and standalone artifacts only.
+`publish_package_managers=false` is required for this release; there is no
+preview.3 package-manager installation path.
 
 Optional inputs: `npm_dist_tag` (`insider`, the default, or `preview`),
 `add_preview_alias` (default `true`), `build_standalone` (default `true`),
@@ -105,17 +105,18 @@ ID plus exact `release-evidence-<sha>` artifact from a successful Squad Release
 Verify run at that SHA. It publishes only a genuinely missing package and
 otherwise reconciles idempotently.
 
-Install the preview with:
+Release evidence must show that the published CLI tarball pins the SDK to the
+exact same version, even though the workspace manifest keeps a prerelease
+dependency floor while developing on `dev`.
+
+Install the preview from npm with:
 
 ```bash
 npm install -g @bradygaster/squad-cli@insider   # canonical self-upgrade channel
 npm install -g @bradygaster/squad-cli@preview   # compatibility alias
-brew install --cask squad-preview               # only after publish_package_managers
 ```
 
-```powershell
-winget install --id bradygaster.Squad.Preview --exact
-```
+Homebrew and WinGet are intentionally unavailable for preview.3.
 
 Do not dispatch `squad-insider-publish.yml` for a prepared preview version: it
 computes and publishes its own `X.Y.Z-insider.N` snapshot version.
@@ -138,7 +139,7 @@ updates `squad-insider` in Homebrew, and opens or reuses the
 
 Prepare another PR that changes all package versions and the changelog heading
 from the prerelease version to stable `2.0.0`. A preview version cannot be
-converted in place after publication; `2.0.0-preview.2` and `2.0.0` are
+converted in place after publication; `2.0.0-preview.3` and `2.0.0` are
 different releases.
 
 After the stable preparation lands on `dev`, a human must run the promotion

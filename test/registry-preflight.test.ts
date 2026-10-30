@@ -11,7 +11,7 @@ import {
   runRegistryPreflight,
 } from '../scripts/release/registry-preflight.mjs';
 
-const VERSION = '2.0.0-preview.2';
+const VERSION = '2.0.0-preview.3';
 const REGISTRY = 'https://registry.npmjs.org/';
 const result = (status: number | null, stdout = '', stderr = '') => ({ status, stdout, stderr, signal: null });
 
@@ -75,7 +75,7 @@ describe('read-only registry preflight', () => {
       if (command === 'git') return result(0);
       const spec = args.find((arg) => arg.startsWith('@bradygaster/')) ?? '';
       if (args.includes('dist-tags')) {
-        return result(0, JSON.stringify({ insider: '2.0.0-preview.1', preview: '2.0.0-preview.1', latest: '1.1.0' }));
+        return result(0, JSON.stringify({ insider: '2.0.0-preview.2', preview: '2.0.0-preview.2', latest: '1.1.0' }));
       }
       if (spec.includes(`@${VERSION}`)) return result(1, '', 'npm error code E404\n404 Not Found');
       return result(1, '', 'unexpected request');
@@ -100,8 +100,8 @@ describe('read-only registry preflight', () => {
       for (const name of ['@bradygaster/squad-cli', '@bradygaster/squad-sdk']) {
         expect(evidence.packages[name].version.state).toBe('404');
         expect(evidence.packages[name].distTags.values).toEqual({
-          insider: '2.0.0-preview.1',
-          preview: '2.0.0-preview.1',
+          insider: '2.0.0-preview.2',
+          preview: '2.0.0-preview.2',
           latest: '1.1.0',
         });
       }
@@ -119,7 +119,7 @@ describe('read-only registry preflight', () => {
     const spawn = (command: string, args: string[]) => {
       if (command === 'git') return result(128, '', 'fatal: transport failure');
       if (command === 'gh') return result(1, '', 'gh: Not Found (HTTP 404)');
-      if (args.includes('dist-tags')) return result(0, JSON.stringify({ insider: '2.0.0-preview.1' }));
+      if (args.includes('dist-tags')) return result(0, JSON.stringify({ insider: '2.0.0-preview.2' }));
       return result(1, '', 'npm error code E404\n404 Not Found');
     };
     try {

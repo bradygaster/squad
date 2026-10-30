@@ -1,5 +1,29 @@
 # @bradygaster/squad-cli
 
+## 2.0.0-preview.3
+
+### Minor Changes
+
+- Add opt-in multi-machine work claims to `squad watch`. `--claims git-ref` uses fenced, renewable git-ref leases; the default remains `none`. Claimed-work prompts, stale-before-dispatch renewal, bounded runs, privacy-preserving telemetry, hybrid-mode de-duplication, and process-group fencing keep the opt-in path safe and observable.
+
+- Default-path compatibility for `squad watch`, whatever claim provider is configured: a malformed, empty, or unreadable `.squad/config.json` now stops watch instead of falling back to defaults (only an absent file selects defaults); `watch.claims` is a reserved key and an invalid value stops watch; `execute` applies `needs:*` capability routing; and one watch round never dispatches the same issue twice across `execute` and `fleet-dispatch`.
+
+### Patch Changes
+
+- Migrate evidence-backed Squad 0.9.x casting arrays without guessing identities or assignments. Preserve byte-exact originals and assignment semantics, keep dry-run write-free and repeated upgrades idempotent, and leave malformed or ambiguous casting unchanged with an accurate repair-needed report while bridge rewriting and other upgrade steps continue. Rewrite a `teamRoot` in `.squad/config.json` that points at the project itself (for example, an absolute path) to `"."`; `--dry-run` only reports it.
+
+- Accept CRLF casting manifests and normalize managed casting JSON to LF during upgrade.
+
+- Make `squad cost` report the newest Squad shell session rather than using Scribe log timestamps, while retaining the legacy-ledger fallback.
+
+- `squad memory` now resolves the same backend-aware store as `squad_state`; memory class names are case-insensitive and unknown or forbidden promotion targets fail closed. The `memory.promote` tool now requires `targetClass` and refuses `FORBIDDEN` and `TRANSIENT` targets. `squad memory` commands, including `classify`, now fail outside a squad instead of creating a stray `.squad/`; like `squad_state`, they do not yet support a linked project on the `orphan` or `two-layer` backend (#2320).
+
+- `squad doctor` detects missing, untracked, or modified history archives, and `squad nap` refuses to trim tracked history when its new archive could not be committed.
+
+- Point MCP guidance and `state-mcp --help` at configuration files supported hosts actually read, keep Copilot tool permissions independent from MCP injection, and mark the old cross-machine task-file skill as an unimplemented proposal.
+
+- Standalone preview.3 archives vendor Node.js 22.23.4. Preview.1 and preview.2 standalone archives used Node.js 22.20.0 and should be downloaded again. npm installs use the operator's Node runtime and require a patched host release.
+
 ## 2.0.0-preview.2
 
 ### Patch Changes
