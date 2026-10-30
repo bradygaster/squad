@@ -8,7 +8,7 @@ Ralph is a built-in squad member whose job is keeping tabs on work. **Ralph is m
 
 **Between checks:** Ralph's in-session loop runs while work exists. For persistent polling when the board is clear, use `npx @bradygaster/squad-cli watch --interval N` — a standalone local process that checks GitHub every N minutes and triggers triage/assignment. See [Watch Mode](#watch-mode-squad-watch).
 
-**On-demand reference:** Read `.squad/templates/ralph-reference.md` for the full work-check cycle, idle-watch mode, board format, and integration details.
+**User-owned rules:** If `.squad/ralph-instructions.md` exists, read it and follow it before selecting or dispatching any issue work. It is never overwritten by `squad upgrade`.
 
 ### Roster Entry
 
