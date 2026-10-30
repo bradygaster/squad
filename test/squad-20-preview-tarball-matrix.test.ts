@@ -174,8 +174,13 @@ describe.skipIf(ENABLED)('preview self-upgrade registry-state harness', () => {
  */
 function structuralSkip(spec: ProducerSpec, shape: string): string | null {
   if ((shape === 'orphan' || shape === 'two-layer') && !spec.supports.stateBackend) return `producer ${spec.version} has no --state-backend flag`;
-  if (shape === 'upstream' && spec.source !== 'pack' && spec.version !== '2.0.0-preview.1') return `upstream inheritance is a Squad 2.0 feature; producer ${spec.version} cannot declare upstream.json`;
+  if (shape === 'upstream' && spec.source !== 'pack' && !isPublishedPreviewProducer(spec)) return `upstream inheritance is a Squad 2.0 feature; producer ${spec.version} cannot declare upstream.json`;
   return null;
+}
+
+/** Exact published Squad 2.0 preview producers (npm-pinned); they get the full 2.0-producer treatment. */
+function isPublishedPreviewProducer(spec: ProducerSpec): boolean {
+  return spec.source === 'npm' && /^2\.0\.0-preview\.\d+$/.test(spec.version);
 }
 
 function inapplicableReason(producer: string, shape: string): string | undefined {
@@ -222,6 +227,7 @@ describe('upgrade-matrix.json integrity', () => {
     expect(matrix.protocol).toBe('preview-tarball-matrix/v1');
     expect(matrix.producers.length).toBeGreaterThanOrEqual(5);
     expect(matrix.producers.some((p) => p.source === 'pack'), 'HEAD→HEAD (same-version) producer must be present').toBe(true);
+    expect(matrix.producers.filter(isPublishedPreviewProducer).map((p) => p.version), 'published 2.0 preview producers (N-2 and N-1 for preview.3)').toEqual(['2.0.0-preview.1', '2.0.0-preview.2']);
     for (const p of matrix.producers) {
       expect(p.version, `${p.version}: version`).toMatch(/^(\d+\.\d+\.\d+(-[\w.]+)?|HEAD)$/);
       expect(['npm', 'github-release', 'pack']).toContain(p.source);
@@ -1202,9 +1208,9 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     if (!s.check('producer-init', init.code === 0 && fs.existsSync(teamMd), `exit ${init.code}: ${tail(init.stderr || init.stdout)}`)) {
       return s.result('fail', `old CLI ${spec.version} ${initArgs.join(' ')} failed: exit ${init.code} — ${tail(init.stderr || init.stdout)}`);
     }
-    if (spec.version === '2.0.0-preview.1') {
+    if (isPublishedPreviewProducer(spec)) {
       const cast = await oldCli('cast', '--name', 'Probe', '--role', 'Upgrade Probe');
-      if (cast.code !== 0) return s.result('fail', `published preview.1 producer could not cast Probe: exit ${cast.code} — ${tail(cast.stderr || cast.stdout)}`);
+      if (cast.code !== 0) return s.result('fail', `published ${spec.version} producer could not cast Probe: exit ${cast.code} — ${tail(cast.stderr || cast.stdout)}`);
     }
     const cfgAfterInit = readJson(path.join(project, '.squad', 'config.json')) ?? {};
     if (typeof cfgAfterInit['teamRoot'] === 'string') s.notes.push(`producer wrote teamRoot=${String(cfgAfterInit['teamRoot']).replace(configHome, '<config-home>')} at init`);
@@ -1242,7 +1248,7 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     } else {
       fs.appendFileSync(path.join(squadDir, 'decisions.md'), DECISION);
     }
-    if (spec.version !== '2.0.0-preview.1') {
+    if (!isPublishedPreviewProducer(spec)) {
       fs.writeFileSync(teamMd, addMarkdownTableRow(
         read(teamMd) ?? '',
         '## Members',
@@ -1419,7 +1425,7 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
     if (shape !== 'upstream') s.check('user-config-preserved', cfgProblems.length === 0, cfgProblems.join('; ') || undefined);
 
     // 7. health + doctor ────────────────────────────────────────────────────
-    if (spec.version === '2.0.0-preview.1') {
+    if (isPublishedPreviewProducer(spec)) {
       const health = await squad(project, 'health', '--json');
       let healthReport: { status?: string; checks?: Array<{ id?: string; status?: string; diagnostics?: string[] }> } | null = null;
       try { healthReport = JSON.parse(health.stdout) as typeof healthReport; } catch { /* recorded below */ }
@@ -1434,7 +1440,7 @@ describe.skipIf(!ENABLED)('exact preview tarballs × old-version × OS × state-
       s.check('health', healthOk, healthOk ? undefined : `exit ${health.code}; failures=${JSON.stringify(healthFailures)}; ${tail(health.stdout || health.stderr, 8)}`);
       profileCheckpoint('squad health');
     } else {
-      s.skip('health', 'strict health/optional-built-in attestation is required for the exact published preview.1 producer');
+      s.skip('health', 'strict health/optional-built-in attestation is required for the exact published 2.0 preview producers');
     }
 
     const doctor = await squad(project, 'doctor');

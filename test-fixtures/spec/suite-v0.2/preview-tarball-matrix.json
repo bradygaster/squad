@@ -182,6 +182,29 @@
       }
     },
     {
+      "version": "2.0.0-preview.2",
+      "source": "npm",
+      "why": "N-1 published preview (insider/preview dist-tag before preview.3) installed by exact npm version, with both registry tarballs verified against their immutable npm shasums and integrities (npm Publish run 40271150636 final reconciliation, integrityMatches) before scaffolding and upgrading to the evidence tarballs.",
+      "supports": {
+        "stateBackend": true,
+        "dryRun": true
+      },
+      "artifacts": {
+        "registry": {
+          "@bradygaster/squad-cli": {
+            "version": "2.0.0-preview.2",
+            "shasum": "bf4918e84d956a4b56759f0dc537c884021cc16e",
+            "integrity": "sha512-9npX6YVZFhXGEJMlbKVNfZ+xR5e39U6WmkhKJ1GP5dxuGsiJgRbD9ByyZ/hS4myD0Yz2NIo7e7kerbDUKixAdw=="
+          },
+          "@bradygaster/squad-sdk": {
+            "version": "2.0.0-preview.2",
+            "shasum": "34f636c9ddd416f5884648579bd7ac4256cea22c",
+            "integrity": "sha512-PmU5iPqFKbHR8W/nD+Pi8B+nkwG7gGGezm1QJ1l6bERySSd0/82awfgIKXSqFlFkksnmR685KkgQepQtk/ZoFA=="
+          }
+        }
+      }
+    },
+    {
       "version": "HEAD",
       "source": "pack",
       "why": "Same-version clean install and idempotency using the exact release-evidence CLI/SDK tarballs, not a repository rebuild.",
