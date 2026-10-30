@@ -118,8 +118,15 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         //
         //   2. OnPermissionRequest = PermissionHandler.ApproveAll
         //      Required by the SDK (CreateSessionAsync throws without it). This is the
-        //      SDK-protocol layer; the CLI also has its own per-tool gate which we
-        //      open with --allow-all in CreateCopilotClient.
+        //      SDK-protocol layer; a full Copilot CLI (custom CliPath) also has its own
+        //      per-tool gate which we open with --allow-all in CreateCopilotClient.
+        //
+        //   3. RequestExtensions = false (bundled runtime only)
+        //      With config discovery on, the SDK's bundled runtime requests standalone
+        //      session extensions and session.create fails with "extensionSdkPath is
+        //      required when standalone extensions are requested". Squad does not use
+        //      extensions, so opt out; config discovery still resolves the on-disk
+        //      .github/agents/squad.agent.md for Agent = "Squad".
         //
         // Callers can override any of this via SquadAgentOptions.ConfigureSession.
         var teamRoot = options.Cwd ?? options.SquadFolderPath;
@@ -135,6 +142,12 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             EnableConfigDiscovery = true,
             Agent = "Squad"
         };
+        if (UsesBundledRuntime(options))
+        {
+#pragma warning disable GHCP001 // RequestExtensions is an SDK evaluation API.
+            sessionConfig.RequestExtensions = false;
+#pragma warning restore GHCP001
+        }
         if (!string.IsNullOrEmpty(options.Instructions))
         {
             sessionConfig.SystemMessage = new SystemMessageConfig { Content = options.Instructions };
@@ -166,6 +179,11 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
 
         return new SquadAgentState(inner, client, lf?.CreateLogger<SquadAgent>(), true, options, traceMapper);
     }
+
+    // No CliPath means the SDK launches its bundled copilot-runtime embedded host
+    // rather than a full interactive Copilot CLI.
+    private static bool UsesBundledRuntime(SquadAgentOptions options) =>
+        string.IsNullOrWhiteSpace(options.CliPath);
 
     // ── Extensibility seam ──────────────────────────────────────────────
     // CreateCopilotClient is the single factory method that translates
@@ -233,6 +251,13 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         // CLI's permission-opening flags (or the omnibus `--yolo` alias). Comparison is
         // case-insensitive because `copilot --help` documents the flags in lowercase but
         // CLI argument parsers on Windows are commonly forgiving of case differences.
+        //
+        // These defaults only apply when the host points CliPath at a full Copilot
+        // CLI. Without CliPath the SDK launches its bundled runtime (copilot-runtime),
+        // an embedded host that accepts only SDK host flags and exits with
+        // "copilot-runtime: unsupported argument '--allow-all'" for interactive-CLI
+        // flags. In that mode permissions flow through OnPermissionRequest instead.
+        bool usesFullCli = !UsesBundledRuntime(options);
         var combinedCliArgs = new List<string>();
         bool hostAlreadyOpenedPermissions = options.CliArgs.Any(a =>
             string.Equals(a, "--allow-all", StringComparison.OrdinalIgnoreCase) ||
@@ -240,7 +265,7 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
             string.Equals(a, "--allow-all-paths", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--allow-all-urls", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(a, "--yolo", StringComparison.OrdinalIgnoreCase));
-        if (!hostAlreadyOpenedPermissions)
+        if (usesFullCli && !hostAlreadyOpenedPermissions)
         {
             combinedCliArgs.Add("--allow-all");
         }
@@ -267,10 +292,12 @@ public sealed class SquadAgent : DelegatingAIAgent, IAsyncDisposable
         //   3. The agent file does not exist at the conventional path on disk
         //      (graceful degradation for folders that are not yet Squad-initialized,
         //      where the CLI would error on `--agent squad`)
+        //   4. CliPath is unset — the bundled runtime rejects `--agent`; there,
+        //      config discovery resolves SessionConfig.Agent from the on-disk file
         // ───────────────────────────────────────────────────────────────────
         bool hostSuppliedAgent = options.CliArgs.Any(a =>
             string.Equals(a, "--agent", StringComparison.OrdinalIgnoreCase));
-        if (!hostSuppliedAgent && !string.IsNullOrWhiteSpace(options.AgentFileName))
+        if (usesFullCli && !hostSuppliedAgent && !string.IsNullOrWhiteSpace(options.AgentFileName))
         {
             var defaultAgentTeamRoot = options.Cwd ?? options.SquadFolderPath;
             if (!string.IsNullOrWhiteSpace(defaultAgentTeamRoot))
