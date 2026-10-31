@@ -1228,4 +1228,7 @@ export async function doctorCommand(cwd?: string): Promise<void> {
   const mode = getDoctorMode(resolvedCwd);
   const checks = await runDoctor(resolvedCwd);
   printDoctorReport(checks, mode);
+  if (checks.some(check => check.status === 'fail')) {
+    process.exitCode = 1;
+  }
 }
