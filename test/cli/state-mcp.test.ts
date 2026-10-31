@@ -1,10 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { createStateMcpSession } from '../../packages/squad-cli/src/cli/commands/state-mcp.js';
-import { clearResolveSquadCache } from '../../packages/squad-sdk/src/resolution.js';
+import { clearResolveSquadCache, resolveSquadState } from '../../packages/squad-sdk/src/resolution.js';
 
 const TMP = join(process.cwd(), `.test-state-mcp-${randomBytes(4).toString('hex')}`);
 const COLD_GIT_BACKEND_TIMEOUT_MS = 15_000;
@@ -307,5 +308,69 @@ describe('state-mcp bridge', () => {
     const inbox = join(teamSquad, 'decisions', 'inbox');
     expect(existsSync(inbox) ? readdirSync(inbox).length : 0, `teamRoot=../team: no decision in ${inbox}`).toBeGreaterThan(0);
     expect(existsSync(join(TMP, 'team', 'decisions')), 'teamRoot=../team: decision written outside .squad').toBe(false);
+  });
+
+  it.each(['orphan', 'two-layer'] as const)(
+    "keeps a linked team's state on the team repo's %s backend (#2320)",
+    { timeout: 60_000 },
+    async (stateBackend) => {
+      const team = join(TMP, 'team');
+      const project = join(TMP, 'project');
+      const gitIn = (cwd: string, args: string[]) =>
+        execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test', ...args], {
+          cwd, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+        }).trim();
+      for (const dir of [team, project]) {
+        mkdirSync(join(dir, '.squad'), { recursive: true });
+        writeFileSync(join(dir, 'README.md'), '# repo\n');
+        gitIn(dir, ['init']);
+      }
+      writeFileSync(join(team, '.squad', 'team.md'), '# Team\n');
+      writeFileSync(join(project, '.squad', 'config.json'), JSON.stringify({ version: 1, teamRoot: '../team', stateBackend }));
+      for (const dir of [team, project]) {
+        gitIn(dir, ['add', '-A']);
+        gitIn(dir, ['commit', '-m', 'init']);
+      }
+
+      const messages: JsonRpcMessage[] = [];
+      const session = createStateMcpSession(project, message => messages.push(message as JsonRpcMessage));
+      const call = async (name: string, args: Record<string, unknown>) => {
+        await session.handleRequest({ jsonrpc: '2.0', id: messages.length, method: 'tools/call', params: { name, arguments: args } });
+        return resultAsRecord(messages[messages.length - 1]!);
+      };
+
+      expect((await call('squad_state_write', { key: 'decisions/inbox/linked-proof.md', content: '# Linked proof\n' }))['isError']).not.toBe(true);
+      expect((await call('squad_state_read', { key: 'decisions/inbox/linked-proof.md' }))['content'])
+        .toEqual([{ type: 'text', text: '# Linked proof\n' }]);
+      expect((await call('memory.write', { content: 'Use Playwright for end-to-end tests', class: 'LOCAL' }))['isError']).not.toBe(true);
+
+      // The state lives with the team repo, on its state branch, and nowhere in the project.
+      expect(gitIn(team, ['for-each-ref', '--format=%(refname)', 'refs/heads/squad-state'])).toBe('refs/heads/squad-state');
+      expect(gitIn(project, ['for-each-ref', '--format=%(refname)', 'refs/heads/squad-state', 'refs/notes'])).toBe('');
+      expect(existsSync(join(team, '.squad', 'decisions', 'inbox', 'linked-proof.md'))).toBe(false);
+      expect(gitIn(team, ['status', '--porcelain'])).toBe('');
+      if (stateBackend === 'orphan') {
+        expect(gitIn(team, ['show', 'squad-state:decisions/inbox/linked-proof.md'])).toBe('# Linked proof');
+      }
+    },
+  );
+
+  it('fails clearly when a linked team on a git backend is not in a git repository (#2320)', () => {
+    // Outside this repo: anywhere under the checkout, `git rev-parse` would find it.
+    const root = mkdtempSync(join(tmpdir(), 'squad-linked-nogit-'));
+    try {
+      mkdirSync(join(root, 'team', '.squad'), { recursive: true });
+      writeFileSync(join(root, 'team', '.squad', 'team.md'), '# Team\n');
+      mkdirSync(join(root, 'project', '.squad'), { recursive: true });
+      writeFileSync(
+        join(root, 'project', '.squad', 'config.json'),
+        JSON.stringify({ version: 1, teamRoot: '../team', stateBackend: 'orphan' }),
+      );
+
+      expect(() => resolveSquadState(join(root, 'project'))).toThrow(/team root is not in a git repository/);
+    } finally {
+      clearResolveSquadCache();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

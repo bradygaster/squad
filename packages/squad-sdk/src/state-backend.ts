@@ -1480,7 +1480,14 @@ export class TwoLayerBackend implements StateBackend {
 
 export interface StateBackendConfig { stateBackend?: StateBackendType; }
 
-export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverride?: StateBackendType): StateBackend {
+/**
+ * The backend a squad dir asks for: the CLI override, then `config.json`, then 'local'.
+ * `explicit` is false only when neither names one.
+ */
+export function configuredStateBackend(
+  squadDir: string,
+  cliOverride?: StateBackendType,
+): { type: StateBackendType; explicit: boolean } {
   let configBackend: StateBackendType | undefined;
   try {
     const configPath = path.join(squadDir, 'config.json');
@@ -1495,8 +1502,14 @@ export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverr
     const msg = err instanceof Error ? err.message : String(err);
     console.warn(`⚠️  Failed to read state backend config from ${path.join(squadDir, 'config.json')}: ${msg}`);
   }
-  const explicitBackend = cliOverride !== undefined || configBackend !== undefined;
-  const chosen = normalizeBackendType(cliOverride ?? configBackend ?? 'local');
+  return {
+    type: normalizeBackendType(cliOverride ?? configBackend ?? 'local'),
+    explicit: cliOverride !== undefined || configBackend !== undefined,
+  };
+}
+
+export function resolveStateBackend(squadDir: string, repoRoot: string, cliOverride?: StateBackendType): StateBackend {
+  const { type: chosen, explicit: explicitBackend } = configuredStateBackend(squadDir, cliOverride);
   try {
     return createBackend(chosen, squadDir, repoRoot);
   } catch (err) {
