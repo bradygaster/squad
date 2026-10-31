@@ -866,6 +866,45 @@ describe('automated package publication', () => {
     expect(checksumUpload?.with?.path).toBe('artifacts/SHA256SUMS.txt');
   });
 
+  it('binds every archive to its executed validation record before any release upload', () => {
+    const publish = standaloneWorkflow.jobs.publish;
+    const step = stepNamed(publish, 'Upload to release');
+    const upload = step.run ?? '';
+    const binding = upload.indexOf('node ../scripts/release/verify-standalone-validation-binding.mjs');
+
+    expect(step.env?.SOURCE_SHA).toBe('${{ inputs.source_sha }}');
+    expect(step.env?.PACKAGE_VERSION).toBe('${{ inputs.package_version }}');
+    expect(upload).toContain('--checksums SHA256SUMS.txt');
+    expect(upload).toContain('--source-sha "${SOURCE_SHA}"');
+    expect(upload).toContain('--node-version "${NODE_VERSION}"');
+    expect(upload).toContain('binding_args+=(--cli-version "${PACKAGE_VERSION}")');
+    expect(upload).toContain('binding_args+=(--cli-package-json ../packages/squad-cli/package.json)');
+    expect(binding).toBeGreaterThan(upload.indexOf('cat ./*.sha256 > SHA256SUMS.txt'));
+    expect(binding).toBeLessThan(upload.indexOf('assert-publish-identity'));
+    expect(binding).toBeLessThan(upload.indexOf('gh release upload'));
+
+    const evidence = publish.steps?.find(
+      (step) => step.uses?.startsWith('actions/upload-artifact@')
+        && step.with?.name === 'standalone-validation-evidence-${{ inputs.source_sha }}',
+    );
+    expect(evidence?.with?.path).toContain('artifacts/squad-*-validation.json');
+    expect(evidence?.with?.['if-no-files-found']).toBe('error');
+  });
+
+  it('cannot un-draft the release unless the standalone publish succeeded', () => {
+    const completion = releaseWorkflow.jobs['release-completion'];
+    expect(completion.needs).toContain('standalone');
+    expect(stepNamed(completion, 'Check selected channel outcomes').env?.STANDALONE_RESULT)
+      .toBe('${{ needs.standalone.result }}');
+    expect(stepNamed(completion, 'Check selected channel outcomes').run)
+      .toContain('[ "$STANDALONE_RESULT" = success ]');
+    const publishRelease = releaseWorkflow.jobs['publish-release'];
+    expect(publishRelease.needs).toContain('release-completion');
+    expect(publishRelease.if).toBeUndefined();
+    expect(stepNamed(publishRelease, 'Re-assert tag identity, publish and verify the release').run)
+      .toContain('--draft=false');
+  });
+
   it('serializes mutable channels and publishes strict stable, preview, and insider tags', () => {
     expect(standaloneWorkflow.concurrency).toEqual({
       group: 'squad-standalone-release-publication',

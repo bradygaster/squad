@@ -380,6 +380,8 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          PACKAGE_VERSION: ${{ inputs.package_version }}
         working-directory: artifacts
         run: |
           set -euo pipefail
@@ -426,6 +428,21 @@ jobs:
           cat ./*.sha256 > SHA256SUMS.txt
           rm -f ./*.sha256
 
+          # Fail closed before any upload unless every archive, its executed
+          # validation record and its SHA256SUMS.txt entry agree.
+          binding_args=(
+            --artifacts-dir .
+            --checksums SHA256SUMS.txt
+            --source-sha "${SOURCE_SHA}"
+            --node-version "${NODE_VERSION}"
+          )
+          if [ -n "${PACKAGE_VERSION}" ]; then
+            binding_args+=(--cli-version "${PACKAGE_VERSION}")
+          else
+            binding_args+=(--cli-package-json ../packages/squad-cli/package.json)
+          fi
+          node ../scripts/release/verify-standalone-validation-binding.mjs "${binding_args[@]}"
+
           if [ "${#upload_paths[@]}" -gt 0 ]; then
             node ../scripts/release/assert-publish-identity.mjs --repo .. --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
             gh release upload "${TAG}" "${upload_paths[@]}" --repo "${GITHUB_REPOSITORY}"
@@ -457,6 +474,15 @@ jobs:
         with:
           name: standalone-release-checksums-${{ inputs.source_sha }}
           path: artifacts/SHA256SUMS.txt
+          retention-days: 30
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
+        with:
+          name: standalone-validation-evidence-${{ inputs.source_sha }}
+          path: |
+            artifacts/SHA256SUMS.txt
+            artifacts/squad-*-validation.json
           retention-days: 30
           if-no-files-found: error
 
