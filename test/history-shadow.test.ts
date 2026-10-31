@@ -72,6 +72,45 @@ describe('history-shadow (#479 race condition fix)', () => {
     });
   });
 
+  describe('section boundaries', () => {
+    async function writeHistory(content: string): Promise<string> {
+      const agentDir = path.join(tmpDir, '.squad', 'agents', 'testbot');
+      await fs.mkdir(agentDir, { recursive: true });
+      const file = path.join(agentDir, 'history.md');
+      await fs.writeFile(file, content, 'utf-8');
+      return file;
+    }
+
+    it('should append to a terminal section without duplicating its header', async () => {
+      const file = await writeHistory('# Testbot\n\n## Learnings\n\nfirst\n\n## References\n\n- ref one\n');
+
+      await appendToHistory(tmpDir, 'testbot', 'References', 'ref two');
+
+      const raw = await fs.readFile(file, 'utf-8');
+      expect(raw.match(/^## References/gm)).toHaveLength(1);
+      const history = await readHistory(tmpDir, 'testbot');
+      expect(history.references).toContain('ref one');
+      expect(history.references).toContain('ref two');
+    });
+
+    it('should keep a blank line before the next section header', async () => {
+      const file = await writeHistory('# Testbot\n\n## Learnings\n\nfirst\n\n## Decisions\n\nd1\n');
+
+      await appendToHistory(tmpDir, 'testbot', 'Learnings', 'second');
+
+      const raw = await fs.readFile(file, 'utf-8');
+      expect(raw).toMatch(/second\n\n## Decisions/);
+    });
+
+    it('should read a terminal section', async () => {
+      await writeHistory('# Testbot\n\n## Learnings\n\nfirst\n\n## References\n\n- ref one\n');
+
+      const history = await readHistory(tmpDir, 'testbot');
+      expect(history.references).toBe('- ref one');
+      expect(history.learnings).toBe('first');
+    });
+  });
+
   describe('appendToHistory — concurrent callers (race condition)', () => {
     it('should not lose data when 5 agents append concurrently', async () => {
       await createHistoryShadow(tmpDir, 'sharedbot', 'Shared context');
