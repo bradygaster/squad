@@ -146,7 +146,15 @@ export class FSStorageProvider implements StorageProvider {
       fh = await open(safePath, 'wx');
     } catch (openErr: unknown) {
       const code = (openErr as NodeJS.ErrnoException).code;
-      if (code === 'EEXIST') {
+      // Windows can report a sharing violation instead of EEXIST for a racing creator.
+      let existingFile = false;
+      if (code === 'EACCES' || code === 'EPERM') {
+        try {
+          await access(safePath);
+          existingFile = true;
+        } catch { /* It may have disappeared after the exclusive open failed. */ }
+      }
+      if (code === 'EEXIST' || existingFile) {
         throw new StateKeyConflictError(filePath);
       }
       throw new StateBackendUncertaintyError(
