@@ -10,7 +10,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdir, readFile, rm, writeFile } from 'fs/promises';
 import { join, resolve } from 'path';
 import { existsSync, mkdirSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { randomBytes } from 'crypto';
 import {
   runDoctor,
@@ -21,11 +21,15 @@ import {
   checkHistoryArchiveIntegrity,
 } from '@bradygaster/squad-cli/commands/doctor';
 import type { DoctorCheck } from '@bradygaster/squad-cli/commands/doctor';
+import { clearResolveSquadCache } from '@bradygaster/squad-sdk/resolution';
 import { FSStorageProvider, OrphanBranchBackend } from '@bradygaster/squad-sdk';
 import { getPackageVersion } from '../../packages/squad-cli/src/cli/core/version.js';
 import { ensureCastingRegistryPair } from '@bradygaster/squad-sdk/casting';
 
 const TEST_ROOT = join(process.cwd(), `.test-doctor-${randomBytes(4).toString('hex')}`);
+const TEST_PROFILE = join(process.cwd(), `.test-doctor-profile-${randomBytes(4).toString('hex')}`);
+const CLI_ENTRY = resolve(process.cwd(), 'packages/squad-cli/dist/cli-entry.js');
+let originalHomeEnv: { HOME: string | undefined; USERPROFILE: string | undefined };
 
 async function scaffold(root: string): Promise<void> {
   const sq = join(root, '.squad');
@@ -58,17 +62,39 @@ function initTestGit(root: string): void {
   execFileSync('git', ['config', 'core.autocrlf', 'false'], { cwd: root });
 }
 
+function runDoctorCli(cwd: string) {
+  return spawnSync(process.execPath, [CLI_ENTRY, 'doctor'], {
+    cwd,
+    encoding: 'utf8',
+    timeout: 30_000,
+    windowsHide: true,
+  });
+}
+
 describe('squad doctor', () => {
   beforeEach(async () => {
     if (existsSync(TEST_ROOT)) {
       await rm(TEST_ROOT, { recursive: true, force: true });
     }
     await mkdir(TEST_ROOT, { recursive: true });
+    await mkdir(TEST_PROFILE, { recursive: true });
+    originalHomeEnv = { HOME: process.env['HOME'], USERPROFILE: process.env['USERPROFILE'] };
+    process.env['HOME'] = TEST_PROFILE;
+    process.env['USERPROFILE'] = TEST_PROFILE;
+    clearResolveSquadCache();
   });
 
   afterEach(async () => {
+    if (originalHomeEnv.HOME === undefined) delete process.env['HOME'];
+    else process.env['HOME'] = originalHomeEnv.HOME;
+    if (originalHomeEnv.USERPROFILE === undefined) delete process.env['USERPROFILE'];
+    else process.env['USERPROFILE'] = originalHomeEnv.USERPROFILE;
+    clearResolveSquadCache();
     if (existsSync(TEST_ROOT)) {
       await rm(TEST_ROOT, { recursive: true, force: true });
+    }
+    if (existsSync(TEST_PROFILE)) {
+      await rm(TEST_PROFILE, { recursive: true, force: true });
     }
   });
 
@@ -88,6 +114,32 @@ describe('squad doctor', () => {
     expect(checks.some((c: DoctorCheck) => c.name === 'vscode-jsonrpc exports field')).toBe(true);
     expect(checks.some((c: DoctorCheck) => c.name === 'copilot-sdk session.js ESM patch')).toBe(true);
   });
+
+  it('keeps warning-only doctor results successful', async () => {
+    const projectRoot = join(TEST_ROOT, 'warning-only-project');
+    await scaffold(projectRoot);
+    await mkdir(join(projectRoot, '.git'), { recursive: true });
+    const checks = await runDoctor(projectRoot);
+    expect(checks.some(check => check.status === 'warn')).toBe(true);
+    expect(checks.some(check => check.status === 'fail')).toBe(false);
+
+    const result = runDoctorCli(projectRoot);
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr || result.stdout).toBe(0);
+    expect(result.stdout).toMatch(/Summary:.*0 failed, [1-9]\d* warnings/);
+  }, 20_000);
+
+  it('returns a failing CLI exit code when doctor checks fail', async () => {
+    const projectRoot = join(TEST_ROOT, 'failing-project');
+    await scaffold(projectRoot);
+    await mkdir(join(projectRoot, '.git'), { recursive: true });
+    await rm(join(projectRoot, '.squad', 'routing.md'));
+
+    const result = runDoctorCli(projectRoot);
+    expect(result.error).toBeUndefined();
+    expect(result.status, result.stderr || result.stdout).toBe(1);
+    expect(result.stdout).toMatch(/Summary:.*[1-9]\d* failed/);
+  }, 20_000);
 
   it('fails doctor and names the history when an archive pointer is dangling', async () => {
     await scaffold(TEST_ROOT);

@@ -80,7 +80,19 @@ writeFileSync(
 
 let lifecycle;
 let workspaceReleaseMs = 0;
+let doctorExitCodes;
 try {
+  const doctorTarget = process.platform === 'win32' ? runtimeCommand : launcher;
+  doctorExitCodes = {
+    primary: verifyDoctorFailure(doctorTarget, smokeRoot),
+  };
+  if (process.platform === 'win32') {
+    doctorExitCodes.cmd = verifyDoctorFailure(launcher, smokeRoot);
+    doctorExitCodes.powershell = verifyDoctorFailure(path.join(bundleDir, 'squad.ps1'), smokeRoot);
+  }
+  if (new Set(Object.values(doctorExitCodes)).size !== 1) {
+    throw new Error(`Standalone doctor launchers returned different exit codes: ${JSON.stringify(doctorExitCodes)}`);
+  }
   const probes = await Promise.all([
     probeBridge('squad_state', smokeRoot, homeDir),
     probeBridge('squad_state_duplicate', smokeRoot, homeDir),
@@ -118,6 +130,7 @@ const report = {
     sha256: archiveSha256,
   },
   lifecycle,
+  doctorExitCodes,
   rootDeleteRejection: rootDelete,
 };
 mkdirSync(path.dirname(outputPath), { recursive: true });
@@ -141,6 +154,29 @@ function runCapture(command, args, shell) {
     );
   }
   return result.stdout.trim();
+}
+
+function verifyDoctorFailure(command, cwd) {
+  const escapedCommand = command.replace(/'/g, "''");
+  const result = process.platform === 'win32'
+    ? spawnSync('powershell.exe', [
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        `& '${escapedCommand}' doctor; exit $LASTEXITCODE`,
+      ], { cwd, encoding: 'utf8', windowsHide: true, timeout: 60_000 })
+    : spawnSync(command, ['doctor'], { cwd, encoding: 'utf8', windowsHide: true, timeout: 60_000 });
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`;
+  if (result.error || result.status === null || result.status === 0) {
+    throw new Error(
+      `Standalone doctor did not propagate a failed check (status=${result.status}): `
+      + `${result.error?.message ?? output}`,
+    );
+  }
+  if (!/Summary:.*[1-9]\d* failed/.test(output)) {
+    throw new Error(`Standalone doctor exited unsuccessfully without reporting failed checks: ${output}`);
+  }
+  return result.status;
 }
 
 function spawnLauncher(args, cwd, env) {
