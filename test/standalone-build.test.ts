@@ -13,9 +13,11 @@ import path from 'node:path';
 
 const REPO_ROOT = process.cwd();
 const BUILD_SCRIPT = path.join(REPO_ROOT, 'scripts', 'build-standalone.mjs');
+const VALIDATE_SCRIPT = path.join(REPO_ROOT, 'scripts', 'release', 'validate-standalone-bundle.mjs');
 const INSTALL_SCRIPT = path.join(REPO_ROOT, 'scripts', 'install.sh');
 
 const build = readFileSync(BUILD_SCRIPT, 'utf-8');
+const validate = readFileSync(VALIDATE_SCRIPT, 'utf-8');
 const install = readFileSync(INSTALL_SCRIPT, 'utf-8');
 
 describe('build-standalone.mjs — runtime extraction', () => {
@@ -117,6 +119,20 @@ describe('build-standalone.mjs — Windows squad.exe', () => {
   });
 });
 
+describe('standalone validation — doctor exit status', () => {
+  it('runs the packaged Windows executable through PowerShell and propagates LASTEXITCODE', () => {
+    expect(validate).toContain("spawnSync('powershell.exe'");
+    expect(validate).toContain('runtimeCommand');
+    expect(validate).toContain('process.platform === \'win32\' ? runtimeCommand : launcher');
+    expect(validate).toContain("exit $LASTEXITCODE");
+    expect(validate).toMatch(/verifyDoctorFailure\(doctorTarget, smokeRoot\)/);
+    expect(validate).toMatch(/verifyDoctorFailure\(launcher, smokeRoot\)/);
+    expect(validate).toMatch(/verifyDoctorFailure\(path\.join\(bundleDir, 'squad\.ps1'\), smokeRoot\)/);
+    expect(validate).toContain('new Set(Object.values(doctorExitCodes))');
+    expect(validate).toMatch(/Summary:\.\*\[1-9\]\\d\* failed/);
+  });
+});
+
 describe('build-standalone.mjs — launchers', () => {
   it('exports SQUAD_STANDALONE_HOME from every launcher', () => {
     // Without this the CLI cannot tell it is running from a bundle, and
@@ -127,6 +143,12 @@ describe('build-standalone.mjs — launchers', () => {
     expect(posix).toBe(true);
     expect(build).toContain('set "SQUAD_STANDALONE_HOME=%~dp0"');
     expect(build).toContain('$env:SQUAD_STANDALONE_HOME = $root');
+  });
+
+  it('preserves the CLI exit status in every generated launcher', () => {
+    expect(build).toContain('exit /b %ERRORLEVEL%');
+    expect(build).toContain('exit $LASTEXITCODE');
+    expect(build).toContain('exec "$node_bin" "$root/${CLI_ENTRY}" "$@"');
   });
 
   it('resolves symlinks in the posix launcher so PATH installs work', () => {

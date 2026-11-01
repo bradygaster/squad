@@ -55,6 +55,10 @@ on:
       WINGET_CREATE_GITHUB_TOKEN:
         description: 'Classic public_repo PAT for tamirdresher/winget-pkgs and upstream PRs'
         required: false
+    outputs:
+      checksum_binding:
+        description: 'VERIFIED when every uploaded standalone archive is bound to its validation record and SHA256SUMS'
+        value: ${{ jobs.publish.outputs.checksum_binding }}
   workflow_dispatch:
     inputs:
       node_version:
@@ -354,6 +358,8 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+    outputs:
+      checksum_binding: ${{ steps.verify-checksum-binding.outputs.binding }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 #v7
         with:
@@ -376,7 +382,7 @@ jobs:
           pattern: squad-*-${{ inputs.source_sha }}
           merge-multiple: true
 
-      - name: Upload to release
+      - name: Prepare release assets and SHA256SUMS
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) }}
@@ -426,11 +432,11 @@ jobs:
           cat ./*.sha256 > SHA256SUMS.txt
           rm -f ./*.sha256
 
+          : > upload-paths.txt
           if [ "${#upload_paths[@]}" -gt 0 ]; then
-            node ../scripts/release/assert-publish-identity.mjs --repo .. --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
-            gh release upload "${TAG}" "${upload_paths[@]}" --repo "${GITHUB_REPOSITORY}"
+            printf '%s\n' "${upload_paths[@]}" > upload-paths.txt
           fi
-
+          printf '%s\n' "${reused_count}" > reused-count.txt
           checksum_changed=true
           if printf '%s\n' "${existing_assets[@]}" | grep -Fxq SHA256SUMS.txt; then
             gh release download "${TAG}" \
@@ -441,6 +447,39 @@ jobs:
             if cmp -s "${existing_dir}/SHA256SUMS.txt" SHA256SUMS.txt; then
               checksum_changed=false
             fi
+          fi
+          printf '%s\n' "${checksum_changed}" > checksum-changed.txt
+
+      - name: Verify archive, validation and SHA256SUMS binding
+        id: verify-checksum-binding
+        working-directory: artifacts
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          cli_version="$(node -p 'require("../packages/squad-cli/package.json").version')"
+          node ../scripts/release/verify-standalone-checksums.mjs \
+            --artifacts . \
+            --checksums SHA256SUMS.txt \
+            --expected-source-sha "${SOURCE_SHA}" \
+            --expected-cli "${cli_version}" \
+            --expected-node "${NODE_VERSION}" \
+            --output standalone-checksum-binding.json
+          echo "binding=VERIFIED" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.release_tag || (github.ref_type == 'tag' && github.ref_name) }}
+        working-directory: artifacts
+        run: |
+          set -euo pipefail
+          mapfile -t upload_paths < upload-paths.txt
+          reused_count="$(cat reused-count.txt)"
+          checksum_changed="$(cat checksum-changed.txt)"
+          if [ "${#upload_paths[@]}" -gt 0 ] && [ -n "${upload_paths[0]}" ]; then
+            node ../scripts/release/assert-publish-identity.mjs --repo .. --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
+            gh release upload "${TAG}" "${upload_paths[@]}" --repo "${GITHUB_REPOSITORY}"
           fi
           if [ "${checksum_changed}" = "true" ]; then
             node ../scripts/release/assert-publish-identity.mjs --repo .. --source-sha "${{ inputs.source_sha }}" --dispatch-sha "${{ github.sha }}" --workflow-sha "${{ github.workflow_sha }}" --tag "${TAG}"
@@ -456,7 +495,9 @@ jobs:
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 #v7
         with:
           name: standalone-release-checksums-${{ inputs.source_sha }}
-          path: artifacts/SHA256SUMS.txt
+          path: |
+            artifacts/SHA256SUMS.txt
+            artifacts/standalone-checksum-binding.json
           retention-days: 30
           if-no-files-found: error
 

@@ -233,7 +233,7 @@ export async function appendToHistory(
       
       // Find section or create it
       const sectionHeader = `## ${section}`;
-      const sectionRegex = new RegExp(`^${sectionHeader}\\s*$([\\s\\S]*?)(?=^##\\s|\\Z)`, 'm');
+      const sectionRegex = new RegExp(`^${sectionHeader}\\s*$([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'm');
       const match = historyContent.match(sectionRegex);
       
       const timestamp = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
@@ -245,8 +245,11 @@ export async function appendToHistory(
         // Section exists, append to it
         const fullMatch = match[0];
         const sectionContent = match[1];
-        const updatedSection = `${sectionHeader}\n${sectionContent!.trimEnd()}${entry}`;
-        updatedContent = historyContent.replace(fullMatch, updatedSection);
+        const matchEnd = match.index! + fullMatch.length;
+        // Keep a blank line before the next section header (none needed at end of file)
+        const separator = matchEnd < historyContent.length ? '\n' : '';
+        const updatedSection = `${sectionHeader}\n${sectionContent!.trimEnd()}${entry}${separator}`;
+        updatedContent = historyContent.slice(0, match.index!) + updatedSection + historyContent.slice(matchEnd);
       } else {
         // Section doesn't exist, create it at the end
         updatedContent = historyContent.trimEnd() + `\n\n${sectionHeader}${entry}`;
@@ -328,7 +331,7 @@ export async function readHistory(
     };
     
     for (const [sectionName, key] of Object.entries(sections)) {
-      const sectionRegex = new RegExp(`^##\\s+${sectionName}\\s*$([\\s\\S]*?)(?=^##\\s|\\Z)`, 'm');
+      const sectionRegex = new RegExp(`^##\\s+${sectionName}\\s*$([\\s\\S]*?)(?=^##\\s|(?![\\s\\S]))`, 'm');
       const match = historyContent.match(sectionRegex);
       
       if (match) {
