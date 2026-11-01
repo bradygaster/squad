@@ -8,6 +8,7 @@ import { WorktreeBackend, GitNotesBackend, OrphanBranchBackend, TwoLayerBackend,
 import type { StateBackend, StateBackendType } from '../packages/squad-sdk/src/state-backend.js';
 import { resolveSquadState, clearResolveSquadCache } from '../packages/squad-sdk/src/resolution.js';
 import { ToolRegistry } from '../packages/squad-sdk/src/tools/index.js';
+import { LocalMemoryStore } from '../packages/squad-sdk/src/memory/index.js';
 
 const TMP = join(process.cwd(), `.test-state-backend-${randomBytes(4).toString('hex')}`);
 function git(args: string, cwd = TMP): string {
@@ -784,6 +785,25 @@ describe('ToolRegistry state tools with git-native backend', () => {
     await expect(write.handler({ key: 'casting/archive/history.json', content: '{}\n' })).resolves.toMatchObject({ resultType: 'failure' });
     expect(backend.read('casting/agents.json')).toBeUndefined();
     expect(backend.read('casting/archive/history.json')).toBeUndefined();
+    expect(git('status --porcelain')).toBe('');
+  });
+
+  it('uses the backend-aware lock store for memory index writes', { timeout: 30_000 }, async () => {
+    const backend = new OrphanBranchBackend(TMP);
+    const adapter = new StateBackendStorageAdapter(backend, squadDir());
+    const createLockStore = vi.spyOn(adapter, 'createLockStore');
+    const memory = new LocalMemoryStore(adapter, squadDir(), { rootKind: 'squad' });
+
+    const result = await memory.write({
+      content: 'Memory index locks must follow the configured state backend.',
+      title: 'Backend-aware memory lock',
+      requestedClass: 'LOCAL',
+    });
+
+    expect(result.stored).toBe(true);
+    expect(createLockStore).toHaveBeenCalledWith(squadDir());
+    expect(backend.read('memory/index.json')).toContain('Backend-aware memory lock');
+    expect(existsSync(join(squadDir(), 'backend', 'locks'))).toBe(false);
     expect(git('status --porcelain')).toBe('');
   });
 

@@ -1730,7 +1730,7 @@ describe('PR #2253 Copilot review thread regressions', () => {
     const fs = await import('node:fs');
     const os = await import('node:os');
     const path = await import('node:path');
-    const { OrphanBranchBackend, TwoLayerBackend } = await import('../packages/squad-sdk/src/state-backend.js');
+    const { OrphanBranchBackend, TwoLayerBackend, StateBackendStorageAdapter } = await import('../packages/squad-sdk/src/state-backend.js');
     const base = fs.mkdtempSync(path.join(os.tmpdir(), 'sq-wt-lock-'));
     try {
       const repoMain = path.join(base, 'main-repo');
@@ -1749,6 +1749,10 @@ describe('PR #2253 Copilot review thread regressions', () => {
       const storeWt = createStateBackendStore(new OrphanBranchBackend(repoWt), opts);
       const storeTwoLayerWt = createStateBackendStore(new TwoLayerBackend(repoWt), { ...opts, lockAnchor: path.join(repoWt, '.squad') });
       const storeAlias = createStateBackendStore(new OrphanBranchBackend(repoAlias), opts);
+      const adapterStoreWt = new StateBackendStorageAdapter(
+        new OrphanBranchBackend(repoWt), path.join(repoWt, '.squad'),
+      );
+      const adapterLockStoreWt = await adapterStoreWt.createLockStore(path.join(repoWt, '.squad'));
 
       const release = storeMain.lock!('backend/locks/shared-conv');
       try {
@@ -1756,6 +1760,7 @@ describe('PR #2253 Copilot review thread regressions', () => {
         expect(() => storeWt.lock!('backend/locks/shared-conv')).toThrow(/Timed out/);
         expect(() => storeTwoLayerWt.lock!('backend/locks/shared-conv')).toThrow(/Timed out/);
         expect(() => storeAlias.lock!('backend/locks/shared-conv')).toThrow(/Timed out/);
+        expect(() => adapterLockStoreWt.lock!('backend/locks/shared-conv')).toThrow(/Timed out/);
 
         // A different orphan branch ref has its own independent lock
         const storeOtherBranch = createStateBackendStore(new OrphanBranchBackend(repoWt, 'other-state'), opts);
