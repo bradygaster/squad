@@ -9,6 +9,7 @@ import { readdirSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
 import {
   FSStorageProvider,
+  VERSION as SDK_VERSION,
   resolveStateBackend,
   verifyStateBackend,
   type StateBackend,
@@ -21,6 +22,7 @@ import {
   parseTeamMarkdown,
 } from '@bradygaster/squad-sdk/parsers';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
+import { getPackageVersion } from '../core/version.js';
 
 const storage = new FSStorageProvider();
 
@@ -43,6 +45,14 @@ export interface HealthCheckItem {
 
 export interface HealthReport {
   schema: typeof HEALTH_SCHEMA;
+  metadata: {
+    cliVersion: string;
+    sdkVersion: string;
+    stateBackend: string;
+    resolvedTeamDir: string | null;
+    bridgeVersion: string;
+    launchMode: 'cli';
+  };
   /** `fail` when any check failed; informational items and warnings never fail the report. */
   status: 'pass' | 'fail';
   checks: HealthCheckItem[];
@@ -599,6 +609,35 @@ function checkStateBackend(
   }
 }
 
+function configuredBackendName(localSquadDir: string): string {
+  const configPath = path.join(localSquadDir, 'config.json');
+  if (!storage.existsSync(configPath)) return 'local';
+
+  try {
+    const config = parseJsonObject(
+      readRequiredFile(configPath, '.squad/config.json'),
+      '.squad/config.json',
+    );
+    if (config.stateBackend === undefined || config.stateBackend === null) return 'local';
+    if (typeof config.stateBackend !== 'string' || !config.stateBackend.trim()) return 'unknown';
+    return canonicalBackendType(config.stateBackend) ?? 'unknown';
+  } catch {
+    return 'unknown';
+  }
+}
+
+function healthMetadata(stateDir: string | null, localSquadDir: string): HealthReport['metadata'] {
+  const cliVersion = getPackageVersion();
+  return {
+    cliVersion,
+    sdkVersion: SDK_VERSION,
+    stateBackend: configuredBackendName(localSquadDir),
+    resolvedTeamDir: stateDir ? path.resolve(path.dirname(stateDir)) : null,
+    bridgeVersion: cliVersion,
+    launchMode: 'cli',
+  };
+}
+
 const ENV_JSON_CONFIGS = [
   { relativePath: '.mcp.json', serverKeys: ['mcpServers'] },
   {
@@ -828,6 +867,7 @@ function buildHealthReport(
   ];
   return {
     schema: HEALTH_SCHEMA,
+    metadata: healthMetadata(stateDir, localSquadDir),
     status: checks.some((check) => check.status === 'fail') ? 'fail' : 'pass',
     checks,
   };
@@ -862,7 +902,15 @@ function buildResolutionFailureReport(
     ),
     checkEnvVars(repoRoot),
   ];
-  return { schema: HEALTH_SCHEMA, status: 'fail', checks };
+  return {
+    schema: HEALTH_SCHEMA,
+    metadata: {
+      ...healthMetadata(null, path.join(repoRoot, '.squad')),
+      stateBackend: 'unknown',
+    },
+    status: 'fail',
+    checks,
+  };
 }
 
 function printHuman(report: HealthReport): void {

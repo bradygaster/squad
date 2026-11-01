@@ -27,6 +27,7 @@ vi.mock('@bradygaster/squad-sdk', async () => {
   const fs = await import('node:fs');
   const pathModule = await import('node:path');
   return {
+    VERSION: '2.0.0-preview.3',
     FSStorageProvider: class {
       existsSync(filePath: string): boolean {
         return fs.existsSync(filePath);
@@ -206,9 +207,18 @@ describe('health report contract', () => {
 
     expect(report).toEqual({
       schema: 'squad-health/v1',
+      metadata: expect.objectContaining({
+        cliVersion: expect.any(String),
+        sdkVersion: expect.any(String),
+        stateBackend: expect.any(String),
+        resolvedTeamDir: repoRoot,
+        bridgeVersion: expect.any(String),
+        launchMode: 'cli',
+      }),
       status: 'pass',
       checks: expect.any(Array),
     });
+    expect(report.metadata.bridgeVersion).toBe(report.metadata.cliVersion);
     expect(report.checks.map((item) => item.id)).toEqual([
       'team',
       'registry-charters',
@@ -940,6 +950,11 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(0);
     expect(report.schema).toBe('squad-health/v1');
     expect(report.status).toBe('pass');
+    expect(report.metadata).toMatchObject({
+      stateBackend: 'local',
+      resolvedTeamDir: repoRoot,
+      launchMode: 'cli',
+    });
   });
 
   it('returns one and keeps JSON structured when any check fails', async () => {
@@ -1002,6 +1017,11 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(1);
     expect(report).toMatchObject({
       schema: 'squad-health/v1',
+      metadata: {
+        stateBackend: 'unknown',
+        resolvedTeamDir: null,
+        launchMode: 'cli',
+      },
       status: 'fail',
     });
     expect(report.checks.map((item) => item.id)).toEqual([
