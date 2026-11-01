@@ -218,6 +218,49 @@ describe('squad upgrade: idempotent, backed up, dry-run writes nothing (#2297, #
     expect(readFileSync(edited, 'utf8')).not.toContain('My local rule.');
   });
 
+  it('preserves a customized .NET squad-ci workflow and reports that exact action in dry-run', async () => {
+    writeFileSync(join(TEST_ROOT, 'App.csproj'), '<Project />\n');
+    const workflow = join(TEST_ROOT, '.github', 'workflows', 'squad-ci.yml');
+    const customized = [
+      'name: .NET CI',
+      'on:',
+      '  pull_request:',
+      '    branches: [main]',
+      'jobs:',
+      '  test:',
+      '    runs-on: ubuntu-latest',
+      '    steps:',
+      '      - uses: actions/checkout@v4',
+      '      - run: dotnet test src/App.csproj --configuration Release',
+      '',
+    ].join('\n');
+    writeFileSync(workflow, customized);
+
+    const dryRunLogs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      dryRunLogs.push(args.map(String).join(' '));
+    });
+    const beforeDryRun = snapshot(TEST_ROOT);
+    const dryRun = await runUpgrade(TEST_ROOT, { dryRun: true });
+
+    expect(dryRun.filesUpdated).toEqual([]);
+    expect(diffSnapshots(beforeDryRun, snapshot(TEST_ROOT))).toEqual([]);
+    expect(dryRunLogs.join('\n')).toMatch(/preserve\s+\.github\/workflows\/squad-ci\.yml\s+\(customized; left unchanged/);
+    expect(readFileSync(workflow, 'utf8')).toBe(customized);
+    expect(existsSync(workflow + '.local-backup')).toBe(false);
+
+    const upgradeLogs: string[] = [];
+    vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      upgradeLogs.push(args.map(String).join(' '));
+    });
+    await runUpgrade(TEST_ROOT);
+
+    expect(readFileSync(workflow, 'utf8')).toBe(customized);
+    expect(existsSync(workflow + '.local-backup')).toBe(false);
+    expect(upgradeLogs.join('\n')).toContain('treated as user-owned and left unchanged');
+    expect(readShippedManifest(TEST_ROOT)?.files).not.toHaveProperty('.github/workflows/squad-ci.yml');
+  });
+
   it('uses provenance-neutral wording when a first upgrade cannot prove whether a differing file was customized', async () => {
     rmSync(join(TEST_ROOT, ...SHIPPED_MANIFEST_RELATIVE_PATH.split('/')));
     const file = join(TEST_ROOT, '.squad', 'templates', 'model-selection-reference.md');
