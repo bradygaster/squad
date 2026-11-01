@@ -13,7 +13,6 @@
 .squad/casting/*.json text eol=lf
 
 # Squad: union merge for append-only team state files
-.squad/decisions/decisions.md merge=union
 # Squad: union merge for append-only team state files
 .squad/rai/audit-trail.md merge=union
 
