@@ -6,20 +6,13 @@
  * lifecycle are already covered by `test/history-shadow.test.ts` and are
  * intentionally not duplicated here.
  *
- * Current-bug note: the section-boundary regex in `appendToHistory`
- * (`packages/squad-sdk/src/agents/history-shadow.ts`) is built as
- * `` (?=^##\s|\Z) `` and intends `\Z` to mean "end of string". JavaScript has
- * no `\Z` end-of-string escape; it is parsed as the literal character "Z".
- * For every section except the last one, a following `## ` header still
- * lets the lookahead succeed, so those appends work, but the same
- * `trimEnd()`-before-splice step also collapses the blank line that used to
- * separate sections. For the terminal section (`References`, which has no
- * following header and no literal "Z" in its body) the lookahead can never
- * succeed, so the existing header is never matched and a *second*
- * `## References` header is appended at the tail of the file instead of the
- * entry being inserted inline. Both effects are characterized below exactly
- * as they behave today; neither assertion below endorses the behavior as
- * desired. See the tracked follow-up issue for the production fix.
+ * Regression note: the section-boundary regex in `appendToHistory`
+ * (`packages/squad-sdk/src/agents/history-shadow.ts`) previously ended in
+ * `\Z`, which JavaScript parses as the literal character "Z", so the terminal
+ * `References` section was never matched (a duplicate header was appended) and
+ * non-terminal appends dropped the blank line before the next header. The
+ * regex now uses `(?![\s\S])` for end-of-input; both behaviors are pinned
+ * below in their fixed form.
  *
  * All I/O is contained inside a hermetic temp root; repository `.squad/**`
  * is never touched.
@@ -47,10 +40,9 @@ const CANONICAL_SECTIONS: HistorySection[] = [
   'References',
 ];
 
-// The terminal section is characterized separately below: current
-// production behavior duplicates its header instead of appending inline
-// (see file-level comment). The remaining sections are each followed by
-// another section header, so their append path succeeds.
+// The terminal section is characterized separately below because it has no
+// following header. The remaining sections are each followed by another
+// section header.
 const NON_TERMINAL_SECTIONS = CANONICAL_SECTIONS.slice(0, -1);
 const TERMINAL_SECTION = CANONICAL_SECTIONS[CANONICAL_SECTIONS.length - 1];
 
@@ -58,7 +50,7 @@ const TIMESTAMP_LINE = /^### (\d{4}-\d{2}-\d{2})$/m;
 
 describe('history-shadow characterization (H1)', () => {
   it.each(NON_TERMINAL_SECTIONS)(
-    'appends a block to the %s section, immediately abutting the next header',
+    'appends a block to the %s section, preserving a blank line before the next header',
     async (section) => {
       await withHermeticRoot(async (root) => {
         const storage = makeWriteGuardedStorage(new FSStorageProvider(), root);
@@ -89,65 +81,37 @@ describe('history-shadow characterization (H1)', () => {
         expect(timestampMatch, 'timestamp header missing').not.toBeNull();
         const timestamp = timestampMatch![1];
 
-        // Current behavior: appendToHistory trims trailing whitespace off
-        // the prior section content before splicing in the new entry. That
-        // collapses the blank line that originally separated sections, so
-        // the entry's own trailing newline becomes the single newline
-        // immediately preceding the next `## ` header rather than a
-        // preserved blank line plus a separate separator. The section body,
-        // as sliced up to that boundary, therefore ends with the entry text
-        // minus its final newline (that newline is the boundary itself).
-        const entryWithoutTrailingNewline = `\n### ${timestamp}\n\n${content}`;
-        expect(sectionBody.endsWith(entryWithoutTrailingNewline)).toBe(true);
+        // appendToHistory trims the prior section content, splices in the
+        // entry, and keeps a blank line before the next `## ` header. The
+        // body sliced up to that header's "\n## " therefore ends with the
+        // entry plus its own trailing newline (the blank line is the
+        // remaining newline that is part of the boundary match).
+        const entryWithTrailingNewline = `\n### ${timestamp}\n\n${content}\n`;
+        expect(sectionBody.endsWith(entryWithTrailingNewline)).toBe(true);
       });
     },
   );
 
-  it(
-    `current bug: appending to the terminal ${TERMINAL_SECTION} section duplicates its header ` +
-      'instead of inserting inline',
-    async () => {
-      await withHermeticRoot(async (root) => {
-        const storage = makeWriteGuardedStorage(new FSStorageProvider(), root);
-        const agent = 'char-agent-terminal';
-        const content = `sample body for ${TERMINAL_SECTION} section with punctuation: !? and unicode \u2603`;
+  it(`appends to the terminal ${TERMINAL_SECTION} section inline without duplicating its header`, async () => {
+    await withHermeticRoot(async (root) => {
+      const storage = makeWriteGuardedStorage(new FSStorageProvider(), root);
+      const agent = 'char-agent-terminal';
+      const content = `sample body for ${TERMINAL_SECTION} section with punctuation: !? and unicode \u2603`;
 
-        const shadowPath = await createHistoryShadow(root, agent, undefined, storage);
-        const before = await fs.readFile(shadowPath, 'utf8');
-        await appendToHistory(root, agent, TERMINAL_SECTION, content, storage);
-        const after = await fs.readFile(shadowPath, 'utf8');
+      const shadowPath = await createHistoryShadow(root, agent, undefined, storage);
+      const before = await fs.readFile(shadowPath, 'utf8');
+      await appendToHistory(root, agent, TERMINAL_SECTION, content, storage);
+      const after = await fs.readFile(shadowPath, 'utf8');
 
-        const sectionHeader = `## ${TERMINAL_SECTION}`;
+      const sectionHeader = `## ${TERMINAL_SECTION}`;
+      expect(after.split(sectionHeader).length - 1, 'header should appear once').toBe(1);
 
-        // See file-level comment: the `\Z` typo means the section-boundary
-        // regex never matches for the terminal section, so appendToHistory
-        // falls back to its "section not found" branch and appends a brand
-        // new header at the tail instead of writing into the existing one.
-        const occurrences = after.split(sectionHeader).length - 1;
-        expect(occurrences, 'current bug duplicates the header').toBe(2);
-
-        const firstIndex = after.indexOf(sectionHeader);
-        const secondIndex = after.indexOf(sectionHeader, firstIndex + sectionHeader.length);
-        expect(secondIndex).toBeGreaterThan(firstIndex);
-
-        // The original section's content is left untouched by the append
-        // (aside from trailing-whitespace normalization performed by the
-        // "section not found" branch's own trimEnd(), which happens before
-        // the duplicate header is spliced in).
-        const originalSectionSlice = before.slice(before.indexOf(sectionHeader));
-        const untouchedSlice = after.slice(firstIndex, secondIndex);
-        expect(untouchedSlice.trimEnd()).toBe(originalSectionSlice.trimEnd());
-
-        // The duplicated (second) header starts a fresh section containing
-        // only the new entry, and is the exact tail of the file.
-        const timestampMatch = after.match(TIMESTAMP_LINE);
-        expect(timestampMatch, 'timestamp header missing').not.toBeNull();
-        const timestamp = timestampMatch![1];
-        const expectedTail = `${sectionHeader}\n### ${timestamp}\n\n${content}\n`;
-        expect(after.slice(secondIndex)).toBe(expectedTail);
-      });
-    },
-  );
+      const timestampMatch = after.match(TIMESTAMP_LINE);
+      expect(timestampMatch, 'timestamp header missing').not.toBeNull();
+      const timestamp = timestampMatch![1];
+      expect(after).toBe(`${before.trimEnd()}\n### ${timestamp}\n\n${content}\n`);
+    });
+  });
 
   it('appends an unknown section at the end when no matching header exists', async () => {
     await withHermeticRoot(async (root) => {

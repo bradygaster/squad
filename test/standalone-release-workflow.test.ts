@@ -275,6 +275,8 @@ describe('standalone release handoff', () => {
     const completion = stepNamed(releaseWorkflow.jobs['release-completion'], 'Check selected channel outcomes').run ?? '';
     expect(completion).toContain('npm did not reconcile COMPLETE');
     expect(completion).toContain('selected standalone/package-manager channels did not complete');
+    expect(completion).toContain('STANDALONE_CHECKSUM_BINDING');
+    expect(completion).toContain('standalone archives were not bound to validation records and SHA256SUMS');
   });
 
   it('keeps an incomplete stable release out of latest until standalone assets exist', () => {
@@ -842,16 +844,36 @@ describe('automated package publication', () => {
 
   it('keeps published archives immutable across reruns', () => {
     const publish = standaloneWorkflow.jobs.publish;
+    const steps = publish.steps ?? [];
+    const prepareIndex = steps.findIndex((step) => step.name === 'Prepare release assets and SHA256SUMS');
+    const verifyIndex = steps.findIndex(
+      (step) => step.name === 'Verify archive, validation and SHA256SUMS binding',
+    );
+    const uploadIndex = steps.findIndex((step) => step.name === 'Upload to release');
+    expect(prepareIndex).toBeGreaterThanOrEqual(0);
+    expect(verifyIndex).toBeGreaterThan(prepareIndex);
+    expect(uploadIndex).toBeGreaterThan(verifyIndex);
+    const binding = stepNamed(
+      publish,
+      'Verify archive, validation and SHA256SUMS binding',
+    );
+    expect(binding.run).toContain('verify-standalone-checksums.mjs');
+    expect(binding.run).toContain('--expected-source-sha "${SOURCE_SHA}"');
+    expect(binding.run).toContain('echo "binding=VERIFIED" >> "${GITHUB_OUTPUT}"');
+    expect(publish.outputs?.checksum_binding).toBe(
+      '${{ steps.verify-checksum-binding.outputs.binding }}',
+    );
+    const prepare = stepNamed(publish, 'Prepare release assets and SHA256SUMS').run ?? '';
     const upload = stepNamed(publish, 'Upload to release').run ?? '';
     const archiveUpload = upload
       .split('\n')
       .find((line) => line.includes('gh release upload "${TAG}" "${upload_paths[@]}"'));
 
-    expect(upload).toContain('gh release download "${TAG}"');
-    expect(upload).toContain('mv -- "${existing_dir}/${asset}" "${asset}"');
-    expect(upload).toContain('sha256sum "${asset}" > "${asset}.sha256"');
-    expect(upload.indexOf('mv -- "${existing_dir}/${asset}" "${asset}"')).toBeLessThan(
-      upload.indexOf('sha256sum "${asset}" > "${asset}.sha256"'),
+    expect(prepare).toContain('gh release download "${TAG}"');
+    expect(prepare).toContain('mv -- "${existing_dir}/${asset}" "${asset}"');
+    expect(prepare).toContain('sha256sum "${asset}" > "${asset}.sha256"');
+    expect(prepare.indexOf('mv -- "${existing_dir}/${asset}" "${asset}"')).toBeLessThan(
+      prepare.indexOf('sha256sum "${asset}" > "${asset}.sha256"'),
     );
     expect(archiveUpload).toBeDefined();
     expect(archiveUpload).not.toContain('--clobber');
@@ -863,7 +885,8 @@ describe('automated package publication', () => {
       (step) => step.uses?.startsWith('actions/upload-artifact@')
         && step.with?.name === 'standalone-release-checksums-${{ inputs.source_sha }}',
     );
-    expect(checksumUpload?.with?.path).toBe('artifacts/SHA256SUMS.txt');
+    expect(checksumUpload?.with?.path).toContain('artifacts/SHA256SUMS.txt');
+    expect(checksumUpload?.with?.path).toContain('artifacts/standalone-checksum-binding.json');
   });
 
   it('serializes mutable channels and publishes strict stable, preview, and insider tags', () => {

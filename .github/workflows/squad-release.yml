@@ -296,6 +296,7 @@ jobs:
           NPM_RESULT: ${{ needs.npm.result }}
           NPM_OUTCOME: ${{ needs.npm.outputs.outcome }}
           STANDALONE_RESULT: ${{ needs.standalone.result }}
+          STANDALONE_CHECKSUM_BINDING: ${{ needs.standalone.outputs.checksum_binding }}
           BUILD_STANDALONE: ${{ inputs.build_standalone }}
           PUBLISH_STANDALONE: ${{ inputs.publish_standalone }}
           PUBLISH_PACKAGE_MANAGERS: ${{ inputs.publish_package_managers }}
@@ -308,6 +309,11 @@ jobs:
           if [ "$BUILD_STANDALONE" = true ] || [ "$PUBLISH_STANDALONE" = true ] || [ "$PUBLISH_PACKAGE_MANAGERS" = true ]; then
             [ "$STANDALONE_RESULT" = success ] || {
               echo "::error::selected standalone/package-manager channels did not complete (job=$STANDALONE_RESULT)"; exit 1;
+            }
+          fi
+          if [ "$PUBLISH_STANDALONE" = true ]; then
+            [ "$STANDALONE_CHECKSUM_BINDING" = VERIFIED ] || {
+              echo "::error::standalone archives were not bound to validation records and SHA256SUMS"; exit 1;
             }
           fi
 
