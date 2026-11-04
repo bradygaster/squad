@@ -10,6 +10,7 @@
  *  - a file the user customized is backed up to `<file>.local-backup` before it is
  *    overwritten; the backup is written and read back before the overwrite happens,
  *    and a failed backup aborts the overwrite of that file (#2297);
+ *  - a customized `.github/workflows/squad-ci.yml` remains user-owned and is preserved;
  *  - "customized" means the file differs from BOTH the new template AND the version
  *    Squad last shipped. The last-shipped hashes live in
  *    `.squad/templates/.shipped-manifest.json`; without a record the previous copy under
@@ -45,7 +46,7 @@ export interface ShippedManifest {
   files: Record<string, string>;
 }
 
-export type SquadOwnedAction = 'create' | 'overwrite' | 'unchanged';
+export type SquadOwnedAction = 'create' | 'overwrite' | 'unchanged' | 'preserve';
 
 export interface SquadOwnedFilePlan {
   /** Repo-root-relative POSIX path (what the user sees). */
@@ -68,6 +69,8 @@ export interface SquadOwnedPlan {
   /** Subset of `changed` that gets a `.local-backup` first. */
   backups: SquadOwnedFilePlan[];
   unchanged: SquadOwnedFilePlan[];
+  /** Customized CI workflows that remain user-owned and are never written by upgrade. */
+  preserved: SquadOwnedFilePlan[];
 }
 
 /** A squad-owned file to plan: where it comes from, where it goes, what it should contain. */
@@ -134,13 +137,15 @@ export function readShippedManifest(dest: string): ShippedManifest | null {
 }
 
 /**
- * Record the hashes of every planned file as "what Squad shipped" so the next upgrade can
- * tell a user edit from a template revision. Sorted keys keep the file byte-stable.
+ * Record hashes for files upgrade manages as "what Squad shipped" so the next upgrade can
+ * tell a user edit from a template revision. User-owned preserved workflows are excluded.
+ * Sorted keys keep the file byte-stable.
  */
 export function writeShippedManifest(dest: string, version: string, plan: SquadOwnedPlan): void {
   const file = path.join(dest, ...SHIPPED_MANIFEST_RELATIVE_PATH.split('/'));
   const files: Record<string, string> = {};
   for (const entry of [...plan.files].sort((a, b) => a.relPath.localeCompare(b.relPath))) {
+    if (entry.action === 'preserve') continue;
     const content = entry.content ?? readFileSync(entry.src).toString('utf8');
     files[entry.relPath] = contentHash(content);
   }
@@ -208,15 +213,21 @@ export function planSquadOwnedFiles(dest: string, candidates: readonly SquadOwne
       customized = prior === undefined ? true : normalizeEol(prior) !== normalizeEol(existing);
       if (customized) backupReason = prior === undefined ? 'provenance-unavailable' : 'customized';
     }
+    // The CI workflow is the project's test contract; never replace local edits with a Squad stub.
+    if (relPath === '.github/workflows/squad-ci.yml' && customized) {
+      files.push({ relPath, absPath, action: 'preserve', customized, backupReason, content, src: candidate.src });
+      continue;
+    }
     files.push({ relPath, absPath, action: 'overwrite', customized, backupReason, content, src: candidate.src });
   }
 
-  const changed = files.filter(f => f.action !== 'unchanged');
+  const changed = files.filter(f => f.action === 'create' || f.action === 'overwrite');
   return {
     files,
     changed,
     backups: changed.filter(f => f.customized),
     unchanged: files.filter(f => f.action === 'unchanged'),
+    preserved: files.filter(f => f.action === 'preserve'),
   };
 }
 
@@ -343,23 +354,32 @@ export function applyRetiredFiles(retired: readonly RetiredFilePlan[]): { remove
 /** Human-readable dry-run rendering of a plan, paths relative to the repo root. */
 export function formatSquadOwnedPlan(plan: SquadOwnedPlan): string[] {
   const lines: string[] = [];
-  if (plan.changed.length === 0) {
+  if (plan.changed.length === 0 && plan.preserved.length === 0) {
     lines.push(`All ${plan.files.length} squad-owned file(s) are up to date — nothing to overwrite.`);
     return lines;
   }
-  const creates = plan.changed.filter(f => f.action === 'create').length;
-  const overwrites = plan.changed.length - creates;
-  lines.push(
-    `Would write ${plan.changed.length} squad-owned file(s)`
-    + ` (${overwrites} overwrite, ${creates} create, ${plan.backups.length} backed up to .local-backup first):`,
-  );
-  for (const file of [...plan.changed].sort((a, b) => a.relPath.localeCompare(b.relPath))) {
-    const suffix = file.backupReason === 'provenance-unavailable'
-      ? `  (prior provenance unavailable → ${path.basename(file.relPath)}.local-backup)`
-      : file.customized
-        ? `  (customized → ${path.basename(file.relPath)}.local-backup)`
-        : '';
-    lines.push(`  ${file.action.padEnd(9)} ${file.relPath}${suffix}`);
+  if (plan.changed.length > 0) {
+    const creates = plan.changed.filter(f => f.action === 'create').length;
+    const overwrites = plan.changed.length - creates;
+    lines.push(
+      `Would write ${plan.changed.length} squad-owned file(s)`
+      + ` (${overwrites} overwrite, ${creates} create, ${plan.backups.length} backed up to .local-backup first):`,
+    );
+    for (const file of [...plan.changed].sort((a, b) => a.relPath.localeCompare(b.relPath))) {
+      const suffix = file.backupReason === 'provenance-unavailable'
+        ? `  (prior provenance unavailable → ${path.basename(file.relPath)}.local-backup)`
+        : file.customized
+          ? `  (customized → ${path.basename(file.relPath)}.local-backup)`
+          : '';
+      lines.push(`  ${file.action.padEnd(9)} ${file.relPath}${suffix}`);
+    }
+  }
+  if (plan.preserved.length > 0) {
+    lines.push(`Would preserve ${plan.preserved.length} customized workflow(s) as user-owned:`);
+    for (const file of [...plan.preserved].sort((a, b) => a.relPath.localeCompare(b.relPath))) {
+      const provenance = file.backupReason === 'provenance-unavailable' ? '; prior provenance unavailable' : '';
+      lines.push(`  ${file.action.padEnd(9)} ${file.relPath}  (customized; left unchanged${provenance})`);
+    }
   }
   if (plan.unchanged.length > 0) {
     lines.push(`${plan.unchanged.length} squad-owned file(s) already up to date.`);

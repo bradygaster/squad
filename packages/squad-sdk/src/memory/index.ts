@@ -536,6 +536,11 @@ export const REAL_COPILOT_UNAVAILABLE_REASON =
 const HOST_INJECTED_CLIENT_MISSING_REASON =
   'hostInjectedCopilotAdapter is enabled, but no host-injected Copilot memory client was supplied. This is not real provider=copilot persistence.';
 
+type MemoryIndexLockStore = { lockAsync?: (key: string) => Promise<() => void> };
+type MemoryIndexLockProvider = {
+  createLockStore?: (lockAnchor: string) => MemoryIndexLockStore | Promise<MemoryIndexLockStore>;
+};
+
 function isRealCopilotProviderSelected(config: MemoryGovernanceConfig): boolean {
   return config.defaultProvider === 'copilot';
 }
@@ -650,18 +655,22 @@ export class LocalMemoryStore {
    *
    * All callers that do readIndex() → mutate → writeIndex() must go through
    * this method so concurrent writers cannot interleave and lose entries.
-   * The file lock coordinates callers across store instances and processes
-   * sharing the same .squad directory.
+   * Backend adapters coordinate on the shared state ref; filesystem storage
+   * keeps its lock under the resolved .squad directory.
    */
   private async withIndexLock<T>(fn: () => Promise<T>): Promise<T> {
-    const resolvedSquadDir = path.resolve(this.squadDir);
-    let lockRoot = resolvedSquadDir;
-    try {
-      lockRoot = await realpath(resolvedSquadDir);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    const lockProvider = this.storage as StorageProvider & MemoryIndexLockProvider;
+    let fileLock = await lockProvider.createLockStore?.(this.squadDir);
+    if (!fileLock) {
+      const resolvedSquadDir = path.resolve(this.squadDir);
+      let lockRoot = resolvedSquadDir;
+      try {
+        lockRoot = await realpath(resolvedSquadDir);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      }
+      fileLock = createFileStateStore(lockRoot);
     }
-    const fileLock = createFileStateStore(lockRoot);
     const releaseFileLock = await fileLock.lockAsync!('backend/locks/memory-index');
     try {
       return await fn();
