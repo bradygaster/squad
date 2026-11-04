@@ -47,7 +47,7 @@ Here's your team:
 ⚛️  Ripley   — Frontend Dev  React, UI, components
 🔧  Dallas   — Backend Dev   Node.js, APIs, database
 🧪  Lambert  — Tester        Tests, quality, edge cases
-📋  Scribe   — (silent)      Memory, decisions, session logs
+📋  Scribe   — (silent)      Durable decision merging
 **Scribe** and **Ralph** are always on every roster — you don't manage them.
 Look right? Say yes, add someone, or change a role.
 (Or just give me a task to start!)
@@ -121,7 +121,7 @@ When agents finish, you see results tagged with each agent's identity:
    - Detail endpoint returns 404 for missing recipe
    [+4 more]
 ```
-Behind the scenes, the Scribe merged decisions from each agent into `decisions.md` and logged the session.
+Behind the scenes, the Scribe merged the accepted decisions from each agent into `decisions.md`.
 
 ---
 ## 6. Ask "Where Are We?" — Instant Status

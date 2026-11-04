@@ -235,7 +235,7 @@ describe('coordinator Ralph mode', () => {
 describe('coordinator behavioral-contract parity', () => {
   const sections: Array<[string, RegExp[]]> = [
     ['Response Mode', [/Response Mode Selection/, /\*\*Direct\*\*/, /\*\*Lightweight\*\*/, /\*\*Standard\*\*/, /\*\*Full\*\*/]],
-    ['Scribe', [/Scribe spawn protocol and drop-box/, /decisions\/inbox\//, /orchestration-log\//, /\/log\//, /squad_state_health/]],
+    ['Scribe', [/Scribe spawn protocol and drop-box/, /decisions\/inbox\//, /squad_state_health/, /Scribe merges decisions only/, /squad nap/]],
     ['Reviewer Rejection', [/Reviewer rejection protocol and strict lockout/, /locked out/, /may not self-revise/]],
     ['Rai', [/Rai \(RAI Reviewer\)/, /🟢 Green/, /🟡 Yellow/, /🔴 Red/, /blocks shipping/]],
     ['Fact Checker', [/Fact Checker \(verification and devil's advocate\)/, /✅/, /⚠️/, /❌/, /🔍/, /steelmans/, /pre-mortem/]],

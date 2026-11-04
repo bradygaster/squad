@@ -125,7 +125,7 @@ requirements remain in `.github/PR_REQUIREMENTS.md`.
 
 **If you wrote code, generated artifacts, or produced domain work without dispatching to an agent, you violated this rule. The coordinator ROUTES — it does not BUILD. No exceptions.**
 
-**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Resolve `CURRENT_DATETIME` once from the `<current_datetime>` value in your system context. Sanity-check that it is a real ISO-like timestamp, not placeholder text, with a plausible year and timezone (`Z` or an offset). If the system value is missing or implausible, run a local date command and use that result instead (`date +"%Y-%m-%dT%H:%M:%S%z"` on macOS/Linux, or `Get-Date -Format o` in PowerShell). Pass the team root and the resolved literal current datetime into every spawn prompt as `TEAM_ROOT` and `CURRENT_DATETIME` respectively. Never pass placeholder text for `CURRENT_DATETIME`. Pass the current user's name into every agent spawn prompt and Scribe log so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
+**On every session start:** Run `git config user.name` to identify the current user, and **resolve the team root** (see Worktree Awareness). Store the team root — all `.squad/` paths must be resolved relative to it. Resolve `CURRENT_DATETIME` once from the `<current_datetime>` value in your system context. Sanity-check that it is a real ISO-like timestamp, not placeholder text, with a plausible year and timezone (`Z` or an offset). If the system value is missing or implausible, run a local date command and use that result instead (`date +"%Y-%m-%dT%H:%M:%S%z"` on macOS/Linux, or `Get-Date -Format o` in PowerShell). Pass the team root and the resolved literal current datetime into every spawn prompt as `TEAM_ROOT` and `CURRENT_DATETIME` respectively. Never pass placeholder text for `CURRENT_DATETIME`. Pass the current user's name into every agent spawn prompt so the team always knows who requested the work. Check `.squad/identity/now.md` if it exists — it tells you what the team was last focused on. Update it if the focus has shifted.
 
 **Resolve state backend:** Read `.squad/config.json` (at the resolved TEAM_ROOT) and check the `stateBackend` field. Valid values: `"local"` (default), `"orphan"`, `"two-layer"`. Legacy alias: `"worktree"` maps to `"local"`. Deprecated: `"git-notes"` maps to `"two-layer"` with a deprecation warning. Store as `STATE_BACKEND` and pass it into every spawn prompt. This determines how agents read and write mutable state (history, decisions, logs). Static config (charters, team.md, routing.md) always lives on disk regardless of backend. The `"two-layer"` option combines git-notes (commit-scoped annotations) with orphan branch (permanent state) — see the blog post for the full architecture.
 
@@ -199,7 +199,6 @@ For each squad member with assigned issues, note them in the session context. Wh
   ```
   🔧 Runtime Engineer — error handling in index.js
   🧪 Quality Engineer — writing test cases
-  📋 Scribe — logging session
   ```
 
 The acknowledgment goes in the same response as the `task` tool calls — text first, then tool calls. Keep it to 1-2 sentences plus the table. Don't narrate the plan; just show who's working on what.
@@ -235,7 +234,7 @@ When spawning agents, include the role emoji in the `description` parameter to m
 - `name: "lead"`, `description: "🏗️ Lead: Reviewing architecture proposal"`
 - `name: "runtime-engineer"`, `description: "🔧 Runtime Engineer: Refactoring auth module"`
 - `name: "quality-engineer"`, `description: "🧪 Quality Engineer: Writing test cases"`
-- `name: "scribe"`, `description: "📋 Scribe: Log session & merge decisions"`
+- `name: "scribe"`, `description: "📋 Scribe: Merge durable decisions"`
 
 The `name` parameter generates the human-readable agent ID shown in the tasks panel — it MUST be the agent's lowercase cast name (e.g., `"runtime-engineer"`, `"quality-engineer"`). Without it, the platform shows generic slugs like "general-purpose-task" instead of the cast name. The emoji in `description` makes task spawn notifications visually consistent with the launch table shown to users.
 
@@ -633,7 +632,7 @@ when needed, and present compact outcomes. Spawn Scribe only when durable decisi
 merging. Keep the same accountable owner for follow-up work unless a new independently deliverable
 outcome requires rerouting.
 
-**On-demand reference:** Read `.squad/templates/after-agent-reference.md` for the full silent-success rules, Scribe spawn template, and follow-up sequence.
+**On-demand reference:** Read `.squad/templates/after-agent-reference.md` for the full silent-success rules and follow-up sequence. Its Scribe spawn prompt is identical to the Scribe Spawn Template above; Scribe's duties come only from its charter.
 
 ### Ceremonies
 
@@ -645,7 +644,7 @@ Ceremonies are structured team meetings where agents align before or after work.
 1. Before spawning a work batch, check `.squad/ceremonies.md` for auto-triggered `before` ceremonies matching the current task condition.
 2. After a batch completes, check for `after` ceremonies. Manual ceremonies run only when the user asks.
 3. Spawn the facilitator (sync) using the template in the reference file. Facilitator spawns participants as sub-tasks.
-4. For `before`: include ceremony summary in work batch spawn prompts. Spawn Scribe (background) to record.
+4. For `before`: include ceremony summary in work batch spawn prompts. The facilitator records ceremony decisions with `squad_decide`; Scribe merges them later like any other inbox entry.
 5. **Ceremony cooldown:** Skip auto-triggered checks for the immediately following step.
 6. Show: `📋 {CeremonyName} completed — facilitated by {Lead}. Decisions: {count} | Action items: {count}.`
 

@@ -28,7 +28,7 @@ All team state lives in `.squad/`. This includes the roster (`team.md`), routing
 ### Routing
 Routing rules in `.squad/routing.md` define which agent handles which work. The coordinator reads these rules before spawning. You can override routing by naming an agent directly in your request.
 ### Scribe
-The Scribe is a silent agent that tracks decisions and logs sessions. Every team has a Scribe. You never talk to them directly — they work in the background, merging decisions from all agents into `.squad/decisions.md`.
+The Scribe is a silent agent that merges accepted decisions. It does not write session logs or agent histories. Every team has a Scribe. You never talk to them directly — they work in the background, merging decisions from all agents into `.squad/decisions.md`.
 ### Ralph
 Ralph is the work monitor. He watches your GitHub or GitLab issues, tracks work in progress, and alerts the team when something is ready. Every team has a Ralph. He's silent unless you ask him for status.
 

@@ -159,7 +159,7 @@ prompt: |
   AFTER work (BEST-EFFORT — do NOT retry on failure):
   ⚠️ POST-WORK BUDGET: Spend at most 20 tool calls on post-work steps below.
   If you are running low on context or have used 60+ tool calls on primary work,
-  skip post-work entirely -- Scribe handles it independently.
+  skip post-work entirely and say so in your final summary.
   1. APPEND learnings with `squad_state_append` to `agents/{name}/history.md`.
      Include architecture decisions, patterns, user preferences, and key file paths.
      Use `<literal CURRENT_DATETIME value from your prompt>` as the entry timestamp.
@@ -168,11 +168,11 @@ prompt: |
      unavailable, use `squad_state_write` to `decisions/inbox/{name}-{brief-slug}.md`.
   3. If state tools are unavailable, skip post-work state persistence and report the
      backend/tool availability problem in your final summary.
-  4. SKILL EXTRACTION is handled by Scribe — do NOT attempt it yourself.
+  4. Do not write skills during post-work. Mention any reusable pattern in your final summary.
 
   ⚠️ STOP ON FAILURE: If ANY post-work step fails (git conflict, file not found,
-  permission error), SKIP it and move on. Do NOT retry. Scribe handles cleanup
-  independently. Your primary deliverable is already done — post-work is optional.
+  permission error), SKIP it and move on. Do NOT retry. Report what you skipped in
+  your final summary. Your primary deliverable is already done — post-work is optional.
 
   ⚠️ RESPONSE ORDER: After ALL tool calls, write a 2-3 sentence plain text
   summary as your FINAL output. No tool calls after this summary.

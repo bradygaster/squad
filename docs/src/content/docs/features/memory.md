@@ -165,16 +165,18 @@ These go directly into `decisions.md`.
 
 ### 3. Scribe merges
 
-The Scribe agent (a silent team member) periodically:
+The Scribe agent (a silent team member), when accepted decisions are waiting:
 
 1. Reads all entries from `.squad/decisions/inbox/`
 2. Merges them into the canonical `decisions.md`
-3. Deduplicates overlapping decisions
-4. Propagates updates to affected agents
+3. Deduplicates exact duplicate decision headings
+4. Deletes each inbox entry only after confirming it was merged
+
+Scribe does not archive, write session logs, or edit agent histories.
 
 ### Decision archiving
 
-As your project grows, `decisions.md` accumulates hundreds of blocks. Stale sprint artifacts, completed analysis docs, and one-time planning fragments consume context window space without adding value. When this happens, old decisions are archived to `.squad/decisions-archive.md` — preserved for reference but no longer loaded into agent context.
+As your project grows, `decisions.md` accumulates hundreds of blocks. Stale sprint artifacts, completed analysis docs, and one-time planning fragments consume context window space without adding value. When this happens, run `squad nap` to archive old decisions to `.squad/decisions-archive.md` — preserved for reference but no longer loaded into agent context.
 
 Active decisions (ongoing policies, user preferences, current architecture) stay in `decisions.md`. Agents always read the lean, current shared brain.
 
