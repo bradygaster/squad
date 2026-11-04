@@ -53,3 +53,21 @@ describe('Ralph reference authority', () => {
     });
   }
 });
+
+describe('Coordinator ralph-instructions path', () => {
+  const COORDINATORS = [
+    '.github/agents/squad.agent.md',
+    '.squad-templates/squad.agent.md',
+    'templates/squad.agent.md.template',
+    'packages/squad-cli/templates/squad.agent.md.template',
+    'packages/squad-sdk/templates/squad.agent.md.template',
+  ] as const;
+
+  for (const path of COORDINATORS) {
+    it(`${path} resolves ralph-instructions.md relative to TEAM_ROOT (the .squad dir)`, () => {
+      const content = readReference(path);
+      expect(content).toContain('{TEAM_ROOT}/ralph-instructions.md');
+      expect(content).not.toContain('{TEAM_ROOT}/.squad/ralph-instructions.md');
+    });
+  }
+});

@@ -8,6 +8,9 @@
   When `.squad/ralph-instructions.md` exists, `squad watch --execute` instructs the
   spawned Copilot session to read this file and follow ALL sections here instead of
   the built-in fallback prompt.  If the file is absent, the built-in prompt is used.
+  The coordinator (squad.agent.md) also reads it in interactive sessions and applies it on
+  top of its own rules; there it does not widen the requested scope or replace Ralph's
+  monitor-only role.
 
   CONTRACT (stable — safe to build on)
   --------------------------------------
