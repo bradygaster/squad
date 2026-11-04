@@ -18,7 +18,7 @@ import os from 'node:os';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
-import { resolveStateBackend, StateBackendStorageAdapter, type StateBackend, type StateBackendType } from './state-backend.js';
+import { configuredStateBackend, resolveStateBackend, StateBackendStorageAdapter, type StateBackend, type StateBackendType } from './state-backend.js';
 import type { StorageProvider } from './storage/storage-provider.js';
 
 const storage = new FSStorageProvider();
@@ -928,7 +928,10 @@ export interface SquadStateContext {
   paths: ResolvedSquadPaths;
   /** The active state backend (local, git-notes, or orphan) */
   backend: StateBackend;
-  /** The repo root directory (for git-native backends) */
+  /**
+   * The repo root directory (for git-native backends). For a linked team on a
+   * git backend this is the team repo, where the state branch lives.
+   */
   repoRoot: string;
   /** StorageProvider backed by the active state backend — pass to SDK modules */
   storage: StorageProvider;
@@ -961,18 +964,48 @@ export function resolveSquadState(startDir?: string, cliOverride?: StateBackendT
     repoRoot = path.resolve(paths.projectDir, '..');
   }
 
+  // A linked team owns its state (#2320): a git backend keeps it on the team
+  // repo's state branch, not the project's. Fail clearly instead of falling
+  // back to 'local' when the team root is not in a git repository.
+  if (paths.mode === 'remote') {
+    const { type } = configuredStateBackend(paths.projectDir, cliOverride);
+    if (type === 'orphan' || type === 'two-layer') {
+      const teamRepoRoot = gitTopLevel(paths.teamSquadDir) ?? gitTopLevel(paths.teamDir);
+      if (!teamRepoRoot) {
+        throw new Error(
+          `The linked team at ${paths.teamDir} uses the '${type}' state backend, which keeps state on a branch ` +
+          `of the team repo, but the team root is not in a git repository. Initialize git in the team repo, ` +
+          `or set "stateBackend" to "local" in ${path.join(paths.projectDir, 'config.json')}.`,
+        );
+      }
+      repoRoot = teamRepoRoot;
+    }
+  }
+
   // Resolve the backend from config + CLI override
   const backend = resolveStateBackend(paths.projectDir, repoRoot, cliOverride);
 
   // For local backend, use FSStorageProvider directly (more capable).
   // For git-notes/orphan, bridge via StateBackendStorageAdapter.
-  // rootDir is paths.teamSquadDir (matches the squadRoot every local-backend
+  // Both are rooted at paths.teamSquadDir (matches the squadRoot every
   // caller — e.g. ToolRegistry in state-mcp.ts — builds its paths against),
   // so the traversal guard actually validates instead of no-op'ing on an
   // unset rootDir and letting a bad upstream path resolve silently.
   const stateStorage: StorageProvider = backend.name === 'local'
     ? new FSStorageProvider(paths.teamSquadDir)
-    : new StateBackendStorageAdapter(backend, paths.projectDir);
+    : new StateBackendStorageAdapter(backend, paths.teamSquadDir);
 
   return { paths, backend, repoRoot, storage: stateStorage };
+}
+
+/** `git rev-parse --show-toplevel` from `dir`, or null when it is not in a repository. */
+function gitTopLevel(dir: string): string | null {
+  if (!storage.existsSync(dir) || !storage.isDirectorySync(dir)) return null;
+  try {
+    return execFileSync('git', ['rev-parse', '--show-toplevel'], {
+      cwd: dir, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'],
+    }).trim() || null;
+  } catch {
+    return null;
+  }
 }

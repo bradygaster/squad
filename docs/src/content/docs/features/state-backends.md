@@ -97,6 +97,8 @@ If a non-default backend fails to initialize (e.g., Git is not available, permis
 ```
 Warning: State backend 'two-layer' failed: <reason>. Falling back to 'local'.
 ```
+### Linked Projects
+A project linked to a team repo (`teamRoot` in its `.squad/config.json`, which `squad link` writes) keeps its state with the team. With `orphan` or `two-layer`, that is the team repo's `squad-state` branch, not the project's. The backend type is still read from the project's `.squad/config.json`. The team root must be in a Git repository: if it isn't, Squad stops with an error naming the team root instead of falling back to `local`.
 
 ---
 ## Comparison
