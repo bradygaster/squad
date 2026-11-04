@@ -189,11 +189,14 @@ export interface ReportBoardOptions {
    * excludes other executors; printed only when a counter is non-zero.
    */
   claims?: { provider: string; round: ClaimCounters };
+  /** Number of dispatched work items whose local verification failed. */
+  verificationFailures?: number;
 }
 
 export function reportBoard(state: BoardState, round: number, options?: ReportBoardOptions): void {
   const level = options?.notifyLevel ?? 'all';
-  const total = Object.values(state).reduce((a, b) => a + b, 0);
+  const verificationFailures = options?.verificationFailures ?? 0;
+  const total = Object.values(state).reduce((a, b) => a + b, 0) + verificationFailures;
   const scanStatus = options?.scanStatus ?? 'ok';
   const claimLines = options?.claims && hasClaimActivity(options.claims.round)
     ? formatClaimRoundLines(options.claims.provider, options.claims.round)
@@ -227,6 +230,7 @@ export function reportBoard(state: BoardState, round: number, options?: ReportBo
   if (state.drafts > 0) console.log(`  🟡 Draft PRs:         ${state.drafts}`);
   if (state.changesRequested > 0) console.log(`  ⚠️  Changes requested: ${state.changesRequested}`);
   if (state.ciFailures > 0) console.log(`  ❌ CI failures:       ${state.ciFailures}`);
+  if (verificationFailures > 0) console.log(`  ❌ Verification failures: ${verificationFailures}`);
   if (state.needsReview > 0) console.log(`  🔵 Needs review:      ${state.needsReview}`);
   if (state.readyToMerge > 0) console.log(`  🟢 Ready to merge:    ${state.readyToMerge}`);
   if (state.executed > 0) console.log(`  🚀 Executed:          ${state.executed}`);
@@ -1155,6 +1159,28 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
     // Phase 3: post-execute (execute issues, wave dispatch, board updates)
     const execResults = await runPhase('post-execute', enabledCapabilities, roundContext, config);
 
+    const verifiedIssues = new Set<number>();
+    let untrackedDispatches = 0;
+    for (const result of execResults.values()) {
+      if (!result.success || !result.data) continue;
+      const issueIds = result.data['issues'];
+      if (Array.isArray(issueIds)) {
+        for (const id of issueIds) {
+          if (typeof id === 'number' && Number.isInteger(id)) verifiedIssues.add(id);
+        }
+      } else if (typeof result.data['dispatched'] === 'number') {
+        untrackedDispatches += result.data['dispatched'];
+      }
+    }
+    const dispatchedCount = verifiedIssues.size + untrackedDispatches;
+    let verificationFailures = 0;
+    if (dispatchedCount > 0) {
+      const verificationResults = await runPhase('verification', enabledCapabilities, roundContext, config);
+      if ([...verificationResults.values()].some(result => !result.success)) {
+        verificationFailures = dispatchedCount;
+      }
+    }
+
     // Update executed count from execute capability
     const execResult = execResults.get('execute');
     const executedCount =
@@ -1196,7 +1222,17 @@ export async function runWatch(dest: string, options: WatchOptions | WatchConfig
       updatePidFileClaims(teamRoot, claimSnapshot);
     }
 
-    reportBoard(roundState, round, claimSnapshot ? { claims: claimSnapshot } : undefined);
+    reportBoard(roundState, round, {
+      ...(claimSnapshot ? { claims: claimSnapshot } : {}),
+      verificationFailures,
+    });
+
+    if (verificationFailures > 0) {
+      console.log(`${RED}🛑${RESET} Verification failed — stopping watch before the next dispatch. Review the work before restarting.`);
+      stopRequested = true;
+      await shutdown();
+      return;
+    }
 
     // Fix 1: Print next poll time
     const nextPollTime = new Date(Date.now() + interval * 60 * 1000);
