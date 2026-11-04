@@ -11,7 +11,7 @@
 - `create_session` tool exists → **App mode** → sub-sessions for commit-producing work
 - `runSubagent` tool exists → **VS Code mode** → subagents
 - `task` tool exists → **CLI mode** → task tool
-- None available → **work inline** (last resort fallback)
+- None available → **refuse domain work**; Direct Mode remains limited to brief answers already supported by the current context
 
 ---
 
