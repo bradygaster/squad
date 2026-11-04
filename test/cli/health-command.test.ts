@@ -764,13 +764,15 @@ describe('state backend readiness', () => {
     writeSquad('config.json', '{"stateBackend":"external-stub"}');
     mockResolveStateBackend.mockReturnValue({ name: 'local' });
 
-    const result = check(runSquadHealth(squadDir, repoRoot), 'state-backend');
+    const report = runSquadHealth(squadDir, repoRoot);
+    const result = check(report, 'state-backend');
 
     expect(
       result.status,
       'external-stub is a documented placeholder that the SDK resolves to the ' +
         'local backend, so a local resolution must not fail readiness',
     ).toBe('pass');
+    expect(report.metadata.stateBackend).toBe('local');
   });
 
   it('accepts the deprecated external alias resolving to the local backend', () => {
@@ -994,6 +996,15 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(0);
     expect(report.status).toBe('pass');
     expect(check(report, 'registry-charters').status).toBe('pass');
+    expect(report.metadata.resolvedTeamDir).toBe(path.join(repoRoot, 'shared-team'));
+  });
+
+  it('preserves flat external state roots in metadata', () => {
+    const flatStateDir = path.join(repoRoot, 'external-state', 'team-a');
+    cpSync(squadDir, flatStateDir, { recursive: true });
+
+    expect(runSquadHealth(flatStateDir, repoRoot).metadata.resolvedTeamDir)
+      .toBe(flatStateDir);
   });
 
   it('emits the full JSON contract when state resolution fails', async () => {

@@ -29,6 +29,14 @@ const require = createRequire(import.meta.url);
 const SQUAD_STATE_VERSION = (require('../../package.json') as { version?: string }).version ?? 'unknown';
 export const STATE_HEALTH_SCHEMA = 'squad-state-health/v1' as const;
 
+function resolvedTeamDirectory(squadRoot: string): string {
+  const resolved = path.resolve(squadRoot);
+  const basename = path.basename(resolved);
+  return basename === '.squad' || basename === '.ai-team'
+    ? path.dirname(resolved)
+    : resolved;
+}
+
 // --- Argument Sanitization ---
 
 /** Sensitive field patterns — strip before recording as span attributes. */
@@ -950,7 +958,7 @@ export class ToolRegistry {
           cliVersion: this.cliVersion,
           sdkVersion: SQUAD_STATE_VERSION,
           stateBackend: this.backendName,
-          resolvedTeamDir: path.dirname(path.resolve(this.squadRoot)),
+          resolvedTeamDir: resolvedTeamDirectory(this.squadRoot),
           bridgeVersion: this.runtimeVersion,
           launchMode: this.launchMode,
         };

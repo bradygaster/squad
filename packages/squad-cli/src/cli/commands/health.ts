@@ -532,6 +532,7 @@ function captureResolverOutput<T>(operation: () => T): T {
 function checkStateBackend(
   localSquadDir: string,
   repoRoot: string,
+  resolvedBackend?: StateBackend,
 ): HealthCheckItem {
   const configPath = path.join(localSquadDir, 'config.json');
   if (!storage.existsSync(configPath)) {
@@ -576,7 +577,7 @@ function checkStateBackend(
   }
 
   try {
-    const backend = captureResolverOutput(() =>
+    const backend = resolvedBackend ?? captureResolverOutput(() =>
       resolveStateBackend(localSquadDir, repoRoot, configured),
     );
     if (!backendMatches(backend, configured)) {
@@ -609,30 +610,47 @@ function checkStateBackend(
   }
 }
 
-function configuredBackendName(localSquadDir: string): string {
+function resolvedTeamDirectory(stateDir: string): string {
+  const resolved = path.resolve(stateDir);
+  const basename = path.basename(resolved);
+  return basename === '.squad' || basename === '.ai-team'
+    ? path.dirname(resolved)
+    : resolved;
+}
+
+function configuredBackendForResolution(
+  localSquadDir: string,
+): StateBackendType | null | undefined {
   const configPath = path.join(localSquadDir, 'config.json');
-  if (!storage.existsSync(configPath)) return 'local';
+  if (!storage.existsSync(configPath)) return undefined;
 
   try {
     const config = parseJsonObject(
       readRequiredFile(configPath, '.squad/config.json'),
       '.squad/config.json',
     );
-    if (config.stateBackend === undefined || config.stateBackend === null) return 'local';
-    if (typeof config.stateBackend !== 'string' || !config.stateBackend.trim()) return 'unknown';
-    return canonicalBackendType(config.stateBackend) ?? 'unknown';
+    if (config.stateBackend === undefined || config.stateBackend === null) {
+      return undefined;
+    }
+    if (typeof config.stateBackend !== 'string' || !config.stateBackend.trim()) {
+      return null;
+    }
+    return canonicalBackendType(config.stateBackend);
   } catch {
-    return 'unknown';
+    return null;
   }
 }
 
-function healthMetadata(stateDir: string | null, localSquadDir: string): HealthReport['metadata'] {
+function healthMetadata(
+  stateDir: string | null,
+  stateBackend: string,
+): HealthReport['metadata'] {
   const cliVersion = getPackageVersion();
   return {
     cliVersion,
     sdkVersion: SDK_VERSION,
-    stateBackend: configuredBackendName(localSquadDir),
-    resolvedTeamDir: stateDir ? path.resolve(path.dirname(stateDir)) : null,
+    stateBackend,
+    resolvedTeamDir: stateDir ? resolvedTeamDirectory(stateDir) : null,
     bridgeVersion: cliVersion,
     launchMode: 'cli',
   };
@@ -858,16 +876,32 @@ function buildHealthReport(
   localSquadDir: string,
   repoRoot: string,
 ): HealthReport {
+  const configuredBackend = configuredBackendForResolution(localSquadDir);
+  let resolvedBackend: StateBackend | undefined;
+  if (configuredBackend) {
+    try {
+      resolvedBackend = captureResolverOutput(() =>
+        resolveStateBackend(localSquadDir, repoRoot, configuredBackend),
+      );
+    } catch {
+      resolvedBackend = undefined;
+    }
+  }
   const checks: HealthCheckItem[] = [
     checkTeam(stateDir),
     checkRegistryAndCharters(stateDir),
     checkRouting(stateDir),
-    checkStateBackend(localSquadDir, repoRoot),
+    checkStateBackend(localSquadDir, repoRoot, resolvedBackend),
     checkEnvVars(repoRoot),
   ];
   return {
     schema: HEALTH_SCHEMA,
-    metadata: healthMetadata(stateDir, localSquadDir),
+    metadata: healthMetadata(
+      stateDir,
+      configuredBackend === undefined
+        ? 'local'
+        : resolvedBackend?.name ?? 'unknown',
+    ),
     status: checks.some((check) => check.status === 'fail') ? 'fail' : 'pass',
     checks,
   };
@@ -905,7 +939,7 @@ function buildResolutionFailureReport(
   return {
     schema: HEALTH_SCHEMA,
     metadata: {
-      ...healthMetadata(null, path.join(repoRoot, '.squad')),
+      ...healthMetadata(null, 'unknown'),
       stateBackend: 'unknown',
     },
     status: 'fail',
