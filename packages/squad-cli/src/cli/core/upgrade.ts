@@ -664,10 +664,15 @@ function applyUpgradeFiles(dest: string, plan: SquadOwnedPlan, cliVersion: strin
   // Retirement is planned from the PREVIOUS manifest, so it must run before the new one is written.
   const retired = planRetiredFiles(dest, plan);
   const result = applySquadOwnedFiles(plan, { warn });
+  for (const file of plan.preserved) {
+    warn(`${file.relPath} has local customizations — treated as user-owned and left unchanged`);
+  }
   for (const rel of result.backedUp) info(`  To restore: copy ${path.basename(rel)}.local-backup → ${path.basename(rel)}`);
   if (result.written.length > 0) {
     success(`upgraded ${result.written.length} squad-owned file(s)${result.backedUp.length > 0 ? ` (${result.backedUp.length} file(s) backed up to .local-backup)` : ''}`);
     filesUpdated.push(...result.written);
+  } else if (plan.preserved.length > 0) {
+    info(`No squad-owned files written; preserved ${plan.preserved.length} customized workflow(s).`);
   } else {
     info(`squad-owned files already up to date (${plan.files.length} checked)`);
   }
