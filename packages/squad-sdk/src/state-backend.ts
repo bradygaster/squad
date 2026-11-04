@@ -14,6 +14,7 @@ import path from 'node:path';
 import { FSStorageProvider } from './storage/fs-storage-provider.js';
 import type { StorageProvider, StorageStats } from './storage/storage-provider.js';
 import { StateKeyConflictError, StateBackendUncertaintyError } from './storage/storage-error.js';
+import type { BackendStateStore } from './backend/types.js';
 
 const storage = new FSStorageProvider();
 
@@ -1098,6 +1099,11 @@ export class OrphanBranchBackend implements StateBackend {
  */
 export class StateBackendStorageAdapter implements StorageProvider {
   constructor(private backend: StateBackend, private squadDir: string) {}
+
+  async createLockStore(lockAnchor: string): Promise<BackendStateStore> {
+    const { createStateBackendStore } = await import('./backend/state-backend-store.js');
+    return createStateBackendStore(this.backend, { lockAnchor });
+  }
 
   // ── Async operations ─────────────────────────────────────────────────────
   async createIfAbsent(filePath: string, data: string): Promise<void> {

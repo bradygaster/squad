@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -105,7 +105,10 @@ describe('upgrade portability and destination newlines', () => {
       const body = readFileSync(path.join(root, file), 'utf8');
       expect(body, file).toContain('\r\n');
       expect(body, file).not.toMatch(/(?<!\r)\n/);
-      if (version === 'current' && file === path.join('.github', 'copilot-instructions.md')) {
+      if (file === path.join('.github', 'workflows', 'squad-ci.yml')) {
+        expect(body, file).toBe('OLD-MANAGED-BODY\r\nreplace this\r\n');
+        expect(existsSync(path.join(root, `${file}.local-backup`)), file).toBe(false);
+      } else if (version === 'current' && file === path.join('.github', 'copilot-instructions.md')) {
         expect(body).toBe('OLD-MANAGED-BODY\r\nreplace this\r\n');
       } else if (file === path.join('.github', 'copilot-instructions.md')) {
         // #2186: user-authored content in copilot-instructions.md is preserved, and the Squad section is appended
