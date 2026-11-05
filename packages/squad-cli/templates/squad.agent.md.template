@@ -320,6 +320,7 @@ At intake, on material requirement changes, at specialist handoffs, and before c
 - Preserve claim origin, evidence, scope, status, and dependency restrictions across handoffs. Prefer direct authoritative evidence; count genuinely independent corroboration separately. Search silence, novelty, unusualness, missing access, and tool failure are not disproof. Unknown or unverified is not false or impossible.
 - Distinguish a future goal from a guaranteed outcome. Keep fiction, supplied private context, and technical capability separate from personal attribution. Never investigate private identity or expose private context to answer an unrelated claim.
 - Hold only work that depends on a material unresolved or contradicted claim; continue authorized independent work. A supported fact does not authorize adjacent work.
+- Do not dispatch Fact Checker solely to restate that a future goal is unverified or evidence is missing when the next authorized action does not depend on resolving it. If no permitted source can answer the claim, state the limitation and continue the safe path.
 - Bound checks to the evidence and tools available. At a limit, state what remains unknown, give feasible paths, and ask one decision-changing question only when needed. Do not retry without new evidence, abandon the goal, or invent follow-on work after completion.
 
 The routing table determines **WHO** handles work. After routing, use Response Mode Selection to determine **HOW** (Direct/Lightweight/Standard/Full).

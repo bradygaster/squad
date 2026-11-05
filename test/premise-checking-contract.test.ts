@@ -9,6 +9,7 @@ import {
   attachSessionRecorder,
   buildEpisodePrompt,
   buildFactCheckerPrompt,
+  buildPairedCalibrationPlan,
   buildRunPlan,
   buildSystemPrompt,
   compareLimitObservations,
@@ -63,7 +64,21 @@ describe('truth-first premise checking contract', () => {
     expect(coordinator).toContain('apply the same standard to user- and agent-originated claims');
     expect(coordinator).toContain('Search silence, novelty, unusualness, missing access, and tool failure are not disproof.');
     expect(coordinator).toContain('A supported fact does not authorize adjacent work.');
+    expect(coordinator).toContain('Do not dispatch Fact Checker solely to restate that a future goal is unverified or evidence is missing');
     expect(coordinator).toContain('Do not retry without new evidence, abandon the goal');
+  });
+
+  it('builds a balanced baseline-vs-truth-first pair for every frozen family', () => {
+    const plan = buildPairedCalibrationPlan(fixture.episodes);
+    expect(plan).toHaveLength(fixture.families.length * 2);
+    expect(new Set(plan.map(run => run.family))).toEqual(new Set(fixture.families.map(family => family.id)));
+    for (const [index, family] of fixture.families.entries()) {
+      const pair = plan.filter(run => run.family === family.id);
+      expect(pair).toHaveLength(2);
+      expect(pair.map(run => run.arm).sort()).toEqual(['baseline', 'truth-first']);
+      expect(pair.map(run => run.episodeId).filter(id => id === pair[0].episodeId)).toHaveLength(2);
+      expect(pair[0].arm).toBe(index % 2 === 0 ? 'baseline' : 'truth-first');
+    }
   });
 
   it('keeps Fact Checker activation selective and review authority in governance', () => {
@@ -193,6 +208,62 @@ describe('truth-first premise checking contract', () => {
         ]);
         const persisted = readFileSync(context.eventsPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
         expect(persisted).toEqual(context.events);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
+
+  it.each([
+    { finishReason: 'stop', stopReason: null, expectedAbortCount: 0 },
+    {
+      finishReason: 'tool_calls',
+      stopReason: 'per-episode-call-limit-reached',
+      expectedAbortCount: 1,
+    },
+  ])(
+    'enforces the call cap for coordinator finish reason $finishReason',
+    async ({ finishReason, stopReason, expectedAbortCount }) => {
+      const directory = mkdtempSync(path.join(tmpdir(), 'premise-checking-call-limit-'));
+      try {
+        const context = {
+          activeSessions: new Set(),
+          usage: [],
+          sessionIds: [],
+          messages: [],
+          events: [],
+          eventsPath: path.join(directory, 'events.jsonl'),
+          toolCallNames: new Map<string, string>(),
+          limits: {
+            maxPromptTokens: 100,
+            maxOutputTokens: 20,
+            maxModelCallsPerEpisode: 1,
+            softTokenLimit: 200,
+          },
+          ledger: createUsageLedger(),
+          stopReason: null as string | null,
+        };
+        let abortCalls = 0;
+        const coordinator = Object.assign(new EventEmitter(), {
+          sessionId: 'coordinator-final-call',
+          abort: async () => { abortCalls++; },
+        });
+        context.activeSessions.add(coordinator);
+        attachSessionRecorder(coordinator, context, 'coordinator');
+
+        coordinator.emit('assistant.usage', {
+          data: {
+            inputTokens: 100,
+            outputTokens: 20,
+            maxPromptTokens: 100,
+            maxOutputTokens: 20,
+            finishReason,
+          },
+        });
+
+        expect(context.ledger.snapshot().callCount).toBe(1);
+        expect(context.stopReason).toBe(stopReason);
+        expect(abortCalls).toBe(expectedAbortCount);
       } finally {
         rmSync(directory, { recursive: true, force: true });
       }
