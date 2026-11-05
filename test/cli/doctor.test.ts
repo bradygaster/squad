@@ -654,6 +654,32 @@ describe('squad doctor', () => {
     expect(sdkCheck?.message).toContain('expected for global installs');
   });
 
+  it('does not advise npm install when cwd has only an unrelated node_modules (#2367)', async () => {
+    await scaffold(TEST_ROOT);
+    await mkdir(join(TEST_ROOT, 'node_modules'), { recursive: true });
+
+    const checks = await runDoctor(TEST_ROOT);
+    for (const name of ['vscode-jsonrpc exports field', 'copilot-sdk session.js ESM patch']) {
+      const check = checks.find((c: DoctorCheck) => c.name === name);
+      expect(check?.status).toBe('warn');
+      expect(check?.severity).toBe('info');
+      expect(check?.message).not.toContain('npm install');
+    }
+  });
+
+  it('still advises npm install when Squad is installed locally but deps are missing', async () => {
+    await scaffold(TEST_ROOT);
+    await mkdir(join(TEST_ROOT, 'node_modules', '@bradygaster', 'squad-cli'), { recursive: true });
+
+    const checks = await runDoctor(TEST_ROOT);
+    for (const name of ['vscode-jsonrpc exports field', 'copilot-sdk session.js ESM patch']) {
+      const check = checks.find((c: DoctorCheck) => c.name === name);
+      expect(check?.status).toBe('warn');
+      expect(check?.severity).toBeUndefined();
+      expect(check?.message).toContain('npm install');
+    }
+  });
+
   it('absolute teamRoot warning includes "Edit .squad/config.json"', async () => {
     await scaffold(TEST_ROOT);
     const abs = process.platform === 'win32' ? 'C:\\some\\absolute\\path' : '/some/absolute/path';

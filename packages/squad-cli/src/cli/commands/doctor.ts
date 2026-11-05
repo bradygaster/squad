@@ -458,6 +458,16 @@ export function checkNodeVersion(nodeVersion?: string): DoctorCheck {
 }
 
 /**
+ * True when `cwd` is a Squad checkout or has Squad installed locally. A bare
+ * `node_modules` belongs to the host application and says nothing about the
+ * runtime the invoked (e.g. standalone) Squad uses, so it is not enough.
+ */
+function isSquadDevContext(cwd: string): boolean {
+  return isDirectory(path.join(cwd, 'packages', 'squad-cli'))
+    || isDirectory(path.join(cwd, 'node_modules', '@bradygaster', 'squad-cli'));
+}
+
+/**
  * Check that vscode-jsonrpc has the `exports` field needed for Node 22/24+
  * strict ESM subpath resolution. Without it, `import('vscode-jsonrpc/node')`
  * fails with ERR_PACKAGE_PATH_NOT_EXPORTED.
@@ -499,8 +509,7 @@ function checkVscodeJsonrpcExports(cwd: string): DoctorCheck {
   }
 
   // Detect whether we're in a local dev context (node_modules exists) or global install
-  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
-  if (hasNodeModules) {
+  if (isSquadDevContext(cwd)) {
     return {
       name: 'vscode-jsonrpc exports field',
       status: 'warn',
@@ -555,8 +564,7 @@ function checkCopilotSdkSessionPatch(cwd: string): DoctorCheck {
   }
 
   // Detect whether we're in a local dev context (node_modules exists) or global install
-  const hasNodeModules = isDirectory(path.join(cwd, 'node_modules'));
-  if (hasNodeModules) {
+  if (isSquadDevContext(cwd)) {
     return {
       name: 'copilot-sdk session.js ESM patch',
       status: 'warn',
