@@ -542,6 +542,7 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
 
   const task = defineTool('task', {
     description: 'Dispatch the built-in Fact Checker for one bounded review of claims against selected fixture evidence. Other agent types are not available in this dialogue-only evaluation.',
+    overridesBuiltInTool: true,
     parameters: {
       type: 'object',
       properties: {
