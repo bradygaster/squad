@@ -10,6 +10,7 @@ import {
   buildEpisodePrompt,
   buildFactCheckerPrompt,
   buildPairedCalibrationPlan,
+  buildPairedRetryPlan,
   buildRemainingPairedRuns,
   buildRunPlan,
   buildSystemPrompt,
@@ -94,6 +95,15 @@ describe('truth-first premise checking contract', () => {
       Array.from({ length: 13 }, (_, index) => index + 4),
     );
     expect(remaining.some(run => run.index === 3)).toBe(false);
+  });
+
+  it('creates explicitly labeled retries from only valid frozen indices', () => {
+    const frozenPlan = buildPairedCalibrationPlan(fixture.episodes);
+    const retryPlan = buildPairedRetryPlan(fixture.episodes, [7, 9, 10, 12]);
+    expect(retryPlan).toEqual([7, 9, 10, 12].map(index => frozenPlan[index - 1]));
+    expect(() => buildPairedRetryPlan(fixture.episodes, [])).toThrow(/non-empty list/);
+    expect(() => buildPairedRetryPlan(fixture.episodes, [7, 7])).toThrow(/distinct positive integers/);
+    expect(() => buildPairedRetryPlan(fixture.episodes, [17])).toThrow(/outside the frozen paired plan/);
   });
 
   it('only resumes a soft-stop cohort with a strictly higher recorded threshold', () => {

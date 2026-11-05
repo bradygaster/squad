@@ -139,6 +139,21 @@ export function buildPairedCalibrationPlan(episodes) {
   return plan;
 }
 
+export function buildPairedRetryPlan(episodes, indexes) {
+  if (!Array.isArray(indexes) || indexes.length === 0
+    || indexes.some(index => !Number.isSafeInteger(index) || index <= 0)
+    || new Set(indexes).size !== indexes.length) {
+    throw new Error('Retry indices must be a non-empty list of distinct positive integers.');
+  }
+  const plan = buildPairedCalibrationPlan(episodes);
+  const byIndex = new Map(plan.map(run => [run.index, run]));
+  return indexes.map(index => {
+    const run = byIndex.get(index);
+    if (!run) throw new Error(`Retry index is outside the frozen paired plan: ${index}`);
+    return run;
+  });
+}
+
 export function buildRemainingPairedRuns(plan, completed) {
   const completedIndices = new Set(completed.map(run => run.index));
   return plan.filter(run => !completedIndices.has(run.index));
@@ -1346,13 +1361,22 @@ export async function runModelPreflight({ manifest, limits, persist, queryModel 
 }
 
 function parseArguments(args) {
-  const options = { mode: null, outDir: null, help: false };
+  const options = { mode: null, outDir: null, retryIndices: null, sourceDir: null, help: false };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--plan') options.mode = 'plan';
     else if (arg === '--paired-plan') options.mode = 'paired-plan';
     else if (arg === '--paired-calibration') options.mode = 'paired-calibration';
     else if (arg === '--paired-continue') options.mode = 'paired-continue';
+    else if (arg === '--paired-retry') options.mode = 'paired-retry';
+    else if (arg === '--indices') {
+      const raw = args[++index];
+      if (!raw || !/^\d+(,\d+)*$/.test(raw)) {
+        throw new Error('--indices must be a comma-separated list of positive integers.');
+      }
+      options.retryIndices = raw.split(',').map(Number);
+    }
+    else if (arg === '--source-dir') options.sourceDir = args[++index];
     else if (arg === '--pilot') options.mode = 'pilot';
     else if (arg === '--continue') options.mode = 'continue';
     else if (arg === '--out-dir') options.outDir = args[++index];
@@ -1370,6 +1394,7 @@ function printHelp() {
     '  node scripts/premise-checking-ab.mjs --paired-plan [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --paired-calibration [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --paired-continue --out-dir <same-private-path>',
+    '  node scripts/premise-checking-ab.mjs --paired-retry --indices <frozen-indices> --source-dir <original-private-path> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --pilot [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --continue --out-dir <same-private-path>',
     '',
@@ -1388,10 +1413,25 @@ function saveManifest(outputDirectory, manifest) {
 
 async function runMode(options) {
   const fixture = loadFixture();
-  const pairedCalibration = ['paired-calibration', 'paired-continue', 'paired-plan'].includes(options.mode);
-  const plan = pairedCalibration
-    ? buildPairedCalibrationPlan(fixture.episodes)
-    : buildRunPlan(fixture.episodes);
+  const pairedCalibration = ['paired-calibration', 'paired-continue', 'paired-plan', 'paired-retry'].includes(options.mode);
+  const fullPairedPlan = pairedCalibration ? buildPairedCalibrationPlan(fixture.episodes) : null;
+  const plan = options.mode === 'paired-retry'
+    ? buildPairedRetryPlan(fixture.episodes, options.retryIndices)
+    : pairedCalibration
+      ? fullPairedPlan
+      : buildRunPlan(fixture.episodes);
+  if (options.mode !== 'paired-retry' && options.retryIndices !== null) {
+    throw new Error('--indices is only valid with --paired-retry.');
+  }
+  if (options.mode === 'paired-retry' && options.retryIndices === null) {
+    throw new Error('--paired-retry requires --indices.');
+  }
+  if (options.mode !== 'paired-retry' && options.sourceDir !== null) {
+    throw new Error('--source-dir is only valid with --paired-retry.');
+  }
+  if (options.mode === 'paired-retry' && !options.sourceDir) {
+    throw new Error('--paired-retry requires --source-dir to preserve original trajectory records.');
+  }
   const outputDirectory = resolveOutputDirectory(options.outDir);
   const planPath = path.join(outputDirectory, 'plan.json');
 
@@ -1444,13 +1484,13 @@ async function runMode(options) {
       repeats: false,
       plan,
     });
-  } else if (options.mode === 'paired-calibration') {
+  } else if (['paired-calibration', 'paired-retry'].includes(options.mode)) {
     if (existsSync(path.join(outputDirectory, 'run-manifest.json'))) {
-      throw new Error('Paired calibration output already exists. Preserve it; do not overwrite or rerun those trajectories.');
+      throw new Error('Paired run output already exists. Preserve it; do not overwrite or rerun those trajectories.');
     }
     manifest = {
       createdAt: new Date().toISOString(),
-      mode: 'paired-calibration',
+      mode: options.mode,
       outputDirectory,
       baselineRef: BASELINE_REF,
       model: MODEL_ID,
@@ -1463,6 +1503,42 @@ async function runMode(options) {
       pairedValidation: null,
       budgetStopReason: null,
     };
+    if (options.mode === 'paired-retry') {
+      const sourceDirectory = path.resolve(options.sourceDir);
+      if (sourceDirectory === outputDirectory) {
+        throw new Error('Retry output must differ from the original calibration output.');
+      }
+      const sourcePlanPath = path.join(sourceDirectory, 'plan.json');
+      const sourceManifestPath = path.join(sourceDirectory, 'run-manifest.json');
+      if (!existsSync(sourcePlanPath) || !existsSync(sourceManifestPath)) {
+        throw new Error('Retry source must contain the original frozen plan and run manifest.');
+      }
+      const sourcePlan = JSON.parse(readFileSync(sourcePlanPath, 'utf8'));
+      const sourceManifest = JSON.parse(readFileSync(sourceManifestPath, 'utf8'));
+      if (sourceManifest.mode !== 'paired-calibration'
+        || sourceManifest.baselineRef !== BASELINE_REF
+        || JSON.stringify(sourcePlan.plan) !== JSON.stringify(fullPairedPlan)) {
+        throw new Error('Retry source does not match the original frozen paired calibration.');
+      }
+      const recordedStatuses = new Map(sourceManifest.completed.map(item => [item.index, item.status]));
+      for (const index of options.retryIndices) {
+        if (!recordedStatuses.has(index) || recordedStatuses.get(index) === 'completed') {
+          throw new Error(`Retry index ${index} is not a recorded incomplete trajectory in the source run.`);
+        }
+      }
+      writePrivateJson(planPath, {
+        mode: 'paired-retry',
+        baselineRef: BASELINE_REF,
+        model: MODEL_ID,
+        arms: ['baseline', 'truth-first'],
+        retryIndices: options.retryIndices,
+        sourcePlanPath,
+        trajectoryCount: plan.length,
+        holdout: false,
+        repeats: true,
+        plan,
+      });
+    }
   } else if (options.mode === 'paired-continue') {
     const manifestPath = path.join(outputDirectory, 'run-manifest.json');
     if (!existsSync(manifestPath)) throw new Error('No paired calibration manifest exists in this output directory.');
@@ -1622,7 +1698,7 @@ async function runMode(options) {
     process.stdout.write(`Pilot instrumentation ${validation.passed ? 'passed' : 'failed'}${warningText}; review ${path.join(outputDirectory, 'run-manifest.json')} before continuing.\n`);
     if (!validation.passed) process.exitCode = 2;
   }
-  if (pairedCalibration && ['paired-calibration', 'paired-continue'].includes(options.mode)) {
+  if (pairedCalibration && ['paired-calibration', 'paired-continue', 'paired-retry'].includes(options.mode)) {
     const completedRecords = manifest.completed.map(item => JSON.parse(readFileSync(item.runPath, 'utf8')));
     const issues = [];
     for (const record of completedRecords) {
