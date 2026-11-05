@@ -1894,7 +1894,7 @@ async function runResponseBoundaryCheck(options) {
   ensurePrivateOutputDirectory(outputDirectory);
   const fixture = loadFixture();
   const plan = buildResponseBoundaryPlan(fixture.episodes);
-  const ref = '1056da8d';
+  const ref = '946015ff9235d3cc9c16ef3fb9d1403cdf1abb29';
   const sources = Object.fromEntries(Object.entries({ ...SOURCE_PATHS, ...COMMON_SOURCE_PATHS })
     .map(([name, file]) => [name, readGitFile(ref, file)]));
   const systemPrompt = buildSystemPrompt({ ...sources, arm: 'truth-first' });

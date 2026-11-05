@@ -3,7 +3,6 @@ import { SquadClient } from '../packages/squad-sdk/src/adapter/client.js';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -277,11 +276,21 @@ describe('default outgoing response boundary', () => {
 
   it('proves the live current/candidate reviewer protocols differ only in continuation preservation', () => {
       const sourcePath = 'packages/squad-sdk/src/adapter/client.ts';
-      const previous = execFileSync('git', ['show', `1056da8d:${sourcePath}`], { encoding: 'utf8' });
-      const current = read(sourcePath);
+      const current = extractResponseReviewProtocol(read(sourcePath));
+      const previous = current.replace(
+        `that removes unsupported factual claims and unauthorized adjacent actions, qualifies necessary
+unknowns, and preserves the user's objective, requested authorized work, and useful continuations
+that do not depend on the unresolved claim. Do not abandon independent work because a related
+claim is unknown. Preserve proposals as proposals; do not imply new authorization or perform new
+work. Never claim task completion or truth verification without evidence.`,
+        `that removes unsupported extras, qualifies necessary unknowns, preserves helpful authorized
+plans and human options, and never claims task completion or truth verification without evidence.`,
+      );
+      expect(hash(previous), 'frozen prior reviewer protocol bytes must remain reproducible without Git history')
+        .toBe('067ca719ef4035cf4f42c84cd52f779307ebf366332630226f0e376717f9e490');
       const protocols = verifySingleContinuationInstructionChange(
-        extractResponseReviewProtocol(current),
-        extractResponseReviewProtocol(previous),
+        current,
+        previous,
       );
       expect(protocols.changedOnly).toBe('correction-preservation-instruction');
       expect(protocols.currentProtocol).not.toBe(protocols.previousProtocol);
