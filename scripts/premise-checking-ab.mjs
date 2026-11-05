@@ -14,6 +14,7 @@ import { homedir, tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { CopilotClient, defineTool } from '@github/copilot-sdk';
+import { EventEmitter } from 'node:events';
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(SCRIPT_DIR, '..');
@@ -552,6 +553,7 @@ export function attachSessionRecorder(session, context, role) {
     const message = {
       content: typeof event.data?.content === 'string' ? event.data.content : '',
       messageId: typeof event.id === 'string' ? event.id : null,
+      ...(event.data?.validation ? { validation: event.data.validation } : {}),
     };
     context.messages.push({ sessionId: session.sessionId, role, ...message });
     record('assistant.message', message);
@@ -1409,6 +1411,7 @@ function parseArguments(args) {
     else if (arg === '--paired-retry') options.mode = 'paired-retry';
     else if (arg === '--candidate-check') options.mode = 'candidate-check';
     else if (arg === '--paired-check') options.mode = 'paired-check';
+    else if (arg === '--response-boundary-check') options.mode = 'response-boundary-check';
     else if (arg === '--indices') {
       const raw = args[++index];
       if (!raw || !/^\d+(,\d+)*$/.test(raw)) {
@@ -1444,12 +1447,14 @@ function printHelp() {
     '  node scripts/premise-checking-ab.mjs --paired-retry --indices <frozen-indices> --source-dir <original-private-path> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --candidate-check --episodes <fixture-ids> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --paired-check --episodes <fixture-ids> --out-dir <new-private-path>',
+    '  node scripts/premise-checking-ab.mjs --response-boundary-check --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --pilot [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --continue --out-dir <same-private-path>',
     '',
     'The pilot runs the frozen A/B/C triplet for revenue-midflight-agent. --continue requires a passing pilot and SQUAD_TRUTH_FIRST_REVIEWED=1.',
     'Paired calibration runs one frozen case per family in alternating baseline/truth-first order (16 trajectories total).',
     'Paired checks run selected fixture cases against baseline and current truth-first prompts in alternating order.',
+    'Response-boundary check runs exactly four trajectories on two fixed cases, with frozen 93068859 prompts in both arms: raw SDK versus default SquadClient outgoing review.',
     'Live runs require private environment settings for per-request caps, the soft token threshold, per-episode call bound, and timeout.',
     'Artifacts must be written outside the repository. No automated truth scoring is performed.',
   ].join('\n'));
@@ -1844,10 +1849,182 @@ async function runMode(options) {
   saveAdjudicationGuide(outputDirectory);
 }
 
+export function buildResponseBoundaryPlan(episodes) {
+  const ids = ['animal-intake', 'inventory-midflight-agent'];
+  return ids.flatMap((id, index) => {
+    const episode = episodes.find(item => item.id === id);
+    if (!episode) throw new Error(`Missing response-boundary fixture: ${id}`);
+    return (index === 0 ? ['baseline', 'validated'] : ['validated', 'baseline'])
+      .map(arm => ({ episodeId: id, family: episode.family, arm }));
+  }).map((run, index) => ({ index: index + 1, ...run }));
+}
+
+async function runResponseBoundaryCheck(options) {
+  const { SquadClient } = await import('../packages/squad-sdk/dist/adapter/client.js');
+  const { EventBus } = await import('../packages/squad-sdk/dist/runtime/event-bus.js');
+  const limits = loadRunConfig();
+  const outputDirectory = resolveOutputDirectory(options.outDir ?? defaultOutputDirectory());
+  ensurePrivateOutputDirectory(outputDirectory);
+  const fixture = loadFixture();
+  const plan = buildResponseBoundaryPlan(fixture.episodes);
+  const ref = '93068859';
+  const sources = Object.fromEntries(Object.entries({ ...SOURCE_PATHS, ...COMMON_SOURCE_PATHS })
+    .map(([name, file]) => [name, readGitFile(ref, file)]));
+  const systemPrompt = buildSystemPrompt({ ...sources, arm: 'truth-first' });
+  const bundle = {
+    systemPrompt, systemPromptHash: sha256(systemPrompt),
+    sourceHashes: Object.fromEntries(Object.entries(sources).map(([name, text]) => [name, sha256(text)])),
+  };
+  const manifest = { kind: 'response-boundary', baselineRef: ref, model: MODEL_ID, plan, limits,
+    systemPromptHash: bundle.systemPromptHash, sourceHashes: bundle.sourceHashes, completed: [] };
+  let chargedTokens = 0;
+  const selected = options.retryIndices ?? [1, 2, 3, 4];
+  if (options.retryIndices) {
+    if (JSON.stringify(selected) !== '[3,4]' || !options.sourceDir) {
+      throw new Error('Boundary continuation only supports the unattempted inventory pair, --indices 3,4 with --source-dir.');
+    }
+    const previousDirectory = resolveOutputDirectory(options.sourceDir);
+    const previous = JSON.parse(readFileSync(path.join(previousDirectory, 'run-manifest.json'), 'utf8'));
+    if (previous.kind !== manifest.kind || previous.systemPromptHash !== manifest.systemPromptHash
+      || previous.completed.length !== 1 || previous.completed[0].index !== 1) {
+      throw new Error('Continuation source must retain exactly the completed animal baseline.');
+    }
+    const eventsPath = path.join(previousDirectory, 'run-2/events.jsonl');
+    const events = readFileSync(eventsPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+    const delivered = events.filter(event => event.eventType === 'assistant.message' && event.role === 'coordinator').at(-1);
+    const usageEvents = events.filter(event => event.eventType === 'assistant.usage').map(event => event.data);
+    if (!delivered || usageEvents.length === 0) throw new Error('Interrupted animal delivery/usage was not retained; do not rerun it.');
+    chargedTokens = Math.max(...usageEvents.map(usage => usage.cumulativeBudgetChargeTokens));
+    manifest.completed.push(...previous.completed, {
+      ...plan[1], status: 'interrupted-after-delivery', error: 'Prior runner exited during adapter cleanup; exact wall time and validation metadata were not persisted.',
+      durationMs: null, response: { data: { content: delivered.data.content } },
+      deliveredHash: sha256(delivered.data.content), usageEvents,
+      reviewedDraftHashes: events.filter(event => event.eventType === 'response.review_request').map(event => event.data.draftHash),
+      eventsPath, recovered: true,
+    });
+  }
+  writePrivateJson(path.join(outputDirectory, 'run-manifest.json'), manifest);
+  const model = await queryAvailableModel();
+  ensureCapabilityFits(model, limits);
+  writePrivateJson(path.join(outputDirectory, 'catalog.json'), model);
+  for (const run of plan.filter(item => selected.includes(item.index))) {
+    const episode = fixture.episodes.find(item => item.id === run.episodeId);
+    const directory = path.join(outputDirectory, `run-${run.index}`);
+    mkdirSync(directory, { mode: 0o700 });
+    const eventsPath = path.join(directory, 'events.jsonl');
+    writeFileSync(eventsPath, '', { flag: 'wx', mode: 0o600 });
+    const context = createRunContext(run, episode, bundle, limits, directory, eventsPath, chargedTokens);
+    const bus = new EventBus();
+    const reviewers = new Map();
+    let session;
+    bus.subscribe('session:created', event => {
+      if (event.payload?.role !== 'response-reviewer') return;
+      const emitter = new EventEmitter();
+      const facade = { sessionId: event.sessionId, on: (type, handler) => emitter.on(type, handler) };
+      reviewers.set(event.sessionId, emitter);
+      attachSessionRecorder(facade, context, 'response-reviewer');
+      context.activeSessions.delete(facade);
+      context.factCheckerSessionIds.push(event.sessionId);
+    });
+    bus.subscribe('session:message', event => {
+      if (event.payload?.role === 'response-reviewer') {
+        reviewers.get(event.sessionId)?.emit('assistant.usage', { data: event.payload.usage });
+      }
+    });
+    bus.subscribe('session:tool_call', event => {
+      recordContextEvent(context, { at: new Date().toISOString(),
+        eventType: 'response.review_request', sessionId: event.sessionId, data: event.payload });
+    });
+    const baseDirectory = process.env['COPILOT_HOME'] || path.join(homedir(), '.copilot');
+    const client = run.arm === 'baseline'
+      ? new CopilotClient({ mode: 'empty', baseDirectory, logLevel: 'error', useLoggedInUser: true })
+      : new SquadClient({ mode: 'empty', baseDirectory, logLevel: 'error', useLoggedInUser: true, eventBus: bus });
+    const started = Date.now();
+    let status = 'completed';
+    let error = null;
+    let response = null;
+    try {
+      if (run.arm === 'baseline') await client.start();
+      else await client.connect();
+      const sessionRef = { current: null };
+      const native = await createSessionWithinDeadline(client, {
+        model: MODEL_ID, reasoningEffort: 'medium', workingDirectory: directory,
+        enableSessionStore: false, availableTools: ['read_evidence'],
+        modelCapabilities: { limits: { max_prompt_tokens: limits.maxPromptTokens, max_output_tokens: limits.maxOutputTokens } },
+        tools: [makeEvidenceReadTool({ context, evidenceById: new Map(episode.evidence.map(item => [item.id, item])),
+          sessionRef, role: 'coordinator' })],
+        onPermissionRequest: rejectUnapprovedToolRequests(context),
+        systemMessage: { mode: 'append', content: systemPrompt },
+      }, context, 'coordinator');
+      sessionRef.current = native;
+      session = run.arm === 'baseline' ? native : {
+        sessionId: native.sessionId,
+        on: (type, handler) => native.on(type, event => handler({ type, data: event })),
+        sendAndWait: (...args) => native.sendAndWait(...args),
+        abort: () => native.abort(),
+        disconnect: () => native.close(),
+      };
+      attachSessionRecorder(session, context, 'coordinator');
+      response = await sendWithinDeadline(session, buildEpisodePrompt(episode), context);
+      if (!response?.data?.content) throw new Error('No delivered response.');
+      if (run.arm === 'validated') {
+        const validation = response.data.validation;
+        const requests = context.events.filter(event => event.eventType === 'response.review_request');
+        if (validation.deliveredHash !== sha256(response.data.content)
+          || JSON.stringify(validation.reviewedDraftHashes) !== JSON.stringify(requests.map(event => event.data.draftHash))) {
+          throw new Error('Delivered response does not match the recorded exact-draft review trace.');
+        }
+      }
+    } catch (caught) {
+      status = context.stopReason ?? 'failed';
+      error = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      for (const reviewerId of reviewers.keys()) {
+        if (!context.usage.some(usage => usage.sessionId === reviewerId)) {
+          recordMissingReviewerUsage(context, { sessionId: reviewerId });
+          status = context.stopReason ?? 'accounting-unknown';
+        }
+      }
+      context.activeSessions.delete(session);
+      try {
+        await session?.disconnect();
+      } catch (caught) {
+        status = 'cleanup-failed';
+        error ??= caught instanceof Error ? caught.message : String(caught);
+      }
+      try {
+        const failures = run.arm === 'baseline' ? await client.stop() : await client.disconnect();
+        if (failures.length > 0) throw new Error(failures.map(item => item.message).join('; '));
+      } catch (caught) {
+        status = 'cleanup-failed';
+        error ??= caught instanceof Error ? caught.message : String(caught);
+      }
+    }
+    const usage = context.ledger.snapshot();
+    chargedTokens = usage.cumulativeChargedTokens;
+    const record = { ...run, status, error, durationMs: Date.now() - started, response,
+      deliveredHash: response?.data?.content ? sha256(response.data.content) : null,
+      systemPromptHash: bundle.systemPromptHash, sourceHashes: bundle.sourceHashes,
+      priorTurnsHash: sha256(JSON.stringify(episode.priorTurns ?? [])),
+      usage, usageEvents: context.usage, messages: context.messages,
+      sessionIds: context.sessionIds, evidence: episode.evidence, eventsPath };
+    writePrivateJson(path.join(directory, 'run.json'), record);
+    manifest.completed.push(record);
+    writePrivateJson(path.join(outputDirectory, 'run-manifest.json'), manifest);
+    process.stdout.write(`${run.index}/4 ${run.episodeId} ${run.arm}: ${status}\n`);
+    if (status !== 'completed' || context.stopReason || chargedTokens >= limits.softTokenLimit) break;
+  }
+  process.stdout.write(`Private artifacts: ${outputDirectory}\n`);
+}
+
 async function main() {
   const options = parseArguments(process.argv.slice(2));
   if (options.help) {
     printHelp();
+    return;
+  }
+  if (options.mode === 'response-boundary-check') {
+    await runResponseBoundaryCheck(options);
     return;
   }
   if (options.mode === 'plan') {

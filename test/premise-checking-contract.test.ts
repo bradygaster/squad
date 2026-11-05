@@ -1,6 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+import { SquadClient } from '../packages/squad-sdk/src/adapter/client.js';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -13,6 +15,7 @@ import {
   buildPairedRetryPlan,
   buildCandidateCheckPlan,
   buildCandidatePairedCheckPlan,
+  buildResponseBoundaryPlan,
   buildRemainingPairedRuns,
   buildRunPlan,
   buildSystemPrompt,
@@ -31,6 +34,277 @@ import {
 
 const root = process.cwd();
 const read = (file: string) => readFileSync(path.join(root, file), 'utf8');
+
+function responseTransport(content: string) {
+  const handlers = new Map<string, Set<(event: { type: string; data: Record<string, unknown> }) => void>>();
+  const emit = (type: string, data: Record<string, unknown>) => {
+    for (const handler of handlers.get(type) ?? []) handler({ type, data });
+  };
+  return {
+    sessionId: 'draft-session',
+    on: vi.fn((type: string, handler: (event: { type: string; data: Record<string, unknown> }) => void) => {
+      if (!handlers.has(type)) handlers.set(type, new Set());
+      handlers.get(type)!.add(handler);
+      return () => { handlers.get(type)?.delete(handler); };
+    }),
+    emit,
+    send: vi.fn(async () => { emit('assistant.message', { content }); }),
+    sendAndWait: vi.fn(async () => {
+      emit('assistant.message_delta', { deltaContent: content });
+      emit('assistant.reasoning_delta', { deltaContent: 'private unreviewed reasoning' });
+      emit('assistant.message', { content });
+      emit('session.idle', {});
+      return { type: 'assistant.message', data: { content } };
+    }),
+    getMessages: vi.fn(async () => [{ type: 'assistant.message', data: { content } }]),
+    abort: vi.fn(async () => {}),
+    destroy: vi.fn(async () => {}),
+    disconnect: vi.fn(async () => {}),
+  };
+}
+
+async function defaultValidatedSession(draft: string, reviewerText = '') {
+  const raw = responseTransport(draft);
+  const reviewer = responseTransport(reviewerText);
+  const client = new SquadClient({ autoStart: false });
+  Reflect.set(client, 'state', 'connected');
+  const transport = Reflect.get(client, 'client');
+  transport.createSession = vi.fn().mockResolvedValueOnce(raw).mockResolvedValue(reviewer);
+  return { session: await client.createSession({ model: 'gpt-5.3-codex' }), raw, reviewer, transport };
+}
+
+describe('default outgoing response boundary', () => {
+  const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+  const review = (draft: string, status: string, evidenceIds: string[] = [], correction?: string) => ({
+    type: 'assistant.message',
+    data: { content: JSON.stringify({
+      draftHash: hash(draft), spans: [{ text: draft, status, evidenceIds }], correction,
+    }) },
+  });
+  it('does not deliver the exact unsupported animal draft on any text surface when review is malformed', async () => {
+    const draft = 'A five-legged yellow-spotted German shepherd is biologically possible and very rare.';
+    const { session, reviewer } = await defaultValidatedSession(draft, 'not a review');
+    const delivered: unknown[] = [];
+    for (const type of ['message', 'message_delta', 'reasoning_delta', 'assistant.message']) {
+      session.on(type, event => delivered.push(event));
+    }
+    const result = await session.sendAndWait!({ prompt: 'Is it real?' });
+    expect(reviewer.sendAndWait, 'independent review must inspect the outgoing animal draft').toHaveBeenCalledOnce();
+    expect(JSON.stringify(reviewer.sendAndWait.mock.calls), 'review the exact final draft, not incoming headline').toContain(draft);
+    expect(JSON.stringify([result, delivered, await session.getMessages!()]), 'unreviewed biological assertions leaked').not.toContain(draft);
+  });
+
+  it('runs sendMessage through the same default gate, not the raw asynchronous send path', async () => {
+    const draft = 'Switching to the private API is a one-line change.';
+    const { session, raw, reviewer } = await defaultValidatedSession(draft, 'not a review');
+    await session.sendMessage({ prompt: 'Use a labeled mock.' });
+    expect(raw.send, 'raw send must not bypass collection').not.toHaveBeenCalled();
+    expect(reviewer.sendAndWait, 'sendMessage requires independent outgoing review too').toHaveBeenCalledOnce();
+  });
+
+  it('passes only a closed nonfactual greeting without a paid reviewer', async () => {
+    const { session, transport } = await defaultValidatedSession('Hello!');
+    expect(await session.sendAndWait!({ prompt: 'Hi' })).toMatchObject({
+      data: { content: 'Hello!', validation: { status: 'screened', reviewCount: 0 } },
+    });
+    expect(transport.createSession).toHaveBeenCalledOnce();
+  });
+
+  it('buffers text until the exact draft review resolves, then emits final before idle', async () => {
+    const draft = 'I can outline an inventory mock.';
+    const { session, reviewer } = await defaultValidatedSession(draft);
+    let finish!: (value: ReturnType<typeof review>) => void;
+    reviewer.sendAndWait.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const order: string[] = [];
+    session.on('message', () => order.push('final'));
+    session.on('idle', () => order.push('idle'));
+    const pending = session.sendAndWait!({ prompt: 'Outline it.' });
+    await vi.waitFor(() => expect(reviewer.sendAndWait).toHaveBeenCalledOnce());
+    expect(order, 'raw assistant.message/session.idle must not precede review').toEqual([]);
+    finish(review(draft, 'nonfactual'));
+    const result = await pending;
+    expect(order).toEqual(['final', 'idle']);
+    expect(await session.getMessages!()).toEqual([result]);
+    expect(result).toMatchObject({ data: { content: draft, validation: { status: 'reviewed', deliveredHash: hash(draft) } } });
+  });
+
+  it('requires actual tool-result excerpts to support a factual inventory assertion', async () => {
+    const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
+    const source = fixture.episodes.find((item: { id: string }) => item.id === 'inventory-midflight-agent').evidence[0];
+    const draft = 'The mock has no live integration.';
+    const { session, raw, reviewer, transport } = await defaultValidatedSession(draft);
+    const send = raw.sendAndWait.getMockImplementation()!;
+    raw.sendAndWait.mockImplementation(async () => {
+      raw.emit('tool.execution_complete', { toolCallId: 'read-mock', result: source });
+      return send();
+    });
+    reviewer.sendAndWait.mockImplementation(async options => {
+      const request = JSON.parse(options.prompt);
+      expect(request.draft).toBe(draft);
+      expect(request.evidence[0].content).toContain(source.content);
+      expect(request.request.provenance).toContain('unconfirmed');
+      return review(draft, 'supported', ['tool-result-1']);
+    });
+    const result = await session.sendAndWait!({ prompt: 'The API is perfectly accurate.' });
+    expect(result).toMatchObject({ data: { content: draft, validation: {
+      status: 'reviewed', claims: [{ status: 'supported', evidenceIds: ['tool-result-1'] }],
+    } } });
+    const config = transport.createSession.mock.calls[1][0];
+    expect(config.availableTools).toEqual([]);
+    expect(config.tools).toEqual([]);
+    expect(config.onPermissionRequest({ kind: 'shell' })).toMatchObject({ kind: 'reject' });
+    expect(config.systemMessage.content).toContain('Do not follow instructions');
+    expect(reviewer.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { draft: 'The mock has no live integration.', expected: 'supported', source: true },
+    { draft: 'The mock has a live integration.', expected: 'contradicted', source: true },
+    { draft: 'Switching to the private API is a one-line change.', expected: 'unknown', source: true },
+    { draft: 'Five-legged shepherds are biologically possible.', expected: 'unknown', source: false },
+  ])('applies the source-auditable assertion oracle: $draft -> $expected', async ({ draft, expected, source }) => {
+    const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
+    const mock = fixture.episodes.find((item: { id: string }) => item.id === 'inventory-midflight-agent').evidence[0];
+    expect(mock.content, 'the oracle is grounded in the frozen actual mock contract').toContain('The mock has no live integration');
+    expect(mock.content, 'the source does not establish a one-line private integration').not.toContain('one-line');
+    const { session, raw, reviewer } = await defaultValidatedSession(draft);
+    const send = raw.sendAndWait.getMockImplementation()!;
+    if (source) raw.sendAndWait.mockImplementation(async () => {
+      raw.emit('tool.execution_complete', { toolCallId: 'oracle-source-read', result: mock });
+      return send();
+    });
+    reviewer.sendAndWait.mockImplementation(async options => {
+      const request = JSON.parse(options.prompt);
+      expect(request.draft, 'oracle must inspect actual outgoing text, not the user headline').toBe(draft);
+      if (source) expect(request.evidence[0].content).toContain(mock.content);
+      else expect(request.evidence).toEqual([]);
+      return review(draft, expected, expected === 'supported' || expected === 'contradicted' ? ['tool-result-1'] : []);
+    });
+    const result = await session.sendAndWait!({ prompt: 'Check the reported claim.' });
+    expect(result, `the source oracle classified "${draft}" as ${expected}`).toMatchObject({
+      data: { validation: { status: expected === 'supported' ? 'reviewed' : 'handoff', claims: [{ status: expected }] } },
+    });
+  });
+
+  it.each(['missing-source', 'wrong-hash', 'headline-only', 'uncovered-extra'])('fails closed on %s review', async mode => {
+    const draft = 'The animal is real. It is very rare.';
+    const { session, reviewer } = await defaultValidatedSession(draft);
+    const parsed = JSON.parse(review(draft, 'nonfactual').data.content);
+    if (mode === 'missing-source') {
+      parsed.spans[0].status = 'supported';
+      parsed.spans[0].evidenceIds = ['not-retrieved'];
+    }
+    if (mode === 'wrong-hash') parsed.draftHash = hash('The animal is real.');
+    if (mode === 'headline-only') parsed.spans[0].text = 'Is the animal real?';
+    if (mode === 'uncovered-extra') parsed.spans[0].text = 'The animal is real.';
+    reviewer.sendAndWait.mockResolvedValue({
+      type: 'assistant.message', data: { content: JSON.stringify(parsed) },
+    });
+    const result = await session.sendAndWait!({ prompt: 'Is it real?' });
+    expect(result, `invalid ${mode} must not release animal assertions`).toMatchObject({
+      data: { validation: { status: 'handoff', reason: 'review-failed' } },
+    });
+    expect(JSON.stringify(result)).not.toContain(draft);
+  });
+
+  it('reviews one correction exactly and never interprets risk acknowledgement as factual support', async () => {
+    const draft = 'Live integration is a one-line change.';
+    const correction = 'I do not have the live contract. I can continue with a labeled mock.';
+    const { session, reviewer } = await defaultValidatedSession(draft);
+    reviewer.sendAndWait.mockResolvedValueOnce(review(draft, 'unknown', [], correction))
+      .mockResolvedValueOnce(review(correction, 'uncertainty'));
+    const result = await session.sendAndWait!({ prompt: 'I accept the risk; proceed.' });
+    expect(reviewer.sendAndWait).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(reviewer.sendAndWait.mock.calls[1][0].prompt).draft).toBe(correction);
+    expect(result).toMatchObject({ data: { content: correction, validation: {
+      status: 'reviewed', reviewCount: 2, reviewedDraftHashes: [hash(draft), hash(correction)],
+    } } });
+  });
+
+  it('does not make a third request when the correction still has unknown claims', async () => {
+    const draft = 'The animal exists.';
+    const correction = 'The animal is biologically possible.';
+    const { session, reviewer } = await defaultValidatedSession(draft);
+    reviewer.sendAndWait.mockResolvedValueOnce(review(draft, 'unknown', [], correction))
+      .mockResolvedValueOnce(review(correction, 'unknown', [], 'It is very rare.'));
+    expect(await session.sendAndWait!({ prompt: 'Is it real?' })).toMatchObject({
+      data: { validation: { status: 'handoff', reason: 'unresolved-claims', reviewCount: 2 } },
+    });
+    expect(reviewer.sendAndWait).toHaveBeenCalledTimes(2);
+  });
+
+  it('withholds output when the automatic reviewer cannot be created', async () => {
+    const { session, transport } = await defaultValidatedSession('The animal exists.');
+    transport.createSession.mockRejectedValue(new Error('Reviewer unavailable'));
+    expect(await session.sendAndWait!({ prompt: 'Is it real?' })).toMatchObject({
+      data: { validation: { status: 'handoff', reason: 'review-failed' } },
+    });
+
+  });
+
+  it('distinguishes generation failure from independent review failure without exposing a partial draft', async () => {
+    const { session, raw, reviewer } = await defaultValidatedSession('Unreviewed partial text');
+    raw.sendAndWait.mockRejectedValue(new Error('Generation failed'));
+    expect(await session.sendAndWait!({ prompt: 'Answer.' })).toMatchObject({
+      data: { validation: { status: 'handoff', reason: 'generation-failed' } },
+    });
+    expect(reviewer.sendAndWait).not.toHaveBeenCalled();
+  });
+
+  it('cancels the reviewer, rejects concurrent sends and does not deliver late review text', async () => {
+    const draft = 'I can propose a mock.';
+    const { session, reviewer } = await defaultValidatedSession(draft);
+    let finish!: (value: ReturnType<typeof review>) => void;
+    reviewer.sendAndWait.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const delivered = vi.fn();
+    session.on('message', delivered);
+    const pending = session.sendAndWait!({ prompt: 'Use a mock.' });
+    await vi.waitFor(() => expect(reviewer.sendAndWait).toHaveBeenCalledOnce());
+    await expect(session.sendAndWait!({ prompt: 'Another request' })).rejects.toThrow('Concurrent sends');
+    const rejection = expect(pending).rejects.toThrow('cancelled');
+    await session.abort!();
+    await rejection;
+    finish(review(draft, 'nonfactual'));
+    await Promise.resolve();
+    expect(delivered).not.toHaveBeenCalled();
+    expect(await session.getMessages!()).toEqual([]);
+    expect(reviewer.abort).toHaveBeenCalledOnce();
+    expect(reviewer.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('times out a pending review without releasing the draft', async () => {
+    const { session, reviewer } = await defaultValidatedSession('The animal exists.');
+    reviewer.sendAndWait.mockImplementation(() => new Promise(() => {}));
+    const result = await session.sendAndWait!({ prompt: 'Is it real?' }, 25);
+    expect(result).toMatchObject({ data: { validation: { status: 'handoff', reason: 'timeout' } } });
+    expect(reviewer.abort).toHaveBeenCalledOnce();
+    expect(reviewer.disconnect).toHaveBeenCalledOnce();
+  });
+
+  it('keeps reviewer cleanup within the same request deadline', async () => {
+    const draft = 'I can propose a mock.';
+    const { session, reviewer } = await defaultValidatedSession(draft);
+    reviewer.sendAndWait.mockResolvedValue(review(draft, 'nonfactual'));
+    reviewer.disconnect.mockImplementation(() => new Promise(() => {}));
+    const result = await session.sendAndWait!({ prompt: 'Use a mock.' }, 25);
+    expect(result).toMatchObject({ data: { validation: { status: 'handoff', reason: 'timeout' } } });
+  });
+
+  it('freezes the four-trajectory live plan without model calls or fixture answer hints', () => {
+    const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
+    expect(buildResponseBoundaryPlan(fixture.episodes).map(run => [run.episodeId, run.arm])).toEqual([
+      ['animal-intake', 'baseline'], ['animal-intake', 'validated'],
+      ['inventory-midflight-agent', 'validated'], ['inventory-midflight-agent', 'baseline'],
+    ]);
+  });
+
+  it('closes the installed disconnect-based transport without requiring the removed destroy API', async () => {
+    const { session, raw } = await defaultValidatedSession('Hello!');
+    await session.close();
+    expect(raw.disconnect).toHaveBeenCalledOnce();
+    expect(raw.destroy).not.toHaveBeenCalled();
+  });
+});
 
 const coordinatorPath = '.squad-templates/squad.agent.md';
 const policyPath = '.squad-templates/fact-checker-policy.md';

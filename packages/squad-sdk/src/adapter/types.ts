@@ -8,6 +8,35 @@
  * @module adapter/types
  */
 
+/** A retrieved tool-result excerpt, not an instruction or a guarantee of source reliability. */
+export interface ResponseEvidence {
+  id: string;
+  provenance: string;
+  content: string;
+}
+
+/** Independent review of a contiguous UTF-16 span of the exact outgoing draft. */
+export interface ResponseClaimReview {
+  start: number;
+  end: number;
+  status: 'supported' | 'contradicted' | 'unknown' | 'nonfactual' | 'uncertainty';
+  evidenceIds: string[];
+}
+
+/** Audit metadata describes review scope, never a certification of world truth. */
+export interface ResponseValidation {
+  status: 'screened' | 'reviewed' | 'handoff';
+  draftHash: string;
+  deliveredHash: string;
+  reviewCount: number;
+  /** Classifications of the last reviewed candidate, not of a fallback handoff. */
+  claims: ResponseClaimReview[];
+  evidence: ResponseEvidence[];
+  /** Hashes bind each independent review, including the corrected draft if any. */
+  reviewedDraftHashes: string[];
+  reason?: string;
+}
+
 // ============================================================================
 // Session Configuration
 // ============================================================================
@@ -34,6 +63,14 @@ export interface SquadSessionConfig {
    * @example "claude-sonnet-4.5"
    */
   model?: string;
+
+  /** Per-session inference limits, also applied to the independent reviewer. */
+  modelCapabilities?: {
+    limits?: { max_prompt_tokens?: number; max_output_tokens?: number };
+  };
+
+  /** Whether the underlying runtime persists its raw transcript. */
+  enableSessionStore?: boolean;
 
   /**
    * Reasoning effort level for models that support it.
@@ -113,7 +150,9 @@ export interface SquadSessionConfig {
 
   /**
    * Enable streaming of assistant message and reasoning chunks.
-   * When true, delta events are sent as the response is generated.
+   * SquadClient buffers user-facing text for independent outgoing review.
+   * Raw text/reasoning deltas are not delivered, even when streaming is true.
+   * Tool and usage events remain observable; one reviewed message precedes idle.
    * @default false
    */
   streaming?: boolean;
@@ -883,6 +922,8 @@ export interface SquadSession {
 
   /**
    * Send a message to the session.
+   * SquadClient waits for outgoing validation, just like sendAndWait.
+   * Concurrent sends are rejected rather than mixing drafts/evidence.
    * @param options - Message content and delivery options
    * @returns Promise that resolves when the message is processed
    */
@@ -893,6 +934,11 @@ export interface SquadSession {
    * @param options - Message content and delivery options
    * @param timeout - Timeout in milliseconds (default: 60000)
    * @returns Promise that resolves with the final assistant message, or undefined
+   * SquadClient reviews substantive drafts automatically using a separate,
+   * tool-disabled session on the same model. Metadata is in data.validation.
+   * At most one correction is reviewed; review failures produce a bounded
+   * handoff, never the unreviewed draft. The timeout covers generation/review.
+   * Cancellation rejects and delivers no text.
    */
   sendAndWait?(options: SquadMessageOptions, timeout?: number): Promise<unknown>;
 
@@ -904,6 +950,8 @@ export interface SquadSession {
 
   /**
    * Retrieve all messages from this session.
+   * SquadClient returns only locally delivered, validated assistant messages,
+   * not the raw model transcript (including on resume).
    * @returns Promise that resolves with the session's message history
    */
   getMessages?(): Promise<unknown[]>;
