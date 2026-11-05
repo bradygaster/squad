@@ -27,6 +27,7 @@ vi.mock('@bradygaster/squad-sdk', async () => {
   const fs = await import('node:fs');
   const pathModule = await import('node:path');
   return {
+    VERSION: '2.0.0-preview.3',
     FSStorageProvider: class {
       existsSync(filePath: string): boolean {
         return fs.existsSync(filePath);
@@ -206,9 +207,18 @@ describe('health report contract', () => {
 
     expect(report).toEqual({
       schema: 'squad-health/v1',
+      metadata: expect.objectContaining({
+        cliVersion: expect.any(String),
+        sdkVersion: expect.any(String),
+        stateBackend: expect.any(String),
+        resolvedTeamDir: repoRoot,
+        bridgeVersion: expect.any(String),
+        launchMode: 'cli',
+      }),
       status: 'pass',
       checks: expect.any(Array),
     });
+    expect(report.metadata.bridgeVersion).toBe(report.metadata.cliVersion);
     expect(report.checks.map((item) => item.id)).toEqual([
       'team',
       'registry-charters',
@@ -754,13 +764,15 @@ describe('state backend readiness', () => {
     writeSquad('config.json', '{"stateBackend":"external-stub"}');
     mockResolveStateBackend.mockReturnValue({ name: 'local' });
 
-    const result = check(runSquadHealth(squadDir, repoRoot), 'state-backend');
+    const report = runSquadHealth(squadDir, repoRoot);
+    const result = check(report, 'state-backend');
 
     expect(
       result.status,
       'external-stub is a documented placeholder that the SDK resolves to the ' +
         'local backend, so a local resolution must not fail readiness',
     ).toBe('pass');
+    expect(report.metadata.stateBackend).toBe('local');
   });
 
   it('accepts the deprecated external alias resolving to the local backend', () => {
@@ -772,6 +784,29 @@ describe('state backend readiness', () => {
       'the deprecated "external" alias resolves to external-stub, which the SDK ' +
         'implements with the local backend',
     ).toBe('pass');
+  });
+
+  it('reports the runtime backend when readiness normalizes whitespace', () => {
+    writeSquad('config.json', '{"stateBackend":"two-layer "}');
+    mockResolveStateBackend.mockImplementation((...args: unknown[]) =>
+      args.length === 2 ? { name: 'local' } : { name: 'two-layer' },
+    );
+
+    const report = runSquadHealth(squadDir, repoRoot);
+
+    expect(check(report, 'state-backend').status).toBe('pass');
+    expect(report.metadata.stateBackend).toBe('local');
+    expect(mockResolveStateBackend).toHaveBeenNthCalledWith(
+      1,
+      squadDir,
+      repoRoot,
+    );
+    expect(mockResolveStateBackend).toHaveBeenNthCalledWith(
+      2,
+      squadDir,
+      repoRoot,
+      'two-layer',
+    );
   });
 
   it('fails closed when an explicitly configured backend cannot be checked', () => {
@@ -940,6 +975,11 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(0);
     expect(report.schema).toBe('squad-health/v1');
     expect(report.status).toBe('pass');
+    expect(report.metadata).toMatchObject({
+      stateBackend: 'local',
+      resolvedTeamDir: repoRoot,
+      launchMode: 'cli',
+    });
   });
 
   it('returns one and keeps JSON structured when any check fails', async () => {
@@ -966,8 +1006,13 @@ describe('CLI output and exit semantics', () => {
     unlinkSync(path.join(squadDir, 'routing.md'));
     writeSquad(
       'config.json',
-      JSON.stringify({ version: 1, teamRoot: 'shared-team' }),
+      JSON.stringify({
+        version: 1,
+        teamRoot: 'shared-team',
+        stateBackend: 'two-layer',
+      }),
     );
+    mockResolveStateBackend.mockReturnValue({ name: 'two-layer' });
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
       logs.push(String(line));
@@ -979,6 +1024,21 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(0);
     expect(report.status).toBe('pass');
     expect(check(report, 'registry-charters').status).toBe('pass');
+    expect(check(report, 'state-backend').status).toBe('skip');
+    expect(mockResolveStateBackend).toHaveBeenCalledWith(
+      squadDir,
+      repoRoot,
+    );
+    expect(report.metadata.stateBackend).toBe('two-layer');
+    expect(report.metadata.resolvedTeamDir).toBe(path.join(repoRoot, 'shared-team'));
+  });
+
+  it('preserves flat external state roots in metadata', () => {
+    const flatStateDir = path.join(repoRoot, 'external-state', 'team-a');
+    cpSync(squadDir, flatStateDir, { recursive: true });
+
+    expect(runSquadHealth(flatStateDir, repoRoot).metadata.resolvedTeamDir)
+      .toBe(flatStateDir);
   });
 
   it('emits the full JSON contract when state resolution fails', async () => {
@@ -1002,6 +1062,11 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(1);
     expect(report).toMatchObject({
       schema: 'squad-health/v1',
+      metadata: {
+        stateBackend: 'unknown',
+        resolvedTeamDir: null,
+        launchMode: 'cli',
+      },
       status: 'fail',
     });
     expect(report.checks.map((item) => item.id)).toEqual([

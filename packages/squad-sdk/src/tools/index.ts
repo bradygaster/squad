@@ -27,6 +27,15 @@ import { resolveUpstreams, buildEffectiveUpstreamContext, formatUpstreamReport }
 const tracer = trace.getTracer('squad-sdk');
 const require = createRequire(import.meta.url);
 const SQUAD_STATE_VERSION = (require('../../package.json') as { version?: string }).version ?? 'unknown';
+export const STATE_HEALTH_SCHEMA = 'squad-state-health/v1' as const;
+
+function resolvedTeamDirectory(squadRoot: string): string {
+  const resolved = path.resolve(squadRoot);
+  const basename = path.basename(resolved);
+  return basename === '.squad' || basename === '.ai-team'
+    ? path.dirname(resolved)
+    : resolved;
+}
 
 // --- Argument Sanitization ---
 
@@ -385,6 +394,8 @@ export class ToolRegistry {
   private memoryStore: LocalMemoryStore;
   private backendName: string;
   private runtimeVersion: string;
+  private cliVersion: string;
+  private launchMode: string;
   /**
    * Where `upstream.json` and `_upstream_repos/` live. Upstream declarations are project-local:
    * `squad upstream add|sync` writes them beside the project's `.squad/config.json` and
@@ -400,7 +411,13 @@ export class ToolRegistry {
     state?: SquadState,
     fanOutDepsGetter?: () => FanOutDependencies | undefined,
     hostInjectedCopilotAdapterClient?: CopilotMemoryProviderClient,
-    options: { backendName?: string; upstreamDir?: string; runtimeVersion?: string } = {},
+    options: {
+      backendName?: string;
+      upstreamDir?: string;
+      runtimeVersion?: string;
+      cliVersion?: string;
+      launchMode?: string;
+    } = {},
   ) {
     this.squadRoot = squadRoot;
     this.sessionPoolGetter = sessionPoolGetter;
@@ -410,6 +427,8 @@ export class ToolRegistry {
     // Plain FS storage is the `local` backend; adapters wrap a named git backend.
     this.backendName = options.backendName ?? (storage instanceof FSStorageProvider ? 'local' : 'unknown');
     this.runtimeVersion = options.runtimeVersion ?? SQUAD_STATE_VERSION;
+    this.cliVersion = options.cliVersion ?? 'unknown';
+    this.launchMode = options.launchMode ?? 'embedded';
     this.upstreamDir = options.upstreamDir ?? squadRoot;
     this.memoryStore = new LocalMemoryStore(storage, squadRoot, {
       rootKind: 'squad',
@@ -931,13 +950,35 @@ export class ToolRegistry {
 
     const stateHealth = defineTool<Record<string, never>>({
       name: 'squad_state_health',
-      description: 'Report the active Squad state backend (local, orphan, two-layer, ...) and storage layer so agents can verify they are using runtime-owned state instead of manual git/file choreography.',
+      description: 'Report active Squad state backend and storage metadata, including a versioned JSON health payload for external coordinators.',
       parameters: { type: 'object', properties: {} },
-      handler: async () => ({
-        textResultForLlm: `squad-state ${this.runtimeVersion}\nState backend: ${this.backendName}\nState backend storage: ${this.storage.constructor.name}\nTeam squad dir: ${this.squadRoot}`,
-        resultType: 'success',
-        toolTelemetry: { version: this.runtimeVersion, backend: this.backendName, storage: this.storage.constructor.name },
-      }),
+      handler: async () => {
+        const metadata = {
+          schema: STATE_HEALTH_SCHEMA,
+          cliVersion: this.cliVersion,
+          sdkVersion: SQUAD_STATE_VERSION,
+          stateBackend: this.backendName,
+          resolvedTeamDir: resolvedTeamDirectory(this.squadRoot),
+          bridgeVersion: this.runtimeVersion,
+          launchMode: this.launchMode,
+        };
+        return {
+          textResultForLlm: [
+            `squad-state ${this.runtimeVersion}`,
+            `Health metadata: ${JSON.stringify(metadata)}`,
+            `State backend: ${this.backendName}`,
+            `State backend storage: ${this.storage.constructor.name}`,
+            `Team squad dir: ${this.squadRoot}`,
+          ].join('\n'),
+          resultType: 'success',
+          toolTelemetry: {
+            version: this.runtimeVersion,
+            backend: this.backendName,
+            ...metadata,
+            storage: this.storage.constructor.name,
+          },
+        };
+      },
     });
 
     const stateUpstreams = defineTool<StateUpstreamsRequest>({

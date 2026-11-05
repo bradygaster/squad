@@ -84,6 +84,8 @@ export function createStateMcpToolRegistry(startDir: string): ToolRegistry {
     backendName: context.backend.name,
     upstreamDir: context.paths.projectDir,
     runtimeVersion: SERVER_INFO.version,
+    cliVersion: SERVER_INFO.version,
+    launchMode: 'stdio',
   });
 }
 

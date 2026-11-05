@@ -159,6 +159,18 @@ describe('ToolRegistry', () => {
       expect(toolNames).toEqual(expect.arrayContaining(builtInToolNames));
     });
 
+    it('preserves flat state roots in health metadata', async () => {
+      const health = registry.getTool('squad_state_health')!;
+      const result = await health.handler({});
+      const metadataLine = result.textResultForLlm
+        .split('\n')
+        .find(line => line.startsWith('Health metadata: '));
+
+      expect(metadataLine).toBeDefined();
+      expect(JSON.parse(metadataLine!.slice('Health metadata: '.length)))
+        .toMatchObject({ resolvedTeamDir: path.resolve(testRoot) });
+    });
+
     it('should register tools with descriptions and parameters', () => {
       const routeTool = registry.getTool('squad_route');
       expect(routeTool).toBeDefined();

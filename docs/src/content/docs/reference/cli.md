@@ -40,6 +40,7 @@ prerequisites, all supported methods, and update commands.
 | `squad start [--tunnel] [--port N] [--command cmd]` | Start Copilot with remote phone access via PTY and WebSocket | No |
 | `squad status` | Show which squad is active and why | Yes |
 | `squad doctor` | Validate squad setup integrity and diagnose issues (alias: `heartbeat`) | Yes |
+| `squad health [--json]` | Check team readiness; JSON includes the versioned runtime, state backend, and resolved team metadata | Yes |
 | `squad upgrade` | Upgrade Squad-owned files to latest version; locally customized files are saved as `<file>.local-backup` | Yes |
 | `squad upgrade --client <list>` | Add hosts to the configured set and refresh every configured host projection; user settings in `.mcp.json`, `.kiro/settings/mcp.json`, `opencode.json`, `.cursor/mcp.json` and `.codex/config.toml` are preserved | Yes |
 | `squad upgrade --state-backend <type>` | Migrate state backend (`orphan`, `two-layer`); installs git hooks automatically | Yes |
@@ -81,6 +82,10 @@ prerequisites, all supported methods, and update commands.
 | `squad scrub-emails [directory]` | Remove email addresses from Squad state files (default: `.squad/`) | No |
 | `squad state-mcp [--experimental-backend]` | Run the `squad_state` stdio MCP server; pass `--experimental-backend` (or `SQUAD_EXPERIMENTAL_BACKEND=1`) to also expose the 11 experimental `squad_backend_*` conversation tools (transcript/event-log only until a harness is registered) | Yes |
 | `squad --version` | Print installed version | No |
+
+`squad health --json` preserves the `squad-health/v1` schema and includes `metadata` fields for `cliVersion`, `sdkVersion`, `stateBackend`, `resolvedTeamDir`, `bridgeVersion`, and `launchMode`. Human-readable output is unchanged.
+
+The `squad_state_health` MCP tool includes the same fields in a JSON `Health metadata` line while retaining its existing state and storage lines.
 
 ### Remote Init Mode
 

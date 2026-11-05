@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { clearResolveSquadCache } from '@bradygaster/squad-sdk';
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { createStateMcpSession } from '../../packages/squad-cli/src/cli/commands/state-mcp.js';
-import { clearResolveSquadCache } from '../../packages/squad-sdk/src/resolution.js';
 
 const TMP = join(process.cwd(), `.test-state-mcp-${randomBytes(4).toString('hex')}`);
 const COLD_GIT_BACKEND_TIMEOUT_MS = 15_000;
@@ -96,6 +96,9 @@ describe('state-mcp bridge', () => {
     const version = JSON.parse(
       readFileSync(join(process.cwd(), 'packages/squad-cli/package.json'), 'utf8'),
     ).version as string;
+    const sdkVersion = JSON.parse(
+      readFileSync(join(process.cwd(), 'packages/squad-sdk/package.json'), 'utf8'),
+    ).version as string;
 
     await session.handleRequest({
       jsonrpc: '2.0',
@@ -109,6 +112,19 @@ describe('state-mcp bridge', () => {
     expect(content[0]!.text).toContain('State backend: two-layer');
     expect(content[0]!.text).toContain('State backend storage: StateBackendStorageAdapter');
     expect(content[0]!.text).toContain(`Team squad dir: ${join(TMP, '.squad')}`);
+    const metadataLine = content[0]!.text
+      .split('\n')
+      .find((line) => line.startsWith('Health metadata: '));
+    expect(metadataLine).toBeDefined();
+    expect(JSON.parse(metadataLine!.slice('Health metadata: '.length))).toEqual({
+      schema: 'squad-state-health/v1',
+      cliVersion: version,
+      sdkVersion,
+      stateBackend: 'two-layer',
+      resolvedTeamDir: TMP,
+      bridgeVersion: version,
+      launchMode: 'stdio',
+    });
   });
 
   it('lists the adapter-backed state root through every supported relative root alias', { timeout: 60_000 }, async () => {

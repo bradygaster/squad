@@ -9,6 +9,7 @@ import { readdirSync } from 'node:fs';
 import { parse as parseJsonc } from 'jsonc-parser';
 import {
   FSStorageProvider,
+  VERSION as SDK_VERSION,
   resolveStateBackend,
   verifyStateBackend,
   type StateBackend,
@@ -21,6 +22,7 @@ import {
   parseTeamMarkdown,
 } from '@bradygaster/squad-sdk/parsers';
 import { effectiveSquadDir } from '../core/effective-squad-dir.js';
+import { getPackageVersion } from '../core/version.js';
 
 const storage = new FSStorageProvider();
 
@@ -43,6 +45,14 @@ export interface HealthCheckItem {
 
 export interface HealthReport {
   schema: typeof HEALTH_SCHEMA;
+  metadata: {
+    cliVersion: string;
+    sdkVersion: string;
+    stateBackend: string;
+    resolvedTeamDir: string | null;
+    bridgeVersion: string;
+    launchMode: 'cli';
+  };
   /** `fail` when any check failed; informational items and warnings never fail the report. */
   status: 'pass' | 'fail';
   checks: HealthCheckItem[];
@@ -599,6 +609,44 @@ function checkStateBackend(
   }
 }
 
+function resolvedTeamDirectory(stateDir: string): string {
+  const resolved = path.resolve(stateDir);
+  const basename = path.basename(resolved);
+  return basename === '.squad' || basename === '.ai-team'
+    ? path.dirname(resolved)
+    : resolved;
+}
+
+function hasRuntimeBackendSetting(runtimeConfigDir: string): boolean {
+  const configPath = path.join(runtimeConfigDir, 'config.json');
+  if (!storage.existsSync(configPath)) return false;
+
+  try {
+    const config = parseJsonObject(
+      readRequiredFile(configPath, '.squad/config.json'),
+      '.squad/config.json',
+    );
+    return config.stateBackend !== undefined && config.stateBackend !== null;
+  } catch {
+    return true;
+  }
+}
+
+function healthMetadata(
+  stateDir: string | null,
+  stateBackend: string,
+): HealthReport['metadata'] {
+  const cliVersion = getPackageVersion();
+  return {
+    cliVersion,
+    sdkVersion: SDK_VERSION,
+    stateBackend,
+    resolvedTeamDir: stateDir ? resolvedTeamDirectory(stateDir) : null,
+    bridgeVersion: cliVersion,
+    launchMode: 'cli',
+  };
+}
+
 const ENV_JSON_CONFIGS = [
   { relativePath: '.mcp.json', serverKeys: ['mcpServers'] },
   {
@@ -816,18 +864,36 @@ function checkEnvVars(repoRoot: string): HealthCheckItem {
 
 function buildHealthReport(
   stateDir: string,
-  localSquadDir: string,
+  readinessConfigDir: string,
+  runtimeConfigDir: string,
   repoRoot: string,
 ): HealthReport {
+  const hasRuntimeBackend = hasRuntimeBackendSetting(runtimeConfigDir);
+  let resolvedBackend: StateBackend | undefined;
+  if (hasRuntimeBackend) {
+    try {
+      resolvedBackend = captureResolverOutput(() =>
+        resolveStateBackend(runtimeConfigDir, repoRoot),
+      );
+    } catch {
+      resolvedBackend = undefined;
+    }
+  }
   const checks: HealthCheckItem[] = [
     checkTeam(stateDir),
     checkRegistryAndCharters(stateDir),
     checkRouting(stateDir),
-    checkStateBackend(localSquadDir, repoRoot),
+    checkStateBackend(readinessConfigDir, repoRoot),
     checkEnvVars(repoRoot),
   ];
   return {
     schema: HEALTH_SCHEMA,
+    metadata: healthMetadata(
+      stateDir,
+      !hasRuntimeBackend
+        ? 'local'
+        : resolvedBackend?.name ?? 'unknown',
+    ),
     status: checks.some((check) => check.status === 'fail') ? 'fail' : 'pass',
     checks,
   };
@@ -837,7 +903,7 @@ export function runSquadHealth(
   squadDir: string,
   repoRoot: string,
 ): HealthReport {
-  return buildHealthReport(squadDir, squadDir, repoRoot);
+  return buildHealthReport(squadDir, squadDir, squadDir, repoRoot);
 }
 
 function buildResolutionFailureReport(
@@ -862,7 +928,15 @@ function buildResolutionFailureReport(
     ),
     checkEnvVars(repoRoot),
   ];
-  return { schema: HEALTH_SCHEMA, status: 'fail', checks };
+  return {
+    schema: HEALTH_SCHEMA,
+    metadata: {
+      ...healthMetadata(null, 'unknown'),
+      stateBackend: 'unknown',
+    },
+    status: 'fail',
+    checks,
+  };
 }
 
 function printHuman(report: HealthReport): void {
@@ -888,6 +962,7 @@ export async function runHealthCommand(
     report = buildHealthReport(
       dirs.stateDir,
       dirs.backendConfigDir,
+      dirs.local.path,
       repoRoot,
     );
   } catch (error) {
