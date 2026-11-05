@@ -11,6 +11,7 @@ import {
   buildFactCheckerPrompt,
   buildPairedCalibrationPlan,
   buildPairedRetryPlan,
+  buildCandidateCheckPlan,
   buildRemainingPairedRuns,
   buildRunPlan,
   buildSystemPrompt,
@@ -69,6 +70,29 @@ describe('truth-first premise checking contract', () => {
     expect(coordinator).toContain('A supported fact does not authorize adjacent work.');
     expect(coordinator).toContain('Do not dispatch Fact Checker solely to restate that a future goal is unverified or evidence is missing');
     expect(coordinator).toContain('Do not retry without new evidence, abandon the goal');
+    expect(coordinator).toContain('Label material uncertainty and avoid adding unrelated factual detail without a source.');
+    expect(coordinator).toContain('Do not claim work is shipped, working, stable, low-risk, or verified unless the corresponding action and evidence support that exact claim');
+  });
+
+  it('creates candidate-only checks from distinct existing fixture episodes', () => {
+    const plan = buildCandidateCheckPlan(fixture.episodes, [
+      'revenue-intake',
+      'animal-intake',
+      'inventory-intake',
+      'blocker-intake',
+    ]);
+    expect(plan.map(run => run.arm)).toEqual(Array(4).fill('truth-first'));
+    expect(plan.map(run => run.family)).toEqual([
+      'revenue-aspiration',
+      'unusual-animal',
+      'inventory-api',
+      'unsupported-blocker',
+    ]);
+    expect(() => buildCandidateCheckPlan(fixture.episodes, [])).toThrow(/non-empty list/);
+    expect(() => buildCandidateCheckPlan(fixture.episodes, ['animal-intake', 'animal-intake']))
+      .toThrow(/distinct IDs/);
+    expect(() => buildCandidateCheckPlan(fixture.episodes, ['not-a-fixture']))
+      .toThrow(/Unknown candidate-check episode/);
   });
 
   it('builds a balanced baseline-vs-truth-first pair for every frozen family', () => {

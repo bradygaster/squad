@@ -154,6 +154,27 @@ export function buildPairedRetryPlan(episodes, indexes) {
   });
 }
 
+export function buildCandidateCheckPlan(episodes, episodeIds) {
+  if (!Array.isArray(episodeIds) || episodeIds.length === 0
+    || episodeIds.some(id => typeof id !== 'string' || id.length === 0)
+    || new Set(episodeIds).size !== episodeIds.length) {
+    throw new Error('Candidate-check episode IDs must be a non-empty list of distinct IDs.');
+  }
+  return episodeIds.map((episodeId, index) => {
+    const episode = episodes.find(item => item.id === episodeId);
+    if (!episode) throw new Error(`Unknown candidate-check episode: ${episodeId}`);
+    return {
+      index: index + 1,
+      episodeId: episode.id,
+      family: episode.family,
+      placement: episode.placement,
+      origin: episode.origin,
+      control: Boolean(episode.control),
+      arm: 'truth-first',
+    };
+  });
+}
+
 export function buildRemainingPairedRuns(plan, completed) {
   const completedIndices = new Set(completed.map(run => run.index));
   return plan.filter(run => !completedIndices.has(run.index));
@@ -1361,7 +1382,14 @@ export async function runModelPreflight({ manifest, limits, persist, queryModel 
 }
 
 function parseArguments(args) {
-  const options = { mode: null, outDir: null, retryIndices: null, sourceDir: null, help: false };
+  const options = {
+    mode: null,
+    outDir: null,
+    retryIndices: null,
+    sourceDir: null,
+    episodeIds: null,
+    help: false,
+  };
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--plan') options.mode = 'plan';
@@ -1369,6 +1397,7 @@ function parseArguments(args) {
     else if (arg === '--paired-calibration') options.mode = 'paired-calibration';
     else if (arg === '--paired-continue') options.mode = 'paired-continue';
     else if (arg === '--paired-retry') options.mode = 'paired-retry';
+    else if (arg === '--candidate-check') options.mode = 'candidate-check';
     else if (arg === '--indices') {
       const raw = args[++index];
       if (!raw || !/^\d+(,\d+)*$/.test(raw)) {
@@ -1377,6 +1406,13 @@ function parseArguments(args) {
       options.retryIndices = raw.split(',').map(Number);
     }
     else if (arg === '--source-dir') options.sourceDir = args[++index];
+    else if (arg === '--episodes') {
+      const raw = args[++index];
+      if (!raw || !/^[a-z0-9-]+(,[a-z0-9-]+)*$/.test(raw)) {
+        throw new Error('--episodes must be a comma-separated list of fixture episode IDs.');
+      }
+      options.episodeIds = raw.split(',');
+    }
     else if (arg === '--pilot') options.mode = 'pilot';
     else if (arg === '--continue') options.mode = 'continue';
     else if (arg === '--out-dir') options.outDir = args[++index];
@@ -1395,6 +1431,7 @@ function printHelp() {
     '  node scripts/premise-checking-ab.mjs --paired-calibration [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --paired-continue --out-dir <same-private-path>',
     '  node scripts/premise-checking-ab.mjs --paired-retry --indices <frozen-indices> --source-dir <original-private-path> --out-dir <new-private-path>',
+    '  node scripts/premise-checking-ab.mjs --candidate-check --episodes <fixture-ids> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --pilot [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --continue --out-dir <same-private-path>',
     '',
@@ -1413,13 +1450,24 @@ function saveManifest(outputDirectory, manifest) {
 
 async function runMode(options) {
   const fixture = loadFixture();
-  const pairedCalibration = ['paired-calibration', 'paired-continue', 'paired-plan', 'paired-retry'].includes(options.mode);
-  const fullPairedPlan = pairedCalibration ? buildPairedCalibrationPlan(fixture.episodes) : null;
+  const pairedCalibration = [
+    'paired-calibration',
+    'paired-continue',
+    'paired-plan',
+    'paired-retry',
+    'candidate-check',
+  ].includes(options.mode);
+  const fullPairedPlan = ['paired-calibration', 'paired-continue', 'paired-plan', 'paired-retry'].includes(options.mode)
+    ? buildPairedCalibrationPlan(fixture.episodes)
+    : null;
+  const candidateBundle = options.mode === 'candidate-check' ? loadPromptBundle('truth-first') : null;
   const plan = options.mode === 'paired-retry'
     ? buildPairedRetryPlan(fixture.episodes, options.retryIndices)
-    : pairedCalibration
-      ? fullPairedPlan
-      : buildRunPlan(fixture.episodes);
+    : options.mode === 'candidate-check'
+      ? buildCandidateCheckPlan(fixture.episodes, options.episodeIds)
+      : pairedCalibration
+        ? fullPairedPlan
+        : buildRunPlan(fixture.episodes);
   if (options.mode !== 'paired-retry' && options.retryIndices !== null) {
     throw new Error('--indices is only valid with --paired-retry.');
   }
@@ -1431,6 +1479,12 @@ async function runMode(options) {
   }
   if (options.mode === 'paired-retry' && !options.sourceDir) {
     throw new Error('--paired-retry requires --source-dir to preserve original trajectory records.');
+  }
+  if (options.mode === 'candidate-check' && options.episodeIds === null) {
+    throw new Error('--candidate-check requires --episodes.');
+  }
+  if (options.mode !== 'candidate-check' && options.episodeIds !== null) {
+    throw new Error('--episodes is only valid with --candidate-check.');
   }
   const outputDirectory = resolveOutputDirectory(options.outDir);
   const planPath = path.join(outputDirectory, 'plan.json');
@@ -1484,7 +1538,7 @@ async function runMode(options) {
       repeats: false,
       plan,
     });
-  } else if (['paired-calibration', 'paired-retry'].includes(options.mode)) {
+  } else if (['paired-calibration', 'paired-retry', 'candidate-check'].includes(options.mode)) {
     if (existsSync(path.join(outputDirectory, 'run-manifest.json'))) {
       throw new Error('Paired run output already exists. Preserve it; do not overwrite or rerun those trajectories.');
     }
@@ -1503,6 +1557,22 @@ async function runMode(options) {
       pairedValidation: null,
       budgetStopReason: null,
     };
+    if (options.mode === 'candidate-check') {
+      manifest.mode = 'candidate-check';
+      manifest.candidateSystemPromptHash = candidateBundle.systemPromptHash;
+      writePrivateJson(planPath, {
+        mode: 'candidate-check',
+        baselineRef: null,
+        model: MODEL_ID,
+        arm: 'truth-first',
+        candidateSystemPromptHash: candidateBundle.systemPromptHash,
+        episodeIds: options.episodeIds,
+        trajectoryCount: plan.length,
+        holdout: false,
+        repeats: true,
+        plan,
+      });
+    }
     if (options.mode === 'paired-retry') {
       const sourceDirectory = path.resolve(options.sourceDir);
       if (sourceDirectory === outputDirectory) {
@@ -1698,7 +1768,7 @@ async function runMode(options) {
     process.stdout.write(`Pilot instrumentation ${validation.passed ? 'passed' : 'failed'}${warningText}; review ${path.join(outputDirectory, 'run-manifest.json')} before continuing.\n`);
     if (!validation.passed) process.exitCode = 2;
   }
-  if (pairedCalibration && ['paired-calibration', 'paired-continue', 'paired-retry'].includes(options.mode)) {
+  if (pairedCalibration && ['paired-calibration', 'paired-continue', 'paired-retry', 'candidate-check'].includes(options.mode)) {
     const completedRecords = manifest.completed.map(item => JSON.parse(readFileSync(item.runPath, 'utf8')));
     const issues = [];
     for (const record of completedRecords) {
