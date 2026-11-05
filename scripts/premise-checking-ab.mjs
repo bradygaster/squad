@@ -144,6 +144,12 @@ export function buildRemainingPairedRuns(plan, completed) {
   return plan.filter(run => !completedIndices.has(run.index));
 }
 
+export function canIncreaseSoftTokenLimit(previousLimit, nextLimit) {
+  return Number.isSafeInteger(previousLimit)
+    && Number.isSafeInteger(nextLimit)
+    && nextLimit > previousLimit;
+}
+
 export function buildEpisodePrompt(episode) {
   const evidenceCatalog = episode.evidence.length === 0
     ? 'No synthetic evidence items are attached.'
@@ -1473,15 +1479,20 @@ async function runMode(options) {
     if (manifest.attempts.some(attempt => attempt.status === 'started')) {
       throw new Error('An interrupted trajectory attempt exists; preserve its artifacts and do not continue.');
     }
-    if (manifest.budgetStopReason && manifest.budgetStopReason !== 'per-episode-call-limit-reached') {
+    if (manifest.budgetStopReason
+      && ![
+        'per-episode-call-limit-reached',
+        'request-limit-mismatch',
+        'soft-token-limit-reached',
+      ].includes(manifest.budgetStopReason)) {
       throw new Error(`Previous execution stopped: ${manifest.budgetStopReason}`);
     }
-    if (manifest.budgetStopReason === 'per-episode-call-limit-reached') {
+    if (['per-episode-call-limit-reached', 'request-limit-mismatch'].includes(manifest.budgetStopReason)) {
       manifest.continuationHistory ??= [];
       manifest.continuationHistory.push({
         at: new Date().toISOString(),
         priorStopReason: manifest.budgetStopReason,
-        note: 'Continuing only unattempted frozen rows; the failed trajectory remains recorded and is not retried.',
+        note: 'Continuing only unattempted frozen rows; the stopped trajectory remains recorded and is not retried.',
       });
       manifest.budgetStopReason = null;
     }
@@ -1504,6 +1515,21 @@ async function runMode(options) {
   let limits;
   try {
     limits = loadRunConfig();
+    if (options.mode === 'paired-continue' && manifest.budgetStopReason === 'soft-token-limit-reached') {
+      if (!canIncreaseSoftTokenLimit(manifest.softTokenLimit, limits.softTokenLimit)) {
+        throw new Error('The previous soft token threshold can only be resumed with a strictly higher recorded limit.');
+      }
+      manifest.continuationHistory ??= [];
+      manifest.continuationHistory.push({
+        at: new Date().toISOString(),
+        priorStopReason: manifest.budgetStopReason,
+        priorSoftTokenLimit: manifest.softTokenLimit,
+        nextSoftTokenLimit: limits.softTokenLimit,
+        note: 'Continuing only unattempted frozen rows under the increased monitored ceiling.',
+      });
+      manifest.budgetStopReason = null;
+    }
+    manifest.softTokenLimit = limits.softTokenLimit;
     await runModelPreflight({
       manifest,
       limits,

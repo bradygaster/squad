@@ -13,6 +13,7 @@ import {
   buildRemainingPairedRuns,
   buildRunPlan,
   buildSystemPrompt,
+  canIncreaseSoftTokenLimit,
   compareLimitObservations,
   createUsageLedger,
   hasEvidenceReviewTrace,
@@ -93,6 +94,13 @@ describe('truth-first premise checking contract', () => {
       Array.from({ length: 13 }, (_, index) => index + 4),
     );
     expect(remaining.some(run => run.index === 3)).toBe(false);
+  });
+
+  it('only resumes a soft-stop cohort with a strictly higher recorded threshold', () => {
+    expect(canIncreaseSoftTokenLimit(400_000, 726_233)).toBe(true);
+    expect(canIncreaseSoftTokenLimit(400_000, 400_000)).toBe(false);
+    expect(canIncreaseSoftTokenLimit(400_000, 399_999)).toBe(false);
+    expect(canIncreaseSoftTokenLimit(null, 726_233)).toBe(false);
   });
 
   it('keeps Fact Checker activation selective and review authority in governance', () => {
