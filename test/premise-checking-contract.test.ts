@@ -10,8 +10,13 @@ import {
   buildSystemPrompt,
   compareLimitObservations,
   createUsageLedger,
+  hasEvidenceReviewTrace,
   loadPromptBundle,
   normalizeUsage,
+  recordMissingReviewerUsage,
+  runModelPreflight,
+  shouldStopCampaign,
+  toolEventDetails,
   VALIDATION_NOTICE,
 } from '../scripts/premise-checking-ab.mjs';
 
@@ -39,6 +44,7 @@ describe('truth-first premise checking contract', () => {
       family: string;
       placement: string;
       origin: string;
+      priorTurns?: Array<{ speaker: string; content: string }>;
       oracle: {
         claims: Array<{ scope: string; label: string }>;
         disposition: string;
@@ -84,6 +90,10 @@ describe('truth-first premise checking contract', () => {
     expect(fixture.episodes.filter(episode => episode.control)).toHaveLength(4);
     for (const episode of fixture.episodes) {
       expect(episode.origin).toMatch(/^(user|agent)$/);
+      if (episode.placement === 'midflight') {
+        expect(episode.priorTurns?.length, episode.id).toBeGreaterThanOrEqual(2);
+        expect(episode.priorTurns?.some(turn => turn.speaker === 'Agent handoff'), episode.id).toBe(true);
+      }
       expect(episode.oracle.claims.length, episode.id).toBeGreaterThan(0);
       expect(episode.oracle.disposition, episode.id).not.toBe('');
       expect(Array.isArray(episode.oracle.continue), episode.id).toBe(true);
@@ -116,6 +126,34 @@ describe('truth-first premise checking contract', () => {
     expect(AVAILABLE_TOOLS).toEqual(['read_evidence', 'task']);
   });
 
+  it('uses the SDK completion event contract and keeps omitted fields unknown', () => {
+    expect(toolEventDetails({
+      toolCallId: 'call-1',
+    }, 'task')).toEqual({
+      toolName: 'task',
+      toolCallId: 'call-1',
+      success: null,
+      error: null,
+      arguments: null,
+      result: null,
+    });
+  });
+
+  it('delivers frozen preceding turns and a distinct current turn to every matched arm', () => {
+    const episode = fixture.episodes.find(item => item.id === 'revenue-midflight-agent');
+    expect(episode?.priorTurns).toHaveLength(3);
+    const prompt = buildEpisodePrompt(episode!);
+    expect(prompt).toContain('Frozen preceding conversation and handoff turns (in order):');
+    expect(prompt).toContain('Agent handoff: I found a synthetic market report excerpt');
+    expect(prompt.indexOf('Agent handoff:')).toBeLessThan(prompt.indexOf('Current user turn:'));
+    expect(prompt).toContain('Current user turn: An agent says a market report guarantees');
+
+    const matchedPrompts = buildRunPlan(fixture.episodes)
+      .filter(run => run.episodeId === episode!.id)
+      .map(run => buildEpisodePrompt(fixture.episodes.find(item => item.id === run.episodeId)!));
+    expect(new Set(matchedPrompts)).toEqual(new Set([prompt]));
+  });
+
   it('keeps frozen oracle labels out of the model-facing episode prompt', () => {
     const episode = fixture.episodes.find(item => item.id === 'revenue-midflight-agent');
     expect(episode).toBeDefined();
@@ -141,18 +179,139 @@ describe('truth-first premise checking contract', () => {
   it('keeps Fact Checker task data bounded and separate from its system guidance', () => {
     const prompt = buildFactCheckerPrompt({
       taskPrompt: 'Review the revenue guarantee claim in this episode.',
-      evidence: [{
-        id: 'market-report',
-        title: 'Market report',
-        provenance: 'synthetic primary source',
-        content: 'The report does not predict this product.',
-      }],
+      evidenceIds: ['market-report'],
     });
 
     expect(prompt).toContain('Review the revenue guarantee claim');
-    expect(prompt).toContain('synthetic primary source');
+    expect(prompt).toContain('read_evidence');
+    expect(prompt).toContain('market-report');
+    expect(prompt).not.toContain('The report does not predict this product.');
     expect(prompt).not.toContain('Fact Checker policy');
     expect(prompt).not.toContain('contradicted_by_supplied_source');
+  });
+
+  it('counts a Fact Checker review only after correlated fixture evidence reads and a completed review', () => {
+    const record = {
+      factCheckerSessionIds: ['reviewer-1'],
+      messages: [{ sessionId: 'reviewer-1', role: 'fact-checker', content: 'Review complete.' }],
+      usageEvents: [{
+        sessionId: 'reviewer-1',
+        role: 'fact-checker',
+        usageStatus: 'observed',
+        inputTokens: 10,
+        outputTokens: 4,
+      }],
+    };
+    const events = [
+      {
+        eventType: 'tool.execution_start',
+        sessionId: 'coordinator-1',
+        role: 'coordinator',
+        data: { toolName: 'task', toolCallId: 'task-1', arguments: { evidence_ids: ['market-report'] } },
+      },
+      {
+        eventType: 'tool.execution_start',
+        sessionId: 'reviewer-1',
+        role: 'fact-checker',
+        data: { toolName: 'read_evidence', toolCallId: 'read-1', arguments: { id: 'market-report' } },
+      },
+      {
+        eventType: 'evidence.read',
+        sessionId: 'reviewer-1',
+        role: 'fact-checker',
+        id: 'market-report',
+      },
+      {
+        eventType: 'tool.execution_complete',
+        sessionId: 'reviewer-1',
+        role: 'fact-checker',
+        data: { toolName: 'read_evidence', toolCallId: 'read-1' },
+      },
+      {
+        eventType: 'fact-checker.review_completed',
+        coordinatorSessionId: 'coordinator-1',
+        taskCallId: 'task-1',
+        reviewerSessionId: 'reviewer-1',
+        evidenceIds: ['market-report'],
+        reviewLength: 14,
+      },
+      {
+        eventType: 'tool.execution_complete',
+        sessionId: 'coordinator-1',
+        role: 'coordinator',
+        data: { toolName: 'task', toolCallId: 'task-1' },
+      },
+    ];
+
+    expect(hasEvidenceReviewTrace(record, events)).toBe(true);
+    const withoutRead = events.filter(event => event.eventType !== 'evidence.read');
+    expect(hasEvidenceReviewTrace(record, withoutRead)).toBe(false);
+    const afterReview = [...events];
+    const readIndex = afterReview.findIndex(event => event.eventType === 'evidence.read');
+    const [readEvent] = afterReview.splice(readIndex, 1);
+    afterReview.splice(afterReview.findIndex(event => event.eventType === 'fact-checker.review_completed') + 1, 0, readEvent);
+    expect(hasEvidenceReviewTrace(record, afterReview)).toBe(false);
+  });
+
+  it('records missing reviewer usage as unknown and halts later episodes', () => {
+    const context = {
+      usage: [],
+      stopReason: null as string | null,
+      activeSessions: new Set(),
+      ledger: createUsageLedger(),
+      limits: { maxPromptTokens: 100, maxOutputTokens: 20 },
+    };
+    const events: Array<Record<string, unknown>> = [];
+    let aborted = false;
+    recordMissingReviewerUsage(
+      context as never,
+      { sessionId: 'reviewer-failed' },
+      event => events.push(event),
+      () => { aborted = true; },
+    );
+
+    expect(context.usage).toHaveLength(1);
+    expect(context.usage[0]).toMatchObject({
+      sessionId: 'reviewer-failed',
+      role: 'fact-checker',
+      usageStatus: 'unknown',
+      inputTokens: null,
+      outputTokens: null,
+      reasoningTokens: null,
+    });
+    expect(context.stopReason).toBe('fact-checker-usage-unknown');
+    expect(events[0].eventType).toBe('assistant.usage_missing');
+    expect(aborted).toBe(true);
+    expect(shouldStopCampaign(context as never, 'completed')).toBe(true);
+    expect(context.ledger.snapshot()).toMatchObject({
+      callCount: 1,
+      chargedTokens: 120,
+      totals: { inputTokens: null, outputTokens: null, reasoningTokens: null },
+    });
+  });
+
+  it('persists preflight state before catalog lookup and retains catalog failures', async () => {
+    const manifest: Record<string, unknown> = {};
+    const snapshots: string[] = [];
+    const persist = () => snapshots.push(String((manifest.modelPreflight as { status: string }).status));
+    await expect(runModelPreflight({
+      manifest,
+      limits: { maxPromptTokens: 100, maxOutputTokens: 20 },
+      persist,
+      queryModel: async () => {
+        expect(snapshots).toEqual(['checking']);
+        throw new Error('catalog unavailable');
+      },
+    })).rejects.toThrow('catalog unavailable');
+
+    expect(snapshots).toEqual(['checking', 'failed']);
+    expect(manifest.modelPreflightAttempts).toHaveLength(1);
+    expect((manifest.modelPreflightAttempts as Array<{ status: string }>)[0].status).toBe('failed');
+    expect(manifest.modelPreflight).toMatchObject({
+      status: 'failed',
+      available: false,
+      error: 'catalog unavailable',
+    });
   });
 
   it('changes only the explicit validation notice in arm C', () => {

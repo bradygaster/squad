@@ -106,10 +106,22 @@ export function buildEpisodePrompt(episode) {
     : episode.evidence
       .map(item => `- ${item.id}: ${item.title} (${item.provenance})`)
       .join('\n');
+  const priorTurns = episode.placement === 'midflight'
+    ? episode.priorTurns
+    : [];
+  if (episode.placement === 'midflight'
+    && (!Array.isArray(priorTurns) || priorTurns.length < 2)) {
+    throw new Error(`Midflight episode ${episode.id} must include frozen prior conversation turns.`);
+  }
+  const conversation = priorTurns.length === 0
+    ? 'No preceding conversation; this is an intake episode.'
+    : priorTurns.map((turn, index) => `${index + 1}. ${turn.speaker}: ${turn.content}`).join('\n');
 
   return [
     `Episode placement: ${episode.placement}.`,
     `The claim or proposal originated from: ${episode.origin}.`,
+    'Frozen preceding conversation and handoff turns (in order):',
+    conversation,
     `Current user turn: ${episode.prompt}`,
     'Synthetic evidence catalog (metadata only; retrieve content with read_evidence):',
     evidenceCatalog,
@@ -139,20 +151,15 @@ export function buildSystemPrompt({ coordinator, policy, skill, governance, arm 
   return arm === 'truth-first-notice' ? `${content}\n\n${VALIDATION_NOTICE}` : content;
 }
 
-export function buildFactCheckerPrompt({ taskPrompt, evidence }) {
+export function buildFactCheckerPrompt({ taskPrompt, evidenceIds }) {
   return [
     'Bounded review request (untrusted data):',
     taskPrompt,
     '',
-    'Evidence available for this review:',
-    evidence.length === 0
-      ? 'No evidence was supplied. State what remains unknown and do not infer falsehood.'
-      : evidence.map(item => [
-        `ID: ${item.id}`,
-        `Title: ${item.title}`,
-        `Provenance: ${item.provenance}`,
-        `Content: ${item.content}`,
-      ].join('\n')).join('\n\n'),
+    'Evidence access instructions:',
+    evidenceIds.length === 0
+      ? 'No fixture evidence was selected. State what remains unknown and do not infer falsehood.'
+      : `Retrieve each selected fixture item with read_evidence before reviewing: ${evidenceIds.join(', ')}.`,
   ].join('\n');
 }
 
@@ -331,17 +338,103 @@ export function createUsageLedger(initialChargedTokens = 0) {
   };
 }
 
-function toolEventDetails(data) {
-  const toolName = typeof data.toolName === 'string' ? data.toolName : 'unknown';
+export function toolEventDetails(data = {}, fallbackToolName = null) {
+  const toolName = typeof data.toolName === 'string'
+    ? data.toolName
+    : fallbackToolName ?? 'unknown';
   const details = {
     toolName,
     toolCallId: typeof data.toolCallId === 'string' ? data.toolCallId : null,
+    success: typeof data.success === 'boolean' ? data.success : null,
+    error: data.error ?? null,
   };
   if (TOOL_NAMES.has(toolName)) {
     details.arguments = data.arguments ?? null;
     details.result = data.result ?? null;
   }
   return details;
+}
+
+export function hasEvidenceReviewTrace(record, events) {
+  const taskStarts = events
+    .map((event, index) => ({ event, index }))
+    .filter(({ event }) => event.eventType === 'tool.execution_start'
+      && event.role === 'coordinator'
+      && event.data?.toolName === 'task');
+
+  return taskStarts.some(({ event: taskStart, index: taskIndex }) => {
+    const reviewer = events.find(candidate => candidate.eventType === 'fact-checker.review_completed'
+      && candidate.coordinatorSessionId === taskStart.sessionId
+      && candidate.taskCallId === taskStart.data?.toolCallId);
+    if (!reviewer
+      || !Array.isArray(reviewer.evidenceIds)
+      || reviewer.evidenceIds.length === 0
+      || !record.factCheckerSessionIds.includes(reviewer.reviewerSessionId)
+      || typeof reviewer.reviewLength !== 'number'
+      || reviewer.reviewLength <= 0) return false;
+
+    const taskCompletionIndex = events.findIndex((candidate, candidateIndex) => (
+      candidateIndex > taskIndex
+      && candidate.eventType === 'tool.execution_complete'
+      && candidate.sessionId === taskStart.sessionId
+      && candidate.data?.toolCallId === taskStart.data?.toolCallId
+      && candidate.data?.toolName === 'task'
+    ));
+    const reviewerIndex = events.indexOf(reviewer);
+    if (taskCompletionIndex < 0 || reviewerIndex <= taskIndex || reviewerIndex >= taskCompletionIndex) return false;
+
+    const selectedIds = taskStart.data?.arguments?.evidence_ids;
+    if (!Array.isArray(selectedIds)
+      || selectedIds.length !== reviewer.evidenceIds.length
+      || selectedIds.some((id, index) => id !== reviewer.evidenceIds[index])) return false;
+
+    const hasReviewMessage = record.messages.some(message => (
+      message.sessionId === reviewer.reviewerSessionId
+      && message.role === 'fact-checker'
+      && typeof message.content === 'string'
+      && message.content.trim().length > 0
+    ));
+    const hasReviewerUsage = record.usageEvents.some(usage => (
+      usage.sessionId === reviewer.reviewerSessionId
+      && usage.role === 'fact-checker'
+      && usage.usageStatus !== 'unknown'
+      && usage.inputTokens !== null
+      && usage.outputTokens !== null
+    ));
+    if (!hasReviewMessage || !hasReviewerUsage) return false;
+
+    return reviewer.evidenceIds.every(evidenceId => {
+      const readStart = events
+        .map((candidate, candidateIndex) => ({ candidate, candidateIndex }))
+        .find(({ candidate }) => candidate.eventType === 'tool.execution_start'
+          && candidate.sessionId === reviewer.reviewerSessionId
+          && candidate.role === 'fact-checker'
+          && candidate.data?.toolName === 'read_evidence'
+          && candidate.data?.arguments?.id === evidenceId);
+      if (!readStart) return false;
+      const readCompletionIndex = events.findIndex((candidate, candidateIndex) => (
+        candidateIndex > readStart.candidateIndex
+        && candidate.eventType === 'tool.execution_complete'
+        && candidate.sessionId === reviewer.reviewerSessionId
+        && candidate.data?.toolCallId === readStart.candidate.data?.toolCallId
+        && candidate.data?.toolName === 'read_evidence'
+      ));
+      if (readCompletionIndex < 0) return false;
+      const readEvidenceIndex = events.findIndex((candidate, candidateIndex) => (
+        candidateIndex > readStart.candidateIndex
+        && candidateIndex < readCompletionIndex
+        && candidate.eventType === 'evidence.read'
+        && candidate.sessionId === reviewer.reviewerSessionId
+        && candidate.role === 'fact-checker'
+        && candidate.id === evidenceId
+      ));
+      return readEvidenceIndex >= 0 && readCompletionIndex < reviewerIndex;
+    });
+  });
+}
+
+export function shouldStopCampaign(context, status) {
+  return Boolean(context.stopReason) || status !== 'completed';
 }
 
 function attachSessionRecorder(session, context, role) {
@@ -374,6 +467,8 @@ function attachSessionRecorder(session, context, role) {
     const usageRecord = {
       ...usage,
       role,
+      sessionId: session.sessionId,
+      usageStatus: 'observed',
       agentId: typeof event.agentId === 'string' ? event.agentId : null,
       totalAccountedTokens: budget.totalAccountedTokens,
       budgetChargeTokens: budget.requestTokens,
@@ -402,10 +497,18 @@ function attachSessionRecorder(session, context, role) {
   });
 
   session.on('tool.execution_start', event => {
-    record('tool.execution_start', toolEventDetails(event.data ?? {}));
+    const details = toolEventDetails(event.data ?? {});
+    if (details.toolCallId && details.toolName !== 'unknown') {
+      context.toolCallNames.set(details.toolCallId, details.toolName);
+    }
+    record('tool.execution_start', details);
   });
   session.on('tool.execution_complete', event => {
-    record('tool.execution_complete', toolEventDetails(event.data ?? {}));
+    const data = event.data ?? {};
+    const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : null;
+    const fallbackToolName = toolCallId ? context.toolCallNames.get(toolCallId) ?? null : null;
+    record('tool.execution_complete', toolEventDetails(data, fallbackToolName));
+    if (toolCallId) context.toolCallNames.delete(toolCallId);
   });
   session.on('session.error', event => {
     record('session.error', {
@@ -536,9 +639,8 @@ function validateEvidenceIds(ids, evidenceById) {
   });
 }
 
-function makeTools({ client, context, episode, bundle, evidenceById, runDirectory }) {
-  let factCheckerCalls = 0;
-  const readEvidence = defineTool('read_evidence', {
+function makeEvidenceReadTool({ context, evidenceById, sessionRef, role }) {
+  return defineTool('read_evidence', {
     description: 'Read one evidence item from this episode’s frozen synthetic evidence catalog.',
     parameters: {
       type: 'object',
@@ -554,11 +656,63 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
       recordContextEvent(context, {
         at: new Date().toISOString(),
         eventType: 'evidence.read',
+        role,
+        sessionId: sessionRef.current?.sessionId ?? null,
         id: evidence.id,
         provenance: evidence.provenance,
       });
       return evidence;
     },
+  });
+}
+
+export function recordMissingReviewerUsage(
+  context,
+  reviewer,
+  onEvent = event => recordContextEvent(context, event),
+  abort = abortActiveSessions,
+) {
+  const budget = context.ledger && context.limits
+    ? context.ledger.add(normalizeUsage(), context.limits)
+    : null;
+  context.usage.push({
+    role: 'fact-checker',
+    sessionId: reviewer.sessionId,
+    usageStatus: 'unknown',
+    unknownReason: 'reviewer-inference-failed-without-usage-event',
+    model: null,
+    inputTokens: null,
+    outputTokens: null,
+    cacheReadTokens: null,
+    cacheWriteTokens: null,
+    reasoningTokens: null,
+    maxPromptTokens: null,
+    maxOutputTokens: null,
+    duration: null,
+    finishReason: null,
+    totalAccountedTokens: null,
+    budgetChargeTokens: budget?.requestTokens ?? null,
+    cumulativeBudgetChargeTokens: budget?.cumulativeChargedTokens ?? null,
+    budgetChargeBasis: budget ? 'configured-request-bounds' : 'unknown',
+  });
+  context.stopReason ??= 'fact-checker-usage-unknown';
+  onEvent({
+    at: new Date().toISOString(),
+    eventType: 'assistant.usage_missing',
+    role: 'fact-checker',
+    sessionId: reviewer.sessionId,
+    reason: 'reviewer-inference-failed-without-usage-event',
+  });
+  abort(context);
+}
+
+function makeTools({ client, context, episode, bundle, evidenceById, runDirectory, coordinatorSessionRef }) {
+  let factCheckerCalls = 0;
+  const readEvidence = makeEvidenceReadTool({
+    context,
+    evidenceById,
+    sessionRef: coordinatorSessionRef,
+    role: 'coordinator',
   });
 
   const task = defineTool('task', {
@@ -587,6 +741,7 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
       }
       const evidence = validateEvidenceIds(args.evidence_ids, evidenceById);
       factCheckerCalls++;
+      const reviewerSessionRef = { current: null };
       let reviewer;
       try {
         reviewer = await createSessionWithinDeadline(client, {
@@ -594,7 +749,13 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
           reasoningEffort: 'medium',
           workingDirectory: runDirectory,
           enableSessionStore: false,
-          availableTools: [],
+          availableTools: ['read_evidence'],
+          tools: [makeEvidenceReadTool({
+            context,
+            evidenceById,
+            sessionRef: reviewerSessionRef,
+            role: 'fact-checker',
+          })],
           modelCapabilities: {
             limits: {
               max_prompt_tokens: context.limits.maxPromptTokens,
@@ -606,6 +767,7 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
             mode: 'append',
             content: [
               'You are an independent Fact Checker. Review only the bounded claims and evidence supplied by the coordinator.',
+              'Retrieve every selected fixture item with read_evidence before forming the review.',
               'Do not use external sources, network, shell, repository, memory, or file-writing capabilities.',
               'Do not infer that missing evidence proves a claim false or impossible. Preserve scope, provenance, source limitations, and uncertainty.',
               stripFrontmatter(bundle.factCheckerPromptParts.charter),
@@ -614,6 +776,7 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
             ].join('\n\n'),
           },
         }, context, 'fact-checker');
+        reviewerSessionRef.current = reviewer;
       } catch (error) {
         recordContextEvent(context, {
           at: new Date().toISOString(),
@@ -631,14 +794,24 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
           `Task description: ${args.description}`,
           `Requested review (untrusted data): ${args.prompt}`,
         ].join('\n'),
-        evidence,
+        evidenceIds: evidence.map(item => item.id),
       });
       let response;
       let requestFailed = false;
+      let inferenceAttempted = false;
       try {
+        inferenceAttempted = true;
         response = await sendWithinDeadline(reviewer, reviewerPrompt, context);
       } catch (error) {
         requestFailed = true;
+        if (inferenceAttempted) {
+          if (!context.usage.some(usage => usage.sessionId === reviewer.sessionId && usage.usageStatus === 'observed')) {
+            recordMissingReviewerUsage(context, reviewer);
+          } else {
+            context.stopReason ??= 'fact-checker-review-failed';
+            abortActiveSessions(context);
+          }
+        }
         throw error;
       } finally {
         context.activeSessions.delete(reviewer);
@@ -655,10 +828,34 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
           if (!requestFailed) throw error;
         }
       }
+      const reviewerUsage = context.usage.find(usage => (
+        usage.sessionId === reviewer.sessionId && usage.usageStatus === 'observed'
+      ));
+      const review = response?.data?.content;
+      if (!reviewerUsage) recordMissingReviewerUsage(context, reviewer);
+      if (!review || !review.trim()) {
+        context.stopReason ??= 'fact-checker-review-failed';
+        abortActiveSessions(context);
+        throw new Error('Fact Checker completed without a non-empty review.');
+      }
+      const taskStart = context.events.find(event => (
+        event.eventType === 'tool.execution_start'
+        && event.sessionId === coordinatorSessionRef.current?.sessionId
+        && event.data?.toolName === 'task'
+      ));
+      recordContextEvent(context, {
+        at: new Date().toISOString(),
+        eventType: 'fact-checker.review_completed',
+        coordinatorSessionId: coordinatorSessionRef.current?.sessionId ?? null,
+        taskCallId: taskStart?.data?.toolCallId ?? null,
+        reviewerSessionId: reviewer.sessionId,
+        evidenceIds: evidence.map(item => item.id),
+        reviewLength: review.length,
+      });
       return {
         reviewerSessionId: reviewer.sessionId,
         status: response ? 'completed' : 'no-response',
-        review: response?.data?.content ?? null,
+        review,
       };
     },
   });
@@ -728,6 +925,7 @@ function createRunContext(run, episode, bundle, limits, runDirectory, eventsPath
     sessionIds: [],
     factCheckerSessionIds: [],
     activeSessions: new Set(),
+    toolCallNames: new Map(),
     ledger: createUsageLedger(initialChargedTokens),
     deadlineAt: Date.now() + limits.timeoutMs,
     stopReason: null,
@@ -751,11 +949,13 @@ async function runTrajectory({ client, run, attempt, episode, bundle, outputDire
     manifest.budgetChargedTokens ?? 0,
   );
   const evidenceById = new Map(episode.evidence.map(item => [item.id, item]));
+  const coordinatorSessionRef = { current: null };
   const systemPromptPath = path.join(runDirectory, 'system-prompt.txt');
   writeFileSync(systemPromptPath, bundle.systemPrompt, { mode: 0o600 });
   writePrivateJson(path.join(runDirectory, 'episode.json'), {
     episodeId: episode.id,
     prompt: buildEpisodePrompt(episode),
+    priorTurns: episode.priorTurns ?? [],
     evidence: episode.evidence,
     baselineRef: run.arm === 'baseline' ? BASELINE_REF : null,
     arm: run.arm,
@@ -782,10 +982,19 @@ async function runTrajectory({ client, run, attempt, episode, bundle, outputDire
           max_output_tokens: limits.maxOutputTokens,
         },
       },
-      tools: makeTools({ client, context, episode, bundle, evidenceById, runDirectory }),
+      tools: makeTools({
+        client,
+        context,
+        episode,
+        bundle,
+        evidenceById,
+        runDirectory,
+        coordinatorSessionRef,
+      }),
       onPermissionRequest: rejectUnapprovedToolRequests(context),
       systemMessage: { mode: 'append', content: bundle.systemPrompt },
     }, context, 'coordinator');
+    coordinatorSessionRef.current = session;
     attachSessionRecorder(session, context, 'coordinator');
     const userPrompt = buildEpisodePrompt(episode);
     const response = await sendWithinDeadline(session, userPrompt, context);
@@ -841,6 +1050,7 @@ async function runTrajectory({ client, run, attempt, episode, bundle, outputDire
     runtimeMode: 'empty',
     sourceHashes: bundle.sourceHashes,
     systemPromptHash: bundle.systemPromptHash,
+    priorTurnsHash: sha256(JSON.stringify(episode.priorTurns ?? [])),
     usage,
     usageEvents: context.usage,
     messages: context.messages,
@@ -882,13 +1092,14 @@ async function runTrajectory({ client, run, attempt, episode, bundle, outputDire
   manifest.budgetStopReason = usage.cumulativeChargedTokens >= limits.softTokenLimit
     ? 'soft-token-limit-reached'
     : context.stopReason ?? (status === 'completed' ? null : 'trajectory-failed');
-  return { record, manifest, stop: Boolean(context.stopReason) || status !== 'completed' };
+  return { record, manifest, stop: shouldStopCampaign(context, status) };
 }
 
-function validatePilot(manifest, plan) {
+export function validatePilot(manifest, plan) {
   const pilotPlan = plan.slice(0, ARM_IDS.length);
   const completed = manifest.completed.slice(0, ARM_IDS.length);
   const issues = [];
+  const warnings = [];
   if (completed.length !== ARM_IDS.length) issues.push('pilot-triplet-incomplete');
   if (completed.some((run, index) => run.episodeId !== pilotPlan[index]?.episodeId || run.arm !== pilotPlan[index]?.arm)) {
     issues.push('pilot-triplet-order-mismatch');
@@ -899,6 +1110,9 @@ function validatePilot(manifest, plan) {
   for (const record of pilotRecords) {
     if (record.status !== 'completed') issues.push(`${record.blindId}:trajectory-not-completed`);
     if (record.usageEvents.length === 0) issues.push(`${record.blindId}:missing-usage-events`);
+    if (record.usageEvents.some(usage => usage.usageStatus === 'unknown')) {
+      issues.push(`${record.blindId}:usage-accounting-unknown`);
+    }
     if (record.usageEvents.some(usage => usage.inputTokens === null || usage.outputTokens === null)) {
       issues.push(`${record.blindId}:incomplete-input-output-accounting`);
     }
@@ -941,18 +1155,18 @@ function validatePilot(manifest, plan) {
   if (reviewerRuns.some(record => !record.usageEvents.some(usage => usage.role === 'fact-checker'))) {
     issues.push('fact-checker-session-has-no-usage-trace');
   }
-  if (reviewerRuns.some(record => {
-    const events = tracesByBlindId.get(record.blindId) ?? [];
-    return !events.some(event => event.eventType === 'tool.execution_start' && event.data?.toolName === 'task')
-      || !events.some(event => event.eventType === 'tool.execution_complete' && event.data?.toolName === 'task');
-  })) {
-    issues.push('fact-checker-dispatch-action-trace-incomplete');
-  }
+  if (reviewerRuns.some(record => !hasEvidenceReviewTrace(
+    record,
+    tracesByBlindId.get(record.blindId) ?? [],
+  ))) issues.push('fact-checker-evidence-review-trace-incomplete');
   if (pilotRecords.length > 0 && new Set(pilotRecords.map(record => record.mainSessionId)).size !== pilotRecords.length) {
     issues.push('session-id-reused-across-arms');
   }
   if (pilotRecords.length > 0 && new Set(pilotRecords.map(record => record.workspace)).size !== pilotRecords.length) {
     issues.push('workspace-reused-across-arms');
+  }
+  if (new Set(pilotRecords.map(record => record.priorTurnsHash)).size > 1) {
+    issues.push('midflight-prior-context-differs-across-arms');
   }
   const treatment = pilotRecords.find(record => record.arm === 'truth-first');
   const noticed = pilotRecords.find(record => record.arm === 'truth-first-notice');
@@ -982,9 +1196,9 @@ function validatePilot(manifest, plan) {
     issues.push('baseline-source-not-loaded');
   }
 
-  const warnings = pilotRecords.some(record => record.usageEvents.some(usage => (
+  if (pilotRecords.some(record => record.usageEvents.some(usage => (
     usage.limitObservations?.prompt === null || usage.limitObservations?.output === null
-  ))) ? ['request-limit-telemetry-incomplete'] : [];
+  )))) warnings.push('request-limit-telemetry-incomplete');
   return { passed: issues.length === 0, issues, warnings, reviewerRuns: reviewerRuns.length };
 }
 
@@ -1043,6 +1257,41 @@ function resolveOutputDirectory(value) {
   return ensurePrivateOutputDirectory(value || defaultOutputDirectory());
 }
 
+export async function runModelPreflight({ manifest, limits, persist, queryModel }) {
+  const attempt = {
+    status: 'checking',
+    startedAt: new Date().toISOString(),
+    model: MODEL_ID,
+    reasoningEffort: 'medium',
+    requestCapsConfigured: true,
+    cumulativeCap: 'soft-post-response-monitor-only',
+  };
+  manifest.modelPreflightAttempts ??= [];
+  manifest.modelPreflightAttempts.push(attempt);
+  manifest.modelPreflight = attempt;
+  persist(manifest);
+  try {
+    const model = await queryModel();
+    ensureCapabilityFits(model, limits);
+    Object.assign(attempt, {
+      status: 'passed',
+      completedAt: new Date().toISOString(),
+      available: true,
+    });
+    persist(manifest);
+    return model;
+  } catch (error) {
+    Object.assign(attempt, {
+      status: 'failed',
+      completedAt: new Date().toISOString(),
+      available: false,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    persist(manifest);
+    throw error;
+  }
+}
+
 function parseArguments(args) {
   const options = { mode: null, outDir: null, help: false };
   for (let index = 0; index < args.length; index++) {
@@ -1099,18 +1348,6 @@ async function runMode(options) {
     return;
   }
 
-  const limits = loadRunConfig();
-  const model = await queryAvailableModel();
-  ensureCapabilityFits(model, limits);
-  const report = {
-    checkedAt: new Date().toISOString(),
-    model: MODEL_ID,
-    available: true,
-    reasoningEffort: 'medium',
-    requestCapsConfigured: true,
-    cumulativeCap: 'soft-post-response-monitor-only',
-  };
-
   let manifest;
   if (options.mode === 'pilot') {
     if (existsSync(path.join(outputDirectory, 'run-manifest.json'))) {
@@ -1125,7 +1362,8 @@ async function runMode(options) {
       completed: [],
       attempts: [],
       budgetChargedTokens: 0,
-      modelPreflight: report,
+      modelPreflight: { status: 'not-started' },
+      modelPreflightAttempts: [],
       pilotValidation: null,
       budgetStopReason: null,
     };
@@ -1151,6 +1389,35 @@ async function runMode(options) {
       throw new Error('Set SQUAD_TRUTH_FIRST_REVIEWED=1 only after the parent has reviewed the pilot checkpoint.');
     }
     if (manifest.budgetStopReason) throw new Error(`Previous execution stopped: ${manifest.budgetStopReason}`);
+  }
+
+  const persistManifest = value => saveManifest(outputDirectory, value);
+  persistManifest(manifest);
+  let limits;
+  try {
+    limits = loadRunConfig();
+    await runModelPreflight({
+      manifest,
+      limits,
+      persist: persistManifest,
+      queryModel: queryAvailableModel,
+    });
+  } catch (error) {
+    if (manifest.modelPreflight?.status !== 'failed') {
+      const failedAttempt = {
+        status: 'failed',
+        failedAt: new Date().toISOString(),
+        model: MODEL_ID,
+        completedAt: new Date().toISOString(),
+        available: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      manifest.modelPreflightAttempts ??= [];
+      manifest.modelPreflightAttempts.push(failedAttempt);
+      manifest.modelPreflight = failedAttempt;
+      persistManifest(manifest);
+    }
+    throw error;
   }
 
   const pilotOnly = options.mode === 'pilot';
