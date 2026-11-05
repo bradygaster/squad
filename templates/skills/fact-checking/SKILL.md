@@ -1,6 +1,6 @@
 ---
 name: fact-checking
-description: Review and validate claims using counter-hypothesis testing. Use when verifying technical content, checking references, validating API endpoints, or performing quality assurance on deliverables.
+description: Review scoped claims against available evidence with counter-hypothesis testing. Use when the user requests verification or the coordinator selects a bounded Fact Checker review.
 license: MIT
 compatibility: Requires access to external references and APIs
 metadata:
@@ -20,11 +20,14 @@ Codifies the challenger agent review output format and methodology so any agent 
 
 ### Review Methodology
 
-For every claim or deliverable under review:
-1. Ask: "What evidence supports this? What would disprove it?"
-2. Generate counter-hypotheses and test them against available data
-3. Verify URLs, package names, API endpoints, and external references actually exist
-4. Flag confidence levels: ✅ Verified, ⚠️ Unverified, ❌ Contradicted
+For each claim selected for review:
+1. State its exact scope, origin, and the decision it could change.
+2. Ask what direct evidence would support or weaken it; check the underlying source, not a search summary alone.
+3. Distinguish source existence from claim support, and independent corroboration from repeated or circular sources.
+4. Report ✅ Verified, ⚠️ Unverified, ❌ Contradicted, or 🔍 Needs Investigation with evidence and limits.
+5. Separate factual status from whether work is authorized or useful; identify only the dependent action affected.
+
+No results, rarity, novelty, missing access, or a failed tool call do not prove a claim false or impossible. If evidence is unavailable, state that the claim remains unknown or unverified. Keep fictional, hypothetical, and supplied private context in scope without investigating private identity or disclosing private details.
 
 ### Review Output Format
 
@@ -32,7 +35,7 @@ When reviewing another agent's work, use this template:
 
 ```
 ### Fact Check — {deliverable name}
-**Claims verified:** {count}
+**Claims reviewed:** {count}
 **Issues found:** {count}
 
 | # | Claim | Status | Evidence/Notes |
@@ -42,7 +45,8 @@ When reviewing another agent's work, use this template:
 **Counter-hypotheses tested:**
 - {alternative explanation + result}
 
-**Verdict:** {PASS / PASS WITH NOTES / NEEDS REVISION}
+**Evidence summary:** {supported / unverified / contradicted / needs investigation, with scope}
+**Review status:** {advisory / selected-gate finding}
 ```
 
 ### Confidence Levels
@@ -51,11 +55,14 @@ When reviewing another agent's work, use this template:
 - ⚠️ **Unverified** — cannot confirm or deny; suggest verification method
 - ❌ **Contradicted** — evidence disproves the claim
 
-### Ceremony Integration
+### Activation
 
-Auto-trigger this skill before any architecture decision, or when an agent claim contains superlatives or percentage thresholds (e.g., "saves 75%", "always", "never"). The coordinator spawns the challenger agent with:
+Use this skill only when the user explicitly requests verification or Devil's Advocate analysis, or when the coordinator selects Fact Checker as a review gate under active team governance. Superlatives, architecture decisions, and agent confidence are signals to assess—not automatic triggers. The coordinator's ordinary premise screen does not itself spawn a reviewer.
+
+For a selected bounded review, the coordinator supplies:
 
 ```
-Challenger — fact-check {agent}'s claim: "{claim}"
-Cite evidence for every verdict. Max 3 investigation cycles.
+Fact Checker — assess this scoped claim: "{claim}"
+Origin, evidence, decision affected, and tool limits: {context}
+Report support and counter-evidence; do not infer falsehood from missing evidence.
 ```
