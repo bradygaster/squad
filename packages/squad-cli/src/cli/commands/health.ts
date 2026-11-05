@@ -532,7 +532,6 @@ function captureResolverOutput<T>(operation: () => T): T {
 function checkStateBackend(
   localSquadDir: string,
   repoRoot: string,
-  resolvedBackend?: StateBackend,
 ): HealthCheckItem {
   const configPath = path.join(localSquadDir, 'config.json');
   if (!storage.existsSync(configPath)) {
@@ -577,7 +576,7 @@ function checkStateBackend(
   }
 
   try {
-    const backend = resolvedBackend ?? captureResolverOutput(() =>
+    const backend = captureResolverOutput(() =>
       resolveStateBackend(localSquadDir, repoRoot, configured),
     );
     if (!backendMatches(backend, configured)) {
@@ -873,15 +872,16 @@ function checkEnvVars(repoRoot: string): HealthCheckItem {
 
 function buildHealthReport(
   stateDir: string,
-  localSquadDir: string,
+  readinessConfigDir: string,
+  runtimeConfigDir: string,
   repoRoot: string,
 ): HealthReport {
-  const configuredBackend = configuredBackendForResolution(localSquadDir);
+  const configuredBackend = configuredBackendForResolution(runtimeConfigDir);
   let resolvedBackend: StateBackend | undefined;
   if (configuredBackend) {
     try {
       resolvedBackend = captureResolverOutput(() =>
-        resolveStateBackend(localSquadDir, repoRoot, configuredBackend),
+        resolveStateBackend(runtimeConfigDir, repoRoot, configuredBackend),
       );
     } catch {
       resolvedBackend = undefined;
@@ -891,7 +891,7 @@ function buildHealthReport(
     checkTeam(stateDir),
     checkRegistryAndCharters(stateDir),
     checkRouting(stateDir),
-    checkStateBackend(localSquadDir, repoRoot, resolvedBackend),
+    checkStateBackend(readinessConfigDir, repoRoot),
     checkEnvVars(repoRoot),
   ];
   return {
@@ -911,7 +911,7 @@ export function runSquadHealth(
   squadDir: string,
   repoRoot: string,
 ): HealthReport {
-  return buildHealthReport(squadDir, squadDir, repoRoot);
+  return buildHealthReport(squadDir, squadDir, squadDir, repoRoot);
 }
 
 function buildResolutionFailureReport(
@@ -970,6 +970,7 @@ export async function runHealthCommand(
     report = buildHealthReport(
       dirs.stateDir,
       dirs.backendConfigDir,
+      dirs.local.path,
       repoRoot,
     );
   } catch (error) {

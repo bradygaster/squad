@@ -983,8 +983,13 @@ describe('CLI output and exit semantics', () => {
     unlinkSync(path.join(squadDir, 'routing.md'));
     writeSquad(
       'config.json',
-      JSON.stringify({ version: 1, teamRoot: 'shared-team' }),
+      JSON.stringify({
+        version: 1,
+        teamRoot: 'shared-team',
+        stateBackend: 'two-layer',
+      }),
     );
+    mockResolveStateBackend.mockReturnValue({ name: 'two-layer' });
     const logs: string[] = [];
     vi.spyOn(console, 'log').mockImplementation((line: unknown) => {
       logs.push(String(line));
@@ -996,6 +1001,13 @@ describe('CLI output and exit semantics', () => {
     expect(exitCode).toBe(0);
     expect(report.status).toBe('pass');
     expect(check(report, 'registry-charters').status).toBe('pass');
+    expect(check(report, 'state-backend').status).toBe('skip');
+    expect(mockResolveStateBackend).toHaveBeenCalledWith(
+      squadDir,
+      repoRoot,
+      'two-layer',
+    );
+    expect(report.metadata.stateBackend).toBe('two-layer');
     expect(report.metadata.resolvedTeamDir).toBe(path.join(repoRoot, 'shared-team'));
   });
 
