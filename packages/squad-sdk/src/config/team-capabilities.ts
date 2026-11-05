@@ -301,7 +301,15 @@ function charterEvidence(charterMarkdown: string | undefined): {
     return { focus: '', evidence: '' };
   }
 
-  const owns = doc.extraSections['What I Own'] ?? '';
+  // Legacy charters use `## Role` / `## Owns` instead of `## Identity` /
+  // `## What I Own`; parseAgentDoc retains them verbatim in extraSections.
+  const owns = [
+    doc.extraSections['What I Own'],
+    doc.extraSections['Owns'],
+    doc.extraSections['Role'],
+  ]
+    .filter(Boolean)
+    .join('\n');
   const boundaries = doc.extraSections['Boundaries'] ?? '';
   const handles = boundaries.match(/\*\*I handle:?\*\*\s*(.+)/i)?.[1] ?? '';
 
