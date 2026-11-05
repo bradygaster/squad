@@ -51,8 +51,11 @@ Concatenating span texts must reproduce ALL draft bytes exactly, including white
 Split factual assertions so each is classified; do not mark a mixed paragraph nonfactual.
 Supported spans must cite supplied evidence IDs whose actual text supports the claim.
 Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft
-that removes unsupported extras, qualifies necessary unknowns, preserves helpful authorized
-plans and human options, and never claims task completion or truth verification without evidence.
+that removes unsupported factual claims and unauthorized adjacent actions, qualifies necessary
+unknowns, and preserves the user's objective, requested authorized work, and useful continuations
+that do not depend on the unresolved claim. Do not abandon independent work because a related
+claim is unknown. Preserve proposals as proposals; do not imply new authorization or perform new
+work. Never claim task completion or truth verification without evidence.
 Do not invent sources, APIs, biological facts, performed work, or authorization.`;
 
 function responseHash(text: string): string {

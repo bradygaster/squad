@@ -3,6 +3,7 @@ import { SquadClient } from '../packages/squad-sdk/src/adapter/client.js';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { EventEmitter } from 'node:events';
 import { createHash } from 'node:crypto';
+import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
@@ -18,6 +19,7 @@ import {
   buildResponseBoundaryPlan,
   buildRemainingPairedRuns,
   buildRunPlan,
+  extractResponseReviewProtocol,
   buildSystemPrompt,
   canIncreaseSoftTokenLimit,
   compareLimitObservations,
@@ -29,6 +31,7 @@ import {
   runModelPreflight,
   shouldStopCampaign,
   toolEventDetails,
+  verifySingleContinuationInstructionChange,
   VALIDATION_NOTICE,
 } from '../scripts/premise-checking-ab.mjs';
 
@@ -233,6 +236,59 @@ describe('default outgoing response boundary', () => {
     expect(reviewer.sendAndWait).toHaveBeenCalledTimes(2);
   });
 
+  it('preserves useful authorized inventory work while correcting only the unsupported premise', async () => {
+      const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
+      const source = fixture.episodes.find((item: { id: string }) => item.id === 'inventory-midflight-agent').evidence[0];
+      const draft = 'The mock proves every live shipment is 100% accurate. I will stop inventory CRUD until the private contract arrives and implement /shipments/guarantee.';
+      const correction = 'The supplied mock does not establish live shipment accuracy. I will not claim that guarantee or add an unapproved endpoint. I can continue inventory CRUD against the labeled mock. Live integration can remain separate until an approved contract is available.';
+      const segments = [
+        ['The supplied mock does not establish live shipment accuracy.', 'supported', ['tool-result-1']],
+        [' I will not claim that guarantee or add an unapproved endpoint.', 'nonfactual', []],
+        [' I can continue inventory CRUD against the labeled mock.', 'nonfactual', []],
+        [' Live integration can remain separate until an approved contract is available.', 'nonfactual', []],
+      ] as const;
+      const correctedReview = {
+        type: 'assistant.message',
+        data: { content: JSON.stringify({
+          draftHash: hash(correction),
+          spans: segments.map(([text, status, evidenceIds]) => ({ text, status, evidenceIds })),
+        }) },
+      };
+      const { session, raw, reviewer, transport } = await defaultValidatedSession(draft);
+      raw.sendAndWait.mockImplementation(async () => {
+        raw.emit('tool.execution_complete', { toolCallId: 'mock-source', result: source });
+        return { type: 'assistant.message', data: { content: draft } };
+      });
+      reviewer.sendAndWait.mockResolvedValueOnce(review(draft, 'contradicted', ['tool-result-1'], correction))
+        .mockResolvedValueOnce(correctedReview);
+      const result = await session.sendAndWait!({ prompt: 'Continue inventory CRUD against the labeled mock; do not make unsupported live claims.' });
+      expect(result).toMatchObject({
+        data: { content: correction, validation: { status: 'reviewed', reviewCount: 2 } },
+      });
+      expect(result.data.content).toContain('continue inventory CRUD against the labeled mock');
+      expect(result.data.content).toContain('or add an unapproved endpoint');
+      expect(result.data.content).not.toContain('implement /shipments/guarantee');
+      expect(result.data.content).toContain('Live integration can remain separate');
+      const protocol = transport.createSession.mock.calls[1][0].systemMessage.content as string;
+      expect(protocol.replace(/\s+/gu, ' ')).toContain('preserves the user\'s objective, requested authorized work, and useful continuations');
+      expect(protocol.replace(/\s+/gu, ' ')).toContain('Do not abandon independent work because a related claim is unknown.');
+      expect(reviewer.sendAndWait).toHaveBeenCalledTimes(2);
+  });
+
+  it('proves the live current/candidate reviewer protocols differ only in continuation preservation', () => {
+      const sourcePath = 'packages/squad-sdk/src/adapter/client.ts';
+      const previous = execFileSync('git', ['show', `1056da8d:${sourcePath}`], { encoding: 'utf8' });
+      const current = read(sourcePath);
+      const protocols = verifySingleContinuationInstructionChange(
+        extractResponseReviewProtocol(current),
+        extractResponseReviewProtocol(previous),
+      );
+      expect(protocols.changedOnly).toBe('correction-preservation-instruction');
+      expect(protocols.currentProtocol).not.toBe(protocols.previousProtocol);
+      expect(() => verifySingleContinuationInstructionChange(protocols.previousProtocol, protocols.previousProtocol))
+        .toThrow(/differ only/);
+  });
+
   it('withholds output when the automatic reviewer cannot be created', async () => {
     const { session, transport } = await defaultValidatedSession('The animal exists.');
     transport.createSession.mockRejectedValue(new Error('Reviewer unavailable'));
@@ -293,8 +349,8 @@ describe('default outgoing response boundary', () => {
   it('freezes the four-trajectory live plan without model calls or fixture answer hints', () => {
     const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
     expect(buildResponseBoundaryPlan(fixture.episodes).map(run => [run.episodeId, run.arm])).toEqual([
-      ['animal-intake', 'baseline'], ['animal-intake', 'validated'],
-      ['inventory-midflight-agent', 'validated'], ['inventory-midflight-agent', 'baseline'],
+      ['animal-intake', 'current-gate'], ['animal-intake', 'preserve-continuation'],
+      ['inventory-midflight-agent', 'preserve-continuation'], ['inventory-midflight-agent', 'current-gate'],
     ]);
   });
 
