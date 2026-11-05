@@ -32,7 +32,8 @@ const COMMON_SOURCE_PATHS = Object.freeze({
   governance: '.squad/governance.md',
   factCheckerCharter: '.squad-templates/fact-checker-charter.md',
 });
-const TOOL_NAMES = new Set(['read_evidence', 'task']);
+export const AVAILABLE_TOOLS = Object.freeze(['read_evidence', 'task']);
+const TOOL_NAMES = new Set(AVAILABLE_TOOLS);
 
 export const ARMS = ARM_IDS;
 export { VALIDATION_NOTICE };
@@ -571,6 +572,7 @@ function makeTools({ client, context, episode, bundle, evidenceById, runDirector
           reasoningEffort: 'medium',
           workingDirectory: runDirectory,
           enableSessionStore: false,
+          availableTools: [],
           modelCapabilities: {
             limits: {
               max_prompt_tokens: context.limits.maxPromptTokens,
@@ -751,6 +753,7 @@ async function runTrajectory({ client, run, attempt, episode, bundle, outputDire
       reasoningEffort: 'medium',
       workingDirectory: runDirectory,
       enableSessionStore: false,
+      availableTools: AVAILABLE_TOOLS,
       modelCapabilities: {
         limits: {
           max_prompt_tokens: limits.maxPromptTokens,
@@ -977,7 +980,6 @@ async function queryAvailableModel() {
     logLevel: 'error',
     useLoggedInUser: true,
   });
-  saveManifest(outputDirectory, manifest);
   try {
     await client.start();
     const models = await client.listModels();
@@ -1131,6 +1133,7 @@ async function runMode(options) {
     logLevel: 'error',
     useLoggedInUser: true,
   });
+  saveManifest(outputDirectory, manifest);
   try {
     await client.start();
     for (const run of selectedRuns) {

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import {
   ARMS,
+  AVAILABLE_TOOLS,
   buildEpisodePrompt,
   buildFactCheckerPrompt,
   buildRunPlan,
@@ -108,6 +109,10 @@ describe('truth-first premise checking contract', () => {
         episode.id,
       ).toEqual([...ARMS].sort());
     }
+  });
+
+  it('uses an explicit empty-mode allowlist for only the synthetic tools', () => {
+    expect(AVAILABLE_TOOLS).toEqual(['read_evidence', 'task']);
   });
 
   it('keeps frozen oracle labels out of the model-facing episode prompt', () => {
