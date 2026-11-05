@@ -786,6 +786,29 @@ describe('state backend readiness', () => {
     ).toBe('pass');
   });
 
+  it('reports the runtime backend when readiness normalizes whitespace', () => {
+    writeSquad('config.json', '{"stateBackend":"two-layer "}');
+    mockResolveStateBackend.mockImplementation((...args: unknown[]) =>
+      args.length === 2 ? { name: 'local' } : { name: 'two-layer' },
+    );
+
+    const report = runSquadHealth(squadDir, repoRoot);
+
+    expect(check(report, 'state-backend').status).toBe('pass');
+    expect(report.metadata.stateBackend).toBe('local');
+    expect(mockResolveStateBackend).toHaveBeenNthCalledWith(
+      1,
+      squadDir,
+      repoRoot,
+    );
+    expect(mockResolveStateBackend).toHaveBeenNthCalledWith(
+      2,
+      squadDir,
+      repoRoot,
+      'two-layer',
+    );
+  });
+
   it('fails closed when an explicitly configured backend cannot be checked', () => {
     writeSquad('config.json', '{"stateBackend":"two-layer"}');
     mockResolveStateBackend.mockReturnValue({ name: 'local' });
@@ -1005,7 +1028,6 @@ describe('CLI output and exit semantics', () => {
     expect(mockResolveStateBackend).toHaveBeenCalledWith(
       squadDir,
       repoRoot,
-      'two-layer',
     );
     expect(report.metadata.stateBackend).toBe('two-layer');
     expect(report.metadata.resolvedTeamDir).toBe(path.join(repoRoot, 'shared-team'));

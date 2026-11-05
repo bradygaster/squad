@@ -617,26 +617,18 @@ function resolvedTeamDirectory(stateDir: string): string {
     : resolved;
 }
 
-function configuredBackendForResolution(
-  localSquadDir: string,
-): StateBackendType | null | undefined {
-  const configPath = path.join(localSquadDir, 'config.json');
-  if (!storage.existsSync(configPath)) return undefined;
+function hasRuntimeBackendSetting(runtimeConfigDir: string): boolean {
+  const configPath = path.join(runtimeConfigDir, 'config.json');
+  if (!storage.existsSync(configPath)) return false;
 
   try {
     const config = parseJsonObject(
       readRequiredFile(configPath, '.squad/config.json'),
       '.squad/config.json',
     );
-    if (config.stateBackend === undefined || config.stateBackend === null) {
-      return undefined;
-    }
-    if (typeof config.stateBackend !== 'string' || !config.stateBackend.trim()) {
-      return null;
-    }
-    return canonicalBackendType(config.stateBackend);
+    return config.stateBackend !== undefined && config.stateBackend !== null;
   } catch {
-    return null;
+    return true;
   }
 }
 
@@ -876,12 +868,12 @@ function buildHealthReport(
   runtimeConfigDir: string,
   repoRoot: string,
 ): HealthReport {
-  const configuredBackend = configuredBackendForResolution(runtimeConfigDir);
+  const hasRuntimeBackend = hasRuntimeBackendSetting(runtimeConfigDir);
   let resolvedBackend: StateBackend | undefined;
-  if (configuredBackend) {
+  if (hasRuntimeBackend) {
     try {
       resolvedBackend = captureResolverOutput(() =>
-        resolveStateBackend(runtimeConfigDir, repoRoot, configuredBackend),
+        resolveStateBackend(runtimeConfigDir, repoRoot),
       );
     } catch {
       resolvedBackend = undefined;
@@ -898,7 +890,7 @@ function buildHealthReport(
     schema: HEALTH_SCHEMA,
     metadata: healthMetadata(
       stateDir,
-      configuredBackend === undefined
+      !hasRuntimeBackend
         ? 'local'
         : resolvedBackend?.name ?? 'unknown',
     ),
