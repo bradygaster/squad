@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { EventEmitter } from 'node:events';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
   ARMS,
   AVAILABLE_TOOLS,
+  attachSessionRecorder,
   buildEpisodePrompt,
   buildFactCheckerPrompt,
   buildRunPlan,
@@ -138,6 +141,63 @@ describe('truth-first premise checking contract', () => {
       result: null,
     });
   });
+
+  it.each(['coordinator', 'fact-checker'] as const)(
+    'correlates reused tool call IDs across sessions when %s completes first',
+    firstRole => {
+      const directory = mkdtempSync(path.join(tmpdir(), 'premise-checking-recorder-'));
+      try {
+        const context = {
+          activeSessions: new Set(),
+          sessionIds: [],
+          messages: [],
+          events: [] as Array<{
+            eventType: string;
+            sessionId: string;
+            role: string;
+            data: { toolCallId: string; toolName: string };
+          }>,
+          eventsPath: path.join(directory, 'events.jsonl'),
+          toolCallNames: new Map<string, string>(),
+        };
+        const coordinator = Object.assign(new EventEmitter(), { sessionId: 'coordinator-1' });
+        const reviewer = Object.assign(new EventEmitter(), { sessionId: 'reviewer-1' });
+        attachSessionRecorder(coordinator, context, 'coordinator');
+        attachSessionRecorder(reviewer, context, 'fact-checker');
+        const toolCallId = 'shared-call-1';
+        coordinator.emit('tool.execution_start', { data: { toolCallId, toolName: 'task' } });
+        reviewer.emit('tool.execution_start', { data: { toolCallId, toolName: 'read_evidence' } });
+        expect(context.toolCallNames.size).toBe(2);
+
+        const [first, second] = firstRole === 'coordinator'
+          ? [coordinator, reviewer]
+          : [reviewer, coordinator];
+        const [firstName, secondName] = firstRole === 'coordinator'
+          ? ['task', 'read_evidence']
+          : ['read_evidence', 'task'];
+        // SDK completions may omit toolName in both interleaved sessions.
+        first.emit('tool.execution_complete', { data: { toolCallId } });
+        expect(context.toolCallNames.size).toBe(1);
+        expect([...context.toolCallNames.values()]).toEqual([secondName]);
+        second.emit('tool.execution_complete', { data: { toolCallId } });
+        expect(context.toolCallNames.size).toBe(0);
+
+        const completions = context.events.filter(event => event.eventType === 'tool.execution_complete');
+        expect(completions).toMatchObject([
+          { sessionId: first.sessionId, role: firstRole, data: { toolCallId, toolName: firstName } },
+          {
+            sessionId: second.sessionId,
+            role: firstRole === 'coordinator' ? 'fact-checker' : 'coordinator',
+            data: { toolCallId, toolName: secondName },
+          },
+        ]);
+        const persisted = readFileSync(context.eventsPath, 'utf8').trim().split('\n').map(line => JSON.parse(line));
+        expect(persisted).toEqual(context.events);
+      } finally {
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
 
   it('delivers frozen preceding turns and a distinct current turn to every matched arm', () => {
     const episode = fixture.episodes.find(item => item.id === 'revenue-midflight-agent');

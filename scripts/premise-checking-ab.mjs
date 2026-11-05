@@ -437,9 +437,10 @@ export function shouldStopCampaign(context, status) {
   return Boolean(context.stopReason) || status !== 'completed';
 }
 
-function attachSessionRecorder(session, context, role) {
+export function attachSessionRecorder(session, context, role) {
   context.activeSessions.add(session);
   context.sessionIds.push({ sessionId: session.sessionId, role });
+  const toolCallKey = toolCallId => JSON.stringify([session.sessionId, toolCallId]);
   const record = (eventType, data) => {
     recordContextEvent(context, {
       at: new Date().toISOString(),
@@ -499,16 +500,16 @@ function attachSessionRecorder(session, context, role) {
   session.on('tool.execution_start', event => {
     const details = toolEventDetails(event.data ?? {});
     if (details.toolCallId && details.toolName !== 'unknown') {
-      context.toolCallNames.set(details.toolCallId, details.toolName);
+      context.toolCallNames.set(toolCallKey(details.toolCallId), details.toolName);
     }
     record('tool.execution_start', details);
   });
   session.on('tool.execution_complete', event => {
     const data = event.data ?? {};
     const toolCallId = typeof data.toolCallId === 'string' ? data.toolCallId : null;
-    const fallbackToolName = toolCallId ? context.toolCallNames.get(toolCallId) ?? null : null;
+    const fallbackToolName = toolCallId ? context.toolCallNames.get(toolCallKey(toolCallId)) ?? null : null;
     record('tool.execution_complete', toolEventDetails(data, fallbackToolName));
-    if (toolCallId) context.toolCallNames.delete(toolCallId);
+    if (toolCallId) context.toolCallNames.delete(toolCallKey(toolCallId));
   });
   session.on('session.error', event => {
     record('session.error', {
