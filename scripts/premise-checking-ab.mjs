@@ -175,6 +175,24 @@ export function normalizeUsage(data = {}) {
   };
 }
 
+export function compareLimitObservations(usage, limits) {
+  const prompt = usage.maxPromptTokens === null
+    ? null
+    : usage.maxPromptTokens === limits.maxPromptTokens;
+  const output = usage.maxOutputTokens === null
+    ? null
+    : usage.maxOutputTokens === limits.maxOutputTokens;
+  return {
+    prompt,
+    output,
+    overall: prompt === false || output === false
+      ? false
+      : prompt === true && output === true
+        ? true
+        : null,
+  };
+}
+
 function readPositiveInteger(name, source = process.env) {
   const raw = source[name];
   if (!raw || !/^\d+$/.test(raw)) {
@@ -352,8 +370,7 @@ function attachSessionRecorder(session, context, role) {
   session.on('assistant.usage', event => {
     const usage = normalizeUsage(event.data);
     const budget = context.ledger.add(usage, context.limits);
-    const limitsMatched = usage.maxPromptTokens === context.limits.maxPromptTokens
-      && usage.maxOutputTokens === context.limits.maxOutputTokens;
+    const limitObservations = compareLimitObservations(usage, context.limits);
     const usageRecord = {
       ...usage,
       role,
@@ -362,15 +379,19 @@ function attachSessionRecorder(session, context, role) {
       budgetChargeTokens: budget.requestTokens,
       cumulativeBudgetChargeTokens: budget.cumulativeChargedTokens,
       budgetChargeBasis: budget.totalAccountedTokens === null ? 'configured-request-bounds' : 'reported-input-plus-output',
-      limitsMatched,
+      requestLimits: {
+        maxPromptTokens: context.limits.maxPromptTokens,
+        maxOutputTokens: context.limits.maxOutputTokens,
+      },
+      limitObservations,
     };
     context.usage.push(usageRecord);
     record('assistant.usage', usageRecord);
 
     if (usage.inputTokens === null || usage.outputTokens === null) {
       context.stopReason ??= 'accounting-unknown';
-    } else if (!limitsMatched) {
-      context.stopReason ??= 'request-limit-not-observed';
+    } else if (limitObservations.overall === false) {
+      context.stopReason ??= 'request-limit-mismatch';
     } else if (budget.cumulativeChargedTokens >= context.limits.softTokenLimit) {
       context.stopReason ??= 'soft-token-limit-reached';
     } else if (budget.callCount >= context.limits.maxModelCallsPerEpisode) {
@@ -804,6 +825,10 @@ async function runTrajectory({ client, run, attempt, episode, bundle, outputDire
     baselineRef: run.arm === 'baseline' ? BASELINE_REF : null,
     model: MODEL_ID,
     reasoningEffort: 'medium',
+    requestLimits: {
+      maxPromptTokens: limits.maxPromptTokens,
+      maxOutputTokens: limits.maxOutputTokens,
+    },
     status,
     error,
     startedAt,
@@ -877,7 +902,9 @@ function validatePilot(manifest, plan) {
     if (record.usageEvents.some(usage => usage.inputTokens === null || usage.outputTokens === null)) {
       issues.push(`${record.blindId}:incomplete-input-output-accounting`);
     }
-    if (record.usageEvents.some(usage => !usage.limitsMatched)) issues.push(`${record.blindId}:request-limits-not-observed`);
+    if (record.usageEvents.some(usage => usage.limitObservations?.overall === false)) {
+      issues.push(`${record.blindId}:request-limit-mismatch`);
+    }
     if (!record.messages.some(message => message.role === 'coordinator')) issues.push(`${record.blindId}:missing-coordinator-message`);
     const allSessionIds = record.sessionIds.map(item => item.sessionId);
     if (new Set(allSessionIds).size !== allSessionIds.length) {
@@ -955,7 +982,10 @@ function validatePilot(manifest, plan) {
     issues.push('baseline-source-not-loaded');
   }
 
-  return { passed: issues.length === 0, issues, reviewerRuns: reviewerRuns.length };
+  const warnings = pilotRecords.some(record => record.usageEvents.some(usage => (
+    usage.limitObservations?.prompt === null || usage.limitObservations?.output === null
+  ))) ? ['request-limit-telemetry-incomplete'] : [];
+  return { passed: issues.length === 0, issues, warnings, reviewerRuns: reviewerRuns.length };
 }
 
 function saveAdjudicationGuide(outputDirectory) {
@@ -1185,7 +1215,8 @@ async function runMode(options) {
     const validation = validatePilot(manifest, plan);
     manifest.pilotValidation = validation;
     saveManifest(outputDirectory, manifest);
-    process.stdout.write(`Pilot instrumentation ${validation.passed ? 'passed' : 'failed'}; review ${path.join(outputDirectory, 'run-manifest.json')} before continuing.\n`);
+    const warningText = validation.warnings.length > 0 ? `; warnings: ${validation.warnings.join(', ')}` : '';
+    process.stdout.write(`Pilot instrumentation ${validation.passed ? 'passed' : 'failed'}${warningText}; review ${path.join(outputDirectory, 'run-manifest.json')} before continuing.\n`);
     if (!validation.passed) process.exitCode = 2;
   }
   saveAdjudicationGuide(outputDirectory);

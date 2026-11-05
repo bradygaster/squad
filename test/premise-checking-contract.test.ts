@@ -8,6 +8,7 @@ import {
   buildFactCheckerPrompt,
   buildRunPlan,
   buildSystemPrompt,
+  compareLimitObservations,
   createUsageLedger,
   loadPromptBundle,
   normalizeUsage,
@@ -183,6 +184,21 @@ describe('truth-first premise checking contract', () => {
       duration: null,
       finishReason: null,
     });
+  });
+
+  it('distinguishes an unreported request limit from a known mismatch', () => {
+    const limits = { maxPromptTokens: 64_000, maxOutputTokens: 8_000 };
+    const usage = normalizeUsage({ maxPromptTokens: 64_000 });
+
+    expect(compareLimitObservations(usage, limits)).toEqual({
+      prompt: true,
+      output: null,
+      overall: null,
+    });
+    expect(compareLimitObservations(normalizeUsage({
+      maxPromptTokens: 32_000,
+      maxOutputTokens: 8_000,
+    }), limits).overall).toBe(false);
   });
 
   it('charges only input plus output and carries a conservative campaign total', () => {
