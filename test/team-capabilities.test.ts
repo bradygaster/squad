@@ -612,3 +612,39 @@ describe('#1608 — prompt budget impact', () => {
     expect(Buffer.byteLength(block, 'utf8')).toBeLessThan(8192);
   });
 });
+
+describe('legacy charter sections (## Role / ## Owns)', () => {
+  const teamMarkdown = `# Team\n\n## Members\n\n| Name | Role |\n| --- | --- |\n| Builder | Specialist |\n| Reviewer | Specialist |\n`;
+
+  it('derives edit authority from a legacy Role section alone', () => {
+    const profile = buildTeamCapabilityProfile({
+      teamMarkdown,
+      charters: {
+        Builder: '# Builder\n\n## Role\n\nImplement and refactor frontend code.\n',
+      },
+    });
+    const builder = profile.specialists.find((s) => s.name === 'Builder');
+    expect(builder?.authority).toContain('edit');
+    expect(profile.absentCapabilities.join('\n')).not.toMatch(/write and modify code/);
+  });
+
+  it('derives review authority from a legacy Owns section alone', () => {
+    const profile = buildTeamCapabilityProfile({
+      teamMarkdown,
+      charters: {
+        Reviewer: '# Reviewer\n\n## Owns\n\n- Review code and approve changes.\n',
+      },
+    });
+    const reviewer = profile.specialists.find((s) => s.name === 'Reviewer');
+    expect(reviewer?.authority).toContain('review');
+    expect(profile.absentCapabilities.join('\n')).not.toMatch(/review code and pull requests/);
+  });
+
+  it('still honours negation in legacy sections', () => {
+    const profile = buildTeamCapabilityProfile({
+      teamMarkdown,
+      charters: { Builder: '# Builder\n\n## Role\n\nDoes not implement code.\n' },
+    });
+    expect(profile.specialists.find((s) => s.name === 'Builder')?.authority).toEqual(['advisory']);
+  });
+});
