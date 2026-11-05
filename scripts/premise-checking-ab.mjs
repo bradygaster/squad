@@ -139,6 +139,11 @@ export function buildPairedCalibrationPlan(episodes) {
   return plan;
 }
 
+export function buildRemainingPairedRuns(plan, completed) {
+  const completedIndices = new Set(completed.map(run => run.index));
+  return plan.filter(run => !completedIndices.has(run.index));
+}
+
 export function buildEpisodePrompt(episode) {
   const evidenceCatalog = episode.evidence.length === 0
     ? 'No synthetic evidence items are attached.'
@@ -525,7 +530,8 @@ export function attachSessionRecorder(session, context, role) {
 
     if (usage.inputTokens === null || usage.outputTokens === null) {
       context.stopReason ??= 'accounting-unknown';
-    } else if (limitObservations.overall === false) {
+    } else if (limitObservations.overall === false
+      || (usage.outputTokens !== null && usage.outputTokens > context.limits.maxOutputTokens)) {
       context.stopReason ??= 'request-limit-mismatch';
     } else if (budget.cumulativeChargedTokens >= context.limits.softTokenLimit) {
       context.stopReason ??= 'soft-token-limit-reached';
@@ -1340,6 +1346,7 @@ function parseArguments(args) {
     if (arg === '--plan') options.mode = 'plan';
     else if (arg === '--paired-plan') options.mode = 'paired-plan';
     else if (arg === '--paired-calibration') options.mode = 'paired-calibration';
+    else if (arg === '--paired-continue') options.mode = 'paired-continue';
     else if (arg === '--pilot') options.mode = 'pilot';
     else if (arg === '--continue') options.mode = 'continue';
     else if (arg === '--out-dir') options.outDir = args[++index];
@@ -1356,6 +1363,7 @@ function printHelp() {
     '  node scripts/premise-checking-ab.mjs --plan [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --paired-plan [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --paired-calibration [--out-dir <private-path>]',
+    '  node scripts/premise-checking-ab.mjs --paired-continue --out-dir <same-private-path>',
     '  node scripts/premise-checking-ab.mjs --pilot [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --continue --out-dir <same-private-path>',
     '',
@@ -1374,7 +1382,7 @@ function saveManifest(outputDirectory, manifest) {
 
 async function runMode(options) {
   const fixture = loadFixture();
-  const pairedCalibration = options.mode === 'paired-calibration' || options.mode === 'paired-plan';
+  const pairedCalibration = ['paired-calibration', 'paired-continue', 'paired-plan'].includes(options.mode);
   const plan = pairedCalibration
     ? buildPairedCalibrationPlan(fixture.episodes)
     : buildRunPlan(fixture.episodes);
@@ -1449,6 +1457,34 @@ async function runMode(options) {
       pairedValidation: null,
       budgetStopReason: null,
     };
+  } else if (options.mode === 'paired-continue') {
+    const manifestPath = path.join(outputDirectory, 'run-manifest.json');
+    if (!existsSync(manifestPath)) throw new Error('No paired calibration manifest exists in this output directory.');
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    if (manifest.mode !== 'paired-calibration') throw new Error('The existing manifest is not a paired calibration.');
+    if (manifest.baselineRef !== BASELINE_REF || manifest.planPath !== planPath) {
+      throw new Error('The paired calibration baseline or output path differs from the frozen run.');
+    }
+    const savedPlan = JSON.parse(readFileSync(planPath, 'utf8'));
+    if (savedPlan.mode !== 'paired-calibration'
+      || JSON.stringify(savedPlan.plan) !== JSON.stringify(plan)) {
+      throw new Error('The paired calibration plan differs from its frozen copy; refusing continuation.');
+    }
+    if (manifest.attempts.some(attempt => attempt.status === 'started')) {
+      throw new Error('An interrupted trajectory attempt exists; preserve its artifacts and do not continue.');
+    }
+    if (manifest.budgetStopReason && manifest.budgetStopReason !== 'per-episode-call-limit-reached') {
+      throw new Error(`Previous execution stopped: ${manifest.budgetStopReason}`);
+    }
+    if (manifest.budgetStopReason === 'per-episode-call-limit-reached') {
+      manifest.continuationHistory ??= [];
+      manifest.continuationHistory.push({
+        at: new Date().toISOString(),
+        priorStopReason: manifest.budgetStopReason,
+        note: 'Continuing only unattempted frozen rows; the failed trajectory remains recorded and is not retried.',
+      });
+      manifest.budgetStopReason = null;
+    }
   } else {
     const manifestPath = path.join(outputDirectory, 'run-manifest.json');
     if (!existsSync(manifestPath)) throw new Error('No pilot manifest exists in this output directory.');
@@ -1493,7 +1529,9 @@ async function runMode(options) {
   }
 
   const pilotOnly = options.mode === 'pilot';
-  const remaining = plan.filter(run => !manifest.completed.some(done => done.index === run.index));
+  const remaining = pairedCalibration
+    ? buildRemainingPairedRuns(plan, manifest.completed)
+    : plan.filter(run => !manifest.completed.some(done => done.index === run.index));
   const selectedRuns = pilotOnly ? remaining.slice(0, ARM_IDS.length) : remaining;
   const baseDirectory = process.env['COPILOT_HOME'] || path.join(homedir(), '.copilot');
   const client = new CopilotClient({
@@ -1558,7 +1596,7 @@ async function runMode(options) {
     process.stdout.write(`Pilot instrumentation ${validation.passed ? 'passed' : 'failed'}${warningText}; review ${path.join(outputDirectory, 'run-manifest.json')} before continuing.\n`);
     if (!validation.passed) process.exitCode = 2;
   }
-  if (pairedCalibration && options.mode === 'paired-calibration') {
+  if (pairedCalibration && ['paired-calibration', 'paired-continue'].includes(options.mode)) {
     const completedRecords = manifest.completed.map(item => JSON.parse(readFileSync(item.runPath, 'utf8')));
     const issues = [];
     for (const record of completedRecords) {
@@ -1569,6 +1607,10 @@ async function runMode(options) {
           || usage.outputTokens === null)) {
         issues.push(`${record.blindId}:usage-accounting-incomplete`);
       }
+      if (record.usageEvents.some(usage => (
+        usage.outputTokens !== null
+        && usage.outputTokens > record.requestLimits.maxOutputTokens
+      ))) issues.push(`${record.blindId}:observed-output-exceeded-request-cap`);
       const events = readFileSync(record.eventsPath, 'utf8')
         .split(/\r?\n/)
         .filter(Boolean)
@@ -1585,7 +1627,9 @@ async function runMode(options) {
       }
     }
     manifest.pairedValidation = {
-      passed: issues.length === 0 && manifest.completed.every(item => item.status === 'completed'),
+      passed: issues.length === 0
+        && manifest.completed.length === plan.length
+        && manifest.completed.every(item => item.status === 'completed'),
       issues,
       plannedTrajectories: plan.length,
       recordedTrajectories: manifest.completed.length,

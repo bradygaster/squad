@@ -10,6 +10,7 @@ import {
   buildEpisodePrompt,
   buildFactCheckerPrompt,
   buildPairedCalibrationPlan,
+  buildRemainingPairedRuns,
   buildRunPlan,
   buildSystemPrompt,
   compareLimitObservations,
@@ -79,6 +80,19 @@ describe('truth-first premise checking contract', () => {
       expect(pair.map(run => run.episodeId).filter(id => id === pair[0].episodeId)).toHaveLength(2);
       expect(pair[0].arm).toBe(index % 2 === 0 ? 'baseline' : 'truth-first');
     }
+  });
+
+  it('continues only unattempted frozen rows without retrying recorded failures', () => {
+    const plan = buildPairedCalibrationPlan(fixture.episodes);
+    const remaining = buildRemainingPairedRuns(plan, [
+      { index: 1, status: 'completed' },
+      { index: 2, status: 'completed' },
+      { index: 3, status: 'per-episode-call-limit-reached' },
+    ]);
+    expect(remaining.map(run => run.index)).toEqual(
+      Array.from({ length: 13 }, (_, index) => index + 4),
+    );
+    expect(remaining.some(run => run.index === 3)).toBe(false);
   });
 
   it('keeps Fact Checker activation selective and review authority in governance', () => {
@@ -269,6 +283,49 @@ describe('truth-first premise checking contract', () => {
       }
     },
   );
+
+  it('stops when observed output exceeds the configured request cap', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'premise-checking-output-cap-'));
+    try {
+      const context = {
+        activeSessions: new Set(),
+        usage: [],
+        sessionIds: [],
+        messages: [],
+        events: [],
+        eventsPath: path.join(directory, 'events.jsonl'),
+        toolCallNames: new Map<string, string>(),
+        limits: {
+          maxPromptTokens: 100,
+          maxOutputTokens: 20,
+          maxModelCallsPerEpisode: 4,
+          softTokenLimit: 200,
+        },
+        ledger: createUsageLedger(),
+        stopReason: null as string | null,
+      };
+      let abortCalls = 0;
+      const coordinator = Object.assign(new EventEmitter(), {
+        sessionId: 'coordinator-output-cap',
+        abort: async () => { abortCalls++; },
+      });
+      context.activeSessions.add(coordinator);
+      attachSessionRecorder(coordinator, context, 'coordinator');
+      coordinator.emit('assistant.usage', {
+        data: {
+          inputTokens: 100,
+          outputTokens: 21,
+          maxPromptTokens: 100,
+          maxOutputTokens: null,
+          finishReason: 'stop',
+        },
+      });
+      expect(context.stopReason).toBe('request-limit-mismatch');
+      expect(abortCalls).toBe(1);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
 
   it('delivers frozen preceding turns and a distinct current turn to every matched arm', () => {
     const episode = fixture.episodes.find(item => item.id === 'revenue-midflight-agent');
