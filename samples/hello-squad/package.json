@@ -12,8 +12,8 @@
     "@bradygaster/squad-sdk": "file:../../packages/squad-sdk"
   },
   "devDependencies": {
-    "tsx": "^4.0.0",
-    "vitest": "^4.1.11",
+    "tsx": "^4.23.15",
+    "vitest": "^5.1.0",
     "typescript": "^5.7.0"
   }
 }

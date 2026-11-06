@@ -10,6 +10,6 @@
   "dependencies": {},
   "devDependencies": {
     "typescript": "^5.0.0",
-    "vitest": "^0.34.0"
+    "vitest": "^5.1.0"
   }
 }
