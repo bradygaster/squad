@@ -591,12 +591,18 @@ export function attachSessionRecorder(session, context, role) {
 
   session.on('assistant.usage', event => {
     const usage = normalizeUsage(event.data);
+    const activeCalls = context.activeModelCalls?.get(session.sessionId);
+    const modelCallId = activeCalls?.size === 1 ? activeCalls.values().next().value : null;
+    if (context.activeModelCalls && !modelCallId) {
+      context.stopReason ??= 'accounting-unknown';
+    }
     const budget = context.ledger.add(usage, context.limits);
     const limitObservations = compareLimitObservations(usage, context.limits);
     const usageRecord = {
       ...usage,
       role,
       sessionId: session.sessionId,
+      ...(context.activeModelCalls ? { modelCallId } : {}),
       usageStatus: 'observed',
       agentId: typeof event.agentId === 'string' ? event.agentId : null,
       totalAccountedTokens: budget.totalAccountedTokens,
@@ -1917,11 +1923,166 @@ export function buildRemainingResponseBoundaryRuns(plan, completed) {
   return plan.slice(completed.length);
 }
 
-export function hasCompleteModelCallUsage(callCount, observedUsageCount) {
-  return Number.isSafeInteger(callCount)
-    && Number.isSafeInteger(observedUsageCount)
-    && callCount >= 0
-    && observedUsageCount >= callCount;
+export function hasCompleteModelCallUsage(modelCalls, usageEvents) {
+  if (!Array.isArray(modelCalls) || modelCalls.length === 0 || !Array.isArray(usageEvents)) return false;
+  const callsById = new Map();
+  for (const call of modelCalls) {
+    if (typeof call.callId !== 'string' || typeof call.sessionId !== 'string'
+      || callsById.has(call.callId)) return false;
+    callsById.set(call.callId, call);
+  }
+  return modelCalls.every(call => usageEvents.some(event => (
+    event.modelCallId === call.callId
+    && event.sessionId === call.sessionId
+    && event.usageStatus === 'observed'
+  ))) && usageEvents.every(event => {
+    const call = callsById.get(event.modelCallId);
+    return event.usageStatus === 'observed'
+      && call?.sessionId === event.sessionId
+      && finiteNumber(event.inputTokens) !== null
+      && finiteNumber(event.outputTokens) !== null;
+  });
+}
+
+export function findMissingModelCallUsage(modelCalls, usageEvents) {
+  if (!Array.isArray(modelCalls) || !Array.isArray(usageEvents)) return [];
+  return modelCalls
+    .filter(call => !usageEvents.some(event => (
+      event.modelCallId === call.callId
+      && event.sessionId === call.sessionId
+      && event.usageStatus === 'observed'
+    )))
+    .map(call => ({
+      role: call.role,
+      sessionId: call.sessionId,
+      modelCallId: call.callId,
+      usageStatus: 'unknown',
+      unknownReason: 'model-call-missing-usage-event',
+      inputTokens: null,
+      outputTokens: null,
+    }));
+}
+
+export function validateRoundOneBaselineManifest(manifest, expected) {
+  const fail = () => {
+    throw new Error('Round-2 baseline manifest is incomplete or differs from the frozen round-1 run.');
+  };
+  if (!manifest || manifest.kind !== 'truth-first-optimization-round'
+    || manifest.round !== 1
+    || manifest.baselineRef !== expected.baselineRef
+    || manifest.comparisonBaseline !== expected.baselineRef
+    || manifest.model !== expected.model
+    || JSON.stringify(manifest.plan) !== JSON.stringify(expected.plan)
+    || JSON.stringify(manifest.limits) !== JSON.stringify(expected.limits)
+    || manifest.systemPromptHash !== expected.systemPromptHash
+    || JSON.stringify(manifest.sourceHashes) !== JSON.stringify(expected.sourceHashes)
+    || manifest.baselineReviewProtocol !== expected.baselineProtocol
+    || manifest.baselineReviewProtocolHash !== sha256(expected.baselineProtocol)
+    || manifest.candidateReviewProtocol !== expected.candidateProtocol
+    || manifest.candidateReviewProtocolHash !== sha256(expected.candidateProtocol)
+    || manifest.protocolDelta !== 'evidence-scoped-claim-classification-and-compactness'
+    || !Array.isArray(manifest.attempts) || manifest.attempts.length !== expected.plan.length
+    || !Array.isArray(manifest.completed) || manifest.completed.length !== expected.plan.length) {
+    fail();
+  }
+
+  let cumulativeChargedTokens = 0;
+  for (const [index, run] of expected.plan.entries()) {
+    const attempt = manifest.attempts[index];
+    const record = manifest.completed[index];
+    if (!attempt || attempt.index !== run.index
+      || attempt.episodeId !== run.episodeId || attempt.arm !== run.arm
+      || attempt.status !== 'completed'
+      || !record || record.index !== run.index
+      || record.episodeId !== run.episodeId || record.arm !== run.arm
+      || record.status !== 'completed'
+      || record.systemPromptHash !== expected.systemPromptHash
+      || JSON.stringify(record.sourceHashes) !== JSON.stringify(expected.sourceHashes)) {
+      fail();
+    }
+
+    const content = record.response?.data?.content;
+    const validation = record.response?.data?.validation;
+    if (typeof content !== 'string' || !content
+      || record.deliveredHash !== sha256(content)
+      || validation?.deliveredHash !== record.deliveredHash
+      || !['reviewed', 'screened'].includes(validation.status)
+      || !/^[a-f0-9]{64}$/u.test(validation.draftHash ?? '')
+      || !Array.isArray(validation.reviewedDraftHashes)
+      || validation.reviewedDraftHashes.length !== validation.reviewCount
+      || validation.reviewedDraftHashes.some(value => !/^[a-f0-9]{64}$/u.test(value))
+      || (validation.status === 'reviewed' && validation.reviewCount < 1)
+      || (validation.status === 'screened'
+        && (validation.reviewCount !== 0 || validation.draftHash !== sha256(content)))
+      || (validation.status === 'reviewed'
+        && (validation.reviewedDraftHashes[0] !== validation.draftHash
+          || validation.reviewedDraftHashes.at(-1) !== sha256(content)))) {
+      fail();
+    }
+
+    const expectedProtocolHash = sha256(run.arm === 'prior-default'
+      ? expected.baselineProtocol
+      : expected.candidateProtocol);
+    if (!Array.isArray(record.reviewerProtocolHashes)
+      || record.reviewerProtocolHashes.length !== validation.reviewCount
+      || record.reviewerProtocolHashes.some(value => value !== expectedProtocolHash)) {
+      fail();
+    }
+
+    const sessions = new Map();
+    if (!Array.isArray(record.sessionIds)) fail();
+    for (const session of record.sessionIds) {
+      if (typeof session.sessionId !== 'string' || sessions.has(session.sessionId)) fail();
+      sessions.set(session.sessionId, session.role);
+    }
+    if (!Array.isArray(record.modelCalls) || record.modelCalls.length === 0
+      || record.modelCalls.some(call => (
+        !call || typeof call.callId !== 'string'
+        || !['coordinator', 'response-reviewer'].includes(call.role)
+        || sessions.get(call.sessionId) !== call.role
+        || !call.request || !call.response
+        || typeof call.startedAt !== 'string' || typeof call.finishedAt !== 'string'
+        || call.error
+      ))
+      || record.modelCalls.filter(call => call.role === 'coordinator').length === 0
+      || record.modelCalls.filter(call => call.role === 'response-reviewer').length !== validation.reviewCount) {
+      fail();
+    }
+    const reviewerCalls = record.modelCalls.filter(call => call.role === 'response-reviewer');
+    for (const [reviewIndex, call] of reviewerCalls.entries()) {
+      let reviewRequest;
+      try {
+        reviewRequest = JSON.parse(call.request.prompt);
+      } catch {
+        fail();
+      }
+      if (!reviewRequest || typeof reviewRequest.draft !== 'string'
+        || sha256(reviewRequest.draft) !== validation.reviewedDraftHashes[reviewIndex]
+        || reviewRequest.draftHash !== validation.reviewedDraftHashes[reviewIndex]) {
+        fail();
+      }
+    }
+
+    if (!Array.isArray(record.usageEvents)
+      || !hasCompleteModelCallUsage(record.modelCalls, record.usageEvents)
+      || record.usageEvents.some(event => event.model !== expected.model)) {
+      fail();
+    }
+    const inputTokens = record.usageEvents.reduce((sum, event) => sum + event.inputTokens, 0);
+    const outputTokens = record.usageEvents.reduce((sum, event) => sum + event.outputTokens, 0);
+    const chargedTokens = inputTokens + outputTokens;
+    cumulativeChargedTokens += chargedTokens;
+    if (record.usage?.callCount !== record.usageEvents.length
+      || record.usage.chargedTokens !== chargedTokens
+      || record.usage.cumulativeChargedTokens !== cumulativeChargedTokens
+      || record.usage.totals?.inputTokens !== inputTokens
+      || record.usage.totals?.outputTokens !== outputTokens
+      || record.usage.complete?.inputTokens !== true
+      || record.usage.complete?.outputTokens !== true) {
+      fail();
+    }
+  }
+  return true;
 }
 
 export function extractResponseReviewProtocol(source) {
@@ -2016,6 +2177,12 @@ async function runResponseBoundaryCheck(options) {
     || sha256(productProtocol) !== ORIGINAL_RESPONSE_REVIEW_PROTOCOL_HASH) {
     throw new Error('Built SDK reviewer protocol does not match the reviewed source; build before live runs.');
   }
+  const candidateProtocol = buildFrozenResponseReviewProtocol(productProtocol, options.responseBoundaryRound);
+  const roundOneCandidateProtocol = buildFrozenResponseReviewProtocol(productProtocol, 1);
+  const bundle = {
+    systemPrompt, systemPromptHash: sha256(systemPrompt),
+    sourceHashes: Object.fromEntries(Object.entries(sources).map(([name, text]) => [name, sha256(text)])),
+  };
   let baselineProtocol;
   let baselineRef = ref;
   let baselineRoundManifest = null;
@@ -2024,32 +2191,21 @@ async function runResponseBoundaryCheck(options) {
     baselineProtocol = productProtocol;
   } else {
     baselineRoundManifest = JSON.parse(readFileSync(path.resolve(options.baselineManifest), 'utf8'));
-    if (baselineRoundManifest.kind !== 'truth-first-optimization-round'
-      || baselineRoundManifest.round !== 1
-      || typeof baselineRoundManifest.candidateReviewProtocol !== 'string'
-      || sha256(baselineRoundManifest.candidateReviewProtocol) !== baselineRoundManifest.candidateReviewProtocolHash
-      || JSON.stringify(baselineRoundManifest.limits) !== JSON.stringify(limits)
-      || baselineRoundManifest.completed?.length !== 6
-      || baselineRoundManifest.completed.some(record => record.usageEvents.some(usage => (
-        usage.inputTokens === null || usage.outputTokens === null
-      )))) {
-      throw new Error('Round-2 baseline manifest is incomplete or has different frozen run limits.');
-    }
+    validateRoundOneBaselineManifest(baselineRoundManifest, {
+      plan, limits, model: MODEL_ID, systemPromptHash: bundle.systemPromptHash,
+      sourceHashes: bundle.sourceHashes, baselineProtocol: productProtocol,
+      candidateProtocol: roundOneCandidateProtocol, baselineRef: ref,
+    });
     baselineProtocol = baselineRoundManifest.candidateReviewProtocol;
     baselineRef = `round-1 candidate ${baselineRoundManifest.candidateReviewProtocolHash}`;
     chargedTokens = baselineRoundManifest.completed.at(-1).usage.cumulativeChargedTokens;
   }
-  const candidateProtocol = buildFrozenResponseReviewProtocol(productProtocol, options.responseBoundaryRound);
   const protocols = verifySingleResponseReviewDelta(
     productProtocol,
     candidateProtocol,
     baselineProtocol,
     options.responseBoundaryRound,
   );
-  const bundle = {
-    systemPrompt, systemPromptHash: sha256(systemPrompt),
-    sourceHashes: Object.fromEntries(Object.entries(sources).map(([name, text]) => [name, sha256(text)])),
-  };
   const expectedManifest = {
     kind: 'truth-first-optimization-round',
     round: options.responseBoundaryRound,
@@ -2122,6 +2278,7 @@ async function runResponseBoundaryCheck(options) {
     writeFileSync(eventsPath, '', { flag: 'wx', mode: 0o600 });
     const context = createRunContext(run, episode, bundle, limits, directory, eventsPath, chargedTokens);
     context.modelCalls = [];
+    context.activeModelCalls = new Map();
     const attempt = { index: run.index, episodeId: run.episodeId, arm: run.arm, status: 'started' };
     manifest.attempts.push(attempt);
     writePrivateJson(manifestPath, manifest);
@@ -2172,25 +2329,32 @@ async function runResponseBoundaryCheck(options) {
       const nativeSendAndWait = created.sendAndWait.bind(created);
       created.sendAndWait = async (...args) => {
         const call = {
+          callId: `model-call-${context.modelCalls.length + 1}`,
           role, sessionId: created.sessionId,
           request: args[0], startedAt: new Date().toISOString(),
         };
+        const activeCalls = context.activeModelCalls.get(created.sessionId) ?? new Set();
+        activeCalls.add(call.callId);
+        context.activeModelCalls.set(created.sessionId, activeCalls);
         context.modelCalls.push(call);
         recordContextEvent(context, { at: call.startedAt, eventType: 'model.request',
-          role, sessionId: call.sessionId, request: call.request });
+          callId: call.callId, role, sessionId: call.sessionId, request: call.request });
         try {
           const response = await nativeSendAndWait(...args);
           call.response = response;
           call.finishedAt = new Date().toISOString();
           recordContextEvent(context, { at: call.finishedAt, eventType: 'model.response',
-            role, sessionId: call.sessionId, response });
+            callId: call.callId, role, sessionId: call.sessionId, response });
           return response;
         } catch (error) {
           call.error = error instanceof Error ? error.message : String(error);
           call.finishedAt = new Date().toISOString();
           recordContextEvent(context, { at: call.finishedAt, eventType: 'model.error',
-            role, sessionId: call.sessionId, error: call.error });
+            callId: call.callId, role, sessionId: call.sessionId, error: call.error });
           throw error;
+        } finally {
+          activeCalls.delete(call.callId);
+          if (activeCalls.size === 0) context.activeModelCalls.delete(created.sessionId);
         }
       };
       return created;
@@ -2224,6 +2388,8 @@ async function runResponseBoundaryCheck(options) {
       if (!response?.data?.content) throw new Error('No delivered response.');
       const validation = response.data.validation;
       if (!validation || validation.deliveredHash !== sha256(response.data.content)
+        || !['reviewed', 'screened'].includes(validation.status)
+        || validation.reviewCount !== reviewerProtocols.length
         || JSON.stringify(validation.reviewedDraftHashes)
           !== JSON.stringify(context.events.filter(event => event.eventType === 'response.review_request')
             .map(event => event.data.draftHash))) {
@@ -2233,28 +2399,24 @@ async function runResponseBoundaryCheck(options) {
       status = context.stopReason ?? 'failed';
       error = caught instanceof Error ? caught.message : String(caught);
     } finally {
-      const callCounts = new Map();
-      for (const call of context.modelCalls) {
-        callCounts.set(call.sessionId, (callCounts.get(call.sessionId) ?? 0) + 1);
+      const observedUsage = context.usage.filter(item => item.usageStatus === 'observed');
+      for (const missing of findMissingModelCallUsage(context.modelCalls, observedUsage)) {
+        const budget = context.ledger.add(normalizeUsage(), context.limits);
+        const usage = {
+          ...missing,
+          cacheReadTokens: null, cacheWriteTokens: null,
+          reasoningTokens: null, budgetChargeTokens: budget.requestTokens,
+          cumulativeBudgetChargeTokens: budget.cumulativeChargedTokens,
+          budgetChargeBasis: 'configured-request-bounds-not-observed',
+        };
+        context.usage.push(usage);
+        context.stopReason ??= 'accounting-unknown';
+        recordContextEvent(context, { at: new Date().toISOString(), eventType: 'assistant.usage_missing',
+          role: usage.role, sessionId: usage.sessionId, modelCallId: usage.modelCallId,
+          reason: usage.unknownReason });
       }
-      for (const [sessionId, callCount] of callCounts) {
-        const observed = context.usage.filter(item => item.sessionId === sessionId && item.usageStatus === 'observed').length;
-        const accountedUsageCount = hasCompleteModelCallUsage(callCount, observed) ? callCount : observed;
-        for (let missing = accountedUsageCount; missing < callCount; missing++) {
-          const budget = context.ledger.add(normalizeUsage(), context.limits);
-          const usage = {
-            role: context.sessionIds.find(item => item.sessionId === sessionId)?.role ?? 'unknown',
-            sessionId, usageStatus: 'unknown', unknownReason: 'model-call-missing-usage-event',
-            inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null,
-            reasoningTokens: null, budgetChargeTokens: budget.requestTokens,
-            cumulativeBudgetChargeTokens: budget.cumulativeChargedTokens,
-            budgetChargeBasis: 'configured-request-bounds-not-observed',
-          };
-          context.usage.push(usage);
-          context.stopReason ??= 'accounting-unknown';
-          recordContextEvent(context, { at: new Date().toISOString(), eventType: 'assistant.usage_missing',
-            role: usage.role, sessionId, reason: usage.unknownReason });
-        }
+      if (!hasCompleteModelCallUsage(context.modelCalls, context.usage)) {
+        context.stopReason ??= 'accounting-unknown';
       }
       if (context.stopReason === 'accounting-unknown') {
         status = 'accounting-unknown';

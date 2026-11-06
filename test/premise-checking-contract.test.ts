@@ -18,6 +18,8 @@ import {
   buildResponseBoundaryPlan,
   buildRemainingResponseBoundaryRuns,
   buildFrozenResponseReviewProtocol,
+  findMissingModelCallUsage,
+  validateRoundOneBaselineManifest,
   buildRemainingPairedRuns,
   buildRunPlan,
   extractResponseReviewProtocol,
@@ -377,9 +379,193 @@ describe('default outgoing response boundary', () => {
   });
 
   it('accepts multiple usage events within a tool-using model call without hiding missing accounting', () => {
-    expect(hasCompleteModelCallUsage(3, 4), 'a tool continuation may emit multiple usage events').toBe(true);
-    expect(hasCompleteModelCallUsage(3, 3)).toBe(true);
-    expect(hasCompleteModelCallUsage(3, 2), 'fewer observed usage events remain unaccounted').toBe(false);
+    const calls = [
+      { callId: 'call-a', sessionId: 'session-a' },
+      { callId: 'call-b', sessionId: 'session-b' },
+    ];
+    const usage = [
+      { modelCallId: 'call-a', sessionId: 'session-a', usageStatus: 'observed', inputTokens: 10, outputTokens: 2 },
+      { modelCallId: 'call-a', sessionId: 'session-a', usageStatus: 'observed', inputTokens: 3, outputTokens: 1 },
+    ];
+    expect(
+      hasCompleteModelCallUsage(calls, usage),
+      'two usage events for call A must not hide missing usage for call B',
+    ).toBe(false);
+    expect(findMissingModelCallUsage(calls, usage)).toMatchObject([
+      { modelCallId: 'call-b', sessionId: 'session-b', usageStatus: 'unknown' },
+    ]);
+    usage.push({
+      modelCallId: 'call-b', sessionId: 'session-b', usageStatus: 'observed', inputTokens: 7, outputTokens: 1,
+    });
+    expect(
+      hasCompleteModelCallUsage(calls, usage),
+      'a tool continuation may emit multiple usage events for one send',
+    ).toBe(true);
+    expect(findMissingModelCallUsage(calls, usage)).toEqual([]);
+  });
+
+  it('correlates observed usage events to the active intercepted send', () => {
+    const directory = mkdtempSync(path.join(tmpdir(), 'premise-checking-call-correlation-'));
+    try {
+      const context = {
+        activeSessions: new Set(),
+        activeModelCalls: new Map([['session-a', new Set(['call-a'])]]),
+        usage: [],
+        sessionIds: [],
+        messages: [],
+        events: [],
+        eventsPath: path.join(directory, 'events.jsonl'),
+        toolCallNames: new Map(),
+        limits: { maxPromptTokens: 100, maxOutputTokens: 20, maxModelCallsPerEpisode: 8, softTokenLimit: 200 },
+        ledger: createUsageLedger(),
+        stopReason: null as string | null,
+      };
+      const session = Object.assign(new EventEmitter(), { sessionId: 'session-a' });
+      attachSessionRecorder(session, context, 'coordinator');
+      session.emit('assistant.usage', { data: { inputTokens: 10, outputTokens: 2 } });
+
+      expect(context.usage[0]).toMatchObject({
+        sessionId: 'session-a',
+        modelCallId: 'call-a',
+        usageStatus: 'observed',
+      });
+      expect(context.stopReason).toBeNull();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+
+  it('accepts only a complete round-one baseline matching frozen sources, protocols, slots, and traces', () => {
+    const hash = (value: string) => createHash('sha256').update(value).digest('hex');
+    const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
+    const plan = buildResponseBoundaryPlan(fixture.episodes);
+    const baselineProtocol = extractResponseReviewProtocol(read('packages/squad-sdk/src/adapter/client.ts'));
+    const candidateProtocol = buildFrozenResponseReviewProtocol(baselineProtocol, 1);
+    const expected = {
+      plan,
+      limits: {
+        maxPromptTokens: 100,
+        maxOutputTokens: 20,
+        maxModelCallsPerEpisode: 8,
+        softTokenLimit: 1_200_000,
+        timeoutMs: 180_000,
+      },
+      model: 'gpt-5.3-codex',
+      systemPromptHash: hash('frozen system prompt'),
+      sourceHashes: { coordinator: hash('coordinator'), policy: hash('policy') },
+      baselineProtocol,
+      candidateProtocol,
+      baselineRef: 'dea151e9',
+    };
+    const makeManifest = () => {
+      const completed = plan.map((run, index) => {
+        const content = `reviewed draft ${index + 1}`;
+        const draftHash = hash(content);
+        const coordinatorId = `coordinator-${index + 1}`;
+        const reviewerId = `reviewer-${index + 1}`;
+        const calls = [
+          { callId: `call-${index + 1}-coordinator`, role: 'coordinator', sessionId: coordinatorId },
+          { callId: `call-${index + 1}-reviewer`, role: 'response-reviewer', sessionId: reviewerId },
+        ];
+        return {
+          ...run,
+          status: 'completed',
+          systemPromptHash: expected.systemPromptHash,
+          sourceHashes: { ...expected.sourceHashes },
+          deliveredHash: hash(content),
+          response: {
+            data: {
+              content,
+              validation: {
+                status: 'reviewed',
+                deliveredHash: hash(content),
+                draftHash,
+                reviewCount: 1,
+                reviewedDraftHashes: [draftHash],
+              },
+            },
+          },
+          reviewerProtocolHashes: [hash(run.arm === 'prior-default' ? baselineProtocol : candidateProtocol)],
+          sessionIds: [
+            { sessionId: coordinatorId, role: 'coordinator' },
+            { sessionId: reviewerId, role: 'response-reviewer' },
+          ],
+          modelCalls: calls.map(call => ({
+            ...call,
+            request: {
+              prompt: call.role === 'response-reviewer'
+                ? JSON.stringify({ draft: content, draftHash })
+                : `request for ${call.callId}`,
+            },
+            response: { type: 'assistant.message', data: { content: `response for ${call.callId}` } },
+            startedAt: '2026-11-06T00:00:00.000Z',
+            finishedAt: '2026-11-06T00:00:01.000Z',
+          })),
+          usageEvents: calls.map(call => ({
+            sessionId: call.sessionId,
+            modelCallId: call.callId,
+            model: expected.model,
+            usageStatus: 'observed',
+            inputTokens: 8,
+            outputTokens: 2,
+          })),
+          usage: {
+            callCount: 2,
+            chargedTokens: 20,
+            cumulativeChargedTokens: (index + 1) * 20,
+            totals: { inputTokens: 16, outputTokens: 4 },
+            complete: { inputTokens: true, outputTokens: true },
+          },
+        };
+      });
+      return {
+        kind: 'truth-first-optimization-round',
+        round: 1,
+        baselineRef: expected.baselineRef,
+        comparisonBaseline: expected.baselineRef,
+        model: expected.model,
+        plan,
+        limits: expected.limits,
+        systemPromptHash: expected.systemPromptHash,
+        sourceHashes: { ...expected.sourceHashes },
+        baselineReviewProtocolHash: hash(baselineProtocol),
+        candidateReviewProtocolHash: hash(candidateProtocol),
+        baselineReviewProtocol: baselineProtocol,
+        candidateReviewProtocol: expected.candidateProtocol,
+        protocolDelta: 'evidence-scoped-claim-classification-and-compactness',
+        attempts: plan.map(run => ({ ...run, status: 'completed' })),
+        completed,
+      };
+    };
+
+    expect(() => validateRoundOneBaselineManifest(makeManifest(), expected)).not.toThrow();
+
+    const missingHash = makeManifest();
+    delete missingHash.sourceHashes.coordinator;
+    expect(() => validateRoundOneBaselineManifest(missingHash, expected)).toThrow(/baseline manifest/i);
+
+    const wrongArm = makeManifest();
+    wrongArm.completed[0].arm = 'candidate';
+    expect(() => validateRoundOneBaselineManifest(wrongArm, expected)).toThrow(/baseline manifest/i);
+
+    const duplicateSlot = makeManifest();
+    duplicateSlot.completed[1] = { ...duplicateSlot.completed[0] };
+    expect(() => validateRoundOneBaselineManifest(duplicateSlot, expected)).toThrow(/baseline manifest/i);
+
+    const failedSlot = makeManifest();
+    failedSlot.completed[2].status = 'accounting-unknown';
+    expect(() => validateRoundOneBaselineManifest(failedSlot, expected)).toThrow(/baseline manifest/i);
+
+    const invalidFinalHash = makeManifest();
+    invalidFinalHash.completed[0].deliveredHash = hash('different response');
+    expect(() => validateRoundOneBaselineManifest(invalidFinalHash, expected)).toThrow(/baseline manifest/i);
+
+    const invalidReviewTrace = makeManifest();
+    invalidReviewTrace.completed[0].modelCalls[1].request.prompt = JSON.stringify({
+      draft: 'different reviewed draft',
+      draftHash: hash('different reviewed draft'),
+    });
+    expect(() => validateRoundOneBaselineManifest(invalidReviewTrace, expected)).toThrow(/baseline manifest/i);
   });
 
   it('closes the installed disconnect-based transport without requiring the removed destroy API', async () => {
