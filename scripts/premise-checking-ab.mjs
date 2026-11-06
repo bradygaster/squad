@@ -1928,10 +1928,19 @@ Supported spans must cite supplied evidence IDs whose actual text supports the c
 Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft`,
       changedOnly: 'evidence-scoped-claim-classification-and-compactness',
     }
-    : null;
+    : round === 2
+      ? {
+        candidate: `Assess entailment at the exact scope. A source may establish that a property is a proof target
+or that an identifier appears in a label; neither establishes that the property holds or that
+the label is factually current. State a result only when supplied evidence reports that result.
+`,
+        baseline: '',
+        changedOnly: 'source-entailment-and-result-scope',
+      }
+      : null;
   if (!delta
     || candidateProtocol.split(delta.candidate).length !== 2
-    || baselineProtocol.split(delta.baseline).length !== 2
+    || (delta.baseline && baselineProtocol.split(delta.baseline).length !== 2)
     || candidateProtocol.replace(delta.candidate, delta.baseline) !== baselineProtocol) {
     throw new Error(`The round ${round} comparison must differ only in its frozen reviewer-instruction change.`);
   }

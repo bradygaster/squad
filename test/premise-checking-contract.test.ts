@@ -281,7 +281,16 @@ describe('default outgoing response boundary', () => {
   it('proves the candidate review protocol changes only evidence-scoped classification and compactness', () => {
       const sourcePath = 'packages/squad-sdk/src/adapter/client.ts';
       const current = extractResponseReviewProtocol(read(sourcePath));
-      const previous = current.replace(
+      const roundOne = current.replace(
+        `Assess entailment at the exact scope. A source may establish that a property is a proof target
+or that an identifier appears in a label; neither establishes that the property holds or that
+the label is factually current. State a result only when supplied evidence reports that result.
+`,
+        '',
+      );
+      expect(hash(roundOne), 'round-one candidate remains frozen while round two changes its scope rule')
+        .toBe('d0d9a5ed3c5c0fc79cabcd38bdee271c42b64f9c3633cdc3e436493b5cba6b92');
+      const previous = roundOne.replace(
         `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
 into either category. Any proposition about external-world existence, events, behavior,
 capability, safety, or outcomes is factual even when hedged. Reserve uncertainty for a
@@ -309,13 +318,23 @@ Unknown/contradicted spans must not pass. If needed, propose ONE concise correct
       expect(hash(previous), 'round-1 baseline reviewer protocol must remain byte-for-byte frozen')
         .toBe('007f6c280d640cea4b5ed86d653a94fe558f962d22902370ef3c526a59070cb8');
       const protocols = verifySingleResponseReviewDelta(
-        current,
+        roundOne,
         previous,
       );
       expect(protocols.changedOnly).toBe('evidence-scoped-claim-classification-and-compactness');
       expect(protocols.candidateProtocol).not.toBe(protocols.baselineProtocol);
       expect(() => verifySingleResponseReviewDelta(protocols.baselineProtocol, protocols.baselineProtocol))
         .toThrow(/differ only/);
+      const roundTwo = verifySingleResponseReviewDelta(current, roundOne, 2);
+      expect(roundTwo.changedOnly).toBe('source-entailment-and-result-scope');
+      expect(roundTwo.candidateProtocol.replace(
+        `Assess entailment at the exact scope. A source may establish that a property is a proof target
+or that an identifier appears in a label; neither establishes that the property holds or that
+the label is factually current. State a result only when supplied evidence reports that result.
+`,
+        '',
+      )).toBe(roundTwo.baselineProtocol);
+      expect(() => verifySingleResponseReviewDelta(current, roundOne, 1)).toThrow(/differ only/);
   });
 
   it('withholds output when the automatic reviewer cannot be created', async () => {
