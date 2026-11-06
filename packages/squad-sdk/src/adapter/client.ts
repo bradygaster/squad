@@ -43,14 +43,19 @@ Only retrieved tool-result excerpts can support factual claims; model memory, ag
 user assertions and missing evidence are not proof. Assess source scope and reliability.
 Plans, proposals, explicit fiction and opinions are nonfactual. Properly bounded statements
 about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
-into either category. Missing sources do not imply false or impossible.
+into either category. Any proposition about external-world existence, events, behavior,
+capability, safety, or outcomes is factual even when hedged. Reserve uncertainty for a
+statement explicitly limited to what the supplied evidence does or does not establish.
+Missing sources do not imply false or impossible.
 Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
 "status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
 "correction":"optional complete corrected draft"}.
 Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
-Split factual assertions so each is classified; do not mark a mixed paragraph nonfactual.
+Use the fewest spans possible while separately classifying every factual assertion; combine
+adjacent nonfactual text with the same classification. Do not mark a mixed paragraph nonfactual.
 Supported spans must cite supplied evidence IDs whose actual text supports the claim.
-Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft
+Unknown/contradicted spans must not pass. Keep JSON compact; omit explanation. If needed,
+propose ONE concise corrected draft
 that removes unsupported factual claims and unauthorized adjacent actions, qualifies necessary
 unknowns, and preserves the user's objective, requested authorized work, and useful continuations
 that do not depend on the unresolved claim. Do not abandon independent work because a related

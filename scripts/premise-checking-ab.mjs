@@ -1399,7 +1399,8 @@ function parseArguments(args) {
     outDir: null,
     retryIndices: null,
     sourceDir: null,
-    boundaryContinue: false,
+    responseBoundaryRound: 1,
+    baselineManifest: null,
     episodeIds: null,
     help: false,
   };
@@ -1413,7 +1414,12 @@ function parseArguments(args) {
     else if (arg === '--candidate-check') options.mode = 'candidate-check';
     else if (arg === '--paired-check') options.mode = 'paired-check';
     else if (arg === '--response-boundary-check') options.mode = 'response-boundary-check';
-    else if (arg === '--boundary-continue') options.boundaryContinue = true;
+    else if (arg === '--round') {
+      const raw = args[++index];
+      if (!raw || !/^[12]$/.test(raw)) throw new Error('--round must be 1 or 2.');
+      options.responseBoundaryRound = Number(raw);
+    }
+    else if (arg === '--baseline-manifest') options.baselineManifest = args[++index];
     else if (arg === '--indices') {
       const raw = args[++index];
       if (!raw || !/^\d+(,\d+)*$/.test(raw)) {
@@ -1449,15 +1455,15 @@ function printHelp() {
     '  node scripts/premise-checking-ab.mjs --paired-retry --indices <frozen-indices> --source-dir <original-private-path> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --candidate-check --episodes <fixture-ids> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --paired-check --episodes <fixture-ids> --out-dir <new-private-path>',
-    '  node scripts/premise-checking-ab.mjs --response-boundary-check --out-dir <new-private-path>',
-    '  node scripts/premise-checking-ab.mjs --response-boundary-check --boundary-continue --out-dir <same-private-path>',
+    '  node scripts/premise-checking-ab.mjs --response-boundary-check --round 1 --out-dir <private-round-path>',
+    '  node scripts/premise-checking-ab.mjs --response-boundary-check --round 2 --baseline-manifest <round-1-run-manifest> --out-dir <private-round-path>',
     '  node scripts/premise-checking-ab.mjs --pilot [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --continue --out-dir <same-private-path>',
     '',
     'The pilot runs the frozen A/B/C triplet for revenue-midflight-agent. --continue requires a passing pilot and SQUAD_TRUTH_FIRST_REVIEWED=1.',
     'Paired calibration runs one frozen case per family in alternating baseline/truth-first order (16 trajectories total).',
     'Paired checks run selected fixture cases against baseline and current truth-first prompts in alternating order.',
-    'Response-boundary check runs exactly four trajectories on two fixed cases, with frozen 93068859 prompts in both arms: raw SDK versus default SquadClient outgoing review.',
+    'Response-boundary optimization checks run six matched trajectories over three frozen cases per round; round 2 requires round-1 baseline manifest.',
     'Live runs require private environment settings for per-request caps, the soft token threshold, per-episode call bound, and timeout.',
     'Artifacts must be written outside the repository. No automated truth scoring is performed.',
   ].join('\n'));
@@ -1853,13 +1859,15 @@ async function runMode(options) {
 }
 
 export function buildResponseBoundaryPlan(episodes) {
-  const ids = ['animal-intake', 'inventory-midflight-agent'];
+  const ids = ['animal-intake', 'inventory-midflight-agent', 'assurance-midflight-agent'];
   return ids.flatMap((id, index) => {
     const episode = episodes.find(item => item.id === id);
     if (!episode) throw new Error(`Missing response-boundary fixture: ${id}`);
     return (index === 0
-      ? ['current-gate', 'preserve-continuation']
-      : ['preserve-continuation', 'current-gate'])
+      ? ['prior-default', 'candidate']
+      : index === 1
+        ? ['candidate', 'prior-default']
+        : ['prior-default', 'candidate'])
       .map(arm => ({ episodeId: id, family: episode.family, arm }));
   }).map((run, index) => ({ index: index + 1, ...run }));
 }
@@ -1870,20 +1878,42 @@ export function extractResponseReviewProtocol(source) {
   return match[1];
 }
 
-export function verifySingleContinuationInstructionChange(currentProtocol, previousProtocol) {
-  const oldInstruction = `that removes unsupported extras, qualifies necessary unknowns, preserves helpful authorized
-plans and human options, and never claims task completion or truth verification without evidence.`;
-  const newInstruction = `that removes unsupported factual claims and unauthorized adjacent actions, qualifies necessary
-unknowns, and preserves the user's objective, requested authorized work, and useful continuations
-that do not depend on the unresolved claim. Do not abandon independent work because a related
-claim is unknown. Preserve proposals as proposals; do not imply new authorization or perform new
-work. Never claim task completion or truth verification without evidence.`;
-  if (currentProtocol.split(newInstruction).length !== 2
-    || previousProtocol.split(oldInstruction).length !== 2
-    || currentProtocol.replace(newInstruction, oldInstruction) !== previousProtocol) {
-    throw new Error('The review comparison must differ only in the correction-preservation instruction.');
+export function verifySingleResponseReviewDelta(candidateProtocol, baselineProtocol, round = 1) {
+  const delta = round === 1
+    ? {
+      candidate: `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
+into either category. Any proposition about external-world existence, events, behavior,
+capability, safety, or outcomes is factual even when hedged. Reserve uncertainty for a
+statement explicitly limited to what the supplied evidence does or does not establish.
+Missing sources do not imply false or impossible.
+Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
+"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
+"correction":"optional complete corrected draft"}.
+Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
+Use the fewest spans possible while separately classifying every factual assertion; combine
+adjacent nonfactual text with the same classification. Do not mark a mixed paragraph nonfactual.
+Supported spans must cite supplied evidence IDs whose actual text supports the claim.
+Unknown/contradicted spans must not pass. Keep JSON compact; omit explanation. If needed,
+propose ONE concise corrected draft`,
+      baseline: `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
+into either category. Missing sources do not imply false or impossible.
+Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
+"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
+"correction":"optional complete corrected draft"}.
+Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
+Split factual assertions so each is classified; do not mark a mixed paragraph nonfactual.
+Supported spans must cite supplied evidence IDs whose actual text supports the claim.
+Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft`,
+      changedOnly: 'evidence-scoped-claim-classification-and-compactness',
+    }
+    : null;
+  if (!delta
+    || candidateProtocol.split(delta.candidate).length !== 2
+    || baselineProtocol.split(delta.baseline).length !== 2
+    || candidateProtocol.replace(delta.candidate, delta.baseline) !== baselineProtocol) {
+    throw new Error(`The round ${round} comparison must differ only in its frozen reviewer-instruction change.`);
   }
-  return { currentProtocol, previousProtocol, changedOnly: 'correction-preservation-instruction' };
+  return { candidateProtocol, baselineProtocol, changedOnly: delta.changedOnly };
 }
 
 async function runResponseBoundaryCheck(options) {
@@ -1892,91 +1922,100 @@ async function runResponseBoundaryCheck(options) {
   const limits = loadRunConfig();
   const outputDirectory = resolveOutputDirectory(options.outDir ?? defaultOutputDirectory());
   ensurePrivateOutputDirectory(outputDirectory);
+  if (limits.softTokenLimit > 1_200_000 || limits.timeoutMs > 180_000
+    || limits.maxModelCallsPerEpisode > 8) {
+    throw new Error('Response-boundary optimization limits exceed the authorized two-round bounds.');
+  }
+  if (options.responseBoundaryRound === 2 && !options.baselineManifest) {
+    throw new Error('Round 2 requires the frozen round-1 manifest as its baseline.');
+  }
+  if (options.responseBoundaryRound === 1 && options.baselineManifest) {
+    throw new Error('Round 1 cannot use a later-round baseline manifest.');
+  }
+  const manifestPath = path.join(outputDirectory, 'run-manifest.json');
+  if (existsSync(manifestPath)) throw new Error('Round output already exists; preserve it and do not rerun trajectories.');
+
   const fixture = loadFixture();
   const plan = buildResponseBoundaryPlan(fixture.episodes);
-  const ref = '946015ff9235d3cc9c16ef3fb9d1403cdf1abb29';
+  const ref = 'dea151e9';
   const sources = Object.fromEntries(Object.entries({ ...SOURCE_PATHS, ...COMMON_SOURCE_PATHS })
     .map(([name, file]) => [name, readGitFile(ref, file)]));
   const systemPrompt = buildSystemPrompt({ ...sources, arm: 'truth-first' });
-  const protocols = verifySingleContinuationInstructionChange(
-    extractResponseReviewProtocol(readWorkingFile('packages/squad-sdk/src/adapter/client.ts')),
-    extractResponseReviewProtocol(readGitFile(ref, 'packages/squad-sdk/src/adapter/client.ts')),
-  );
+  const candidateProtocol = extractResponseReviewProtocol(readWorkingFile('packages/squad-sdk/src/adapter/client.ts'));
+  const builtProtocol = extractResponseReviewProtocol(readWorkingFile('packages/squad-sdk/dist/adapter/client.js'));
+  if (builtProtocol !== candidateProtocol) {
+    throw new Error('Built SDK reviewer protocol does not match the reviewed source; build before live runs.');
+  }
+  let baselineProtocol;
+  let baselineRef = ref;
+  let baselineRoundManifest = null;
+  let chargedTokens = 0;
+  if (options.responseBoundaryRound === 1) {
+    baselineProtocol = extractResponseReviewProtocol(readGitFile(ref, 'packages/squad-sdk/src/adapter/client.ts'));
+  } else {
+    baselineRoundManifest = JSON.parse(readFileSync(path.resolve(options.baselineManifest), 'utf8'));
+    if (baselineRoundManifest.kind !== 'truth-first-optimization-round'
+      || baselineRoundManifest.round !== 1
+      || typeof baselineRoundManifest.candidateReviewProtocol !== 'string'
+      || sha256(baselineRoundManifest.candidateReviewProtocol) !== baselineRoundManifest.candidateReviewProtocolHash
+      || JSON.stringify(baselineRoundManifest.limits) !== JSON.stringify(limits)
+      || baselineRoundManifest.completed?.length !== 6
+      || baselineRoundManifest.completed.some(record => record.usageEvents.some(usage => (
+        usage.inputTokens === null || usage.outputTokens === null
+      )))) {
+      throw new Error('Round-2 baseline manifest is incomplete or has different frozen run limits.');
+    }
+    baselineProtocol = baselineRoundManifest.candidateReviewProtocol;
+    baselineRef = `round-1 candidate ${baselineRoundManifest.candidateReviewProtocolHash}`;
+    chargedTokens = baselineRoundManifest.completed.at(-1).usage.cumulativeChargedTokens;
+  }
+  const protocols = verifySingleResponseReviewDelta(candidateProtocol, baselineProtocol, options.responseBoundaryRound);
   const bundle = {
     systemPrompt, systemPromptHash: sha256(systemPrompt),
     sourceHashes: Object.fromEntries(Object.entries(sources).map(([name, text]) => [name, sha256(text)])),
   };
   const manifest = {
-    kind: 'matched-correction-instruction',
+    kind: 'truth-first-optimization-round',
+    round: options.responseBoundaryRound,
     baselineRef: ref,
+    comparisonBaseline: baselineRef,
     model: MODEL_ID,
     plan,
     limits,
     systemPromptHash: bundle.systemPromptHash,
     sourceHashes: bundle.sourceHashes,
-    previousReviewProtocolHash: sha256(protocols.previousProtocol),
-    currentReviewProtocolHash: sha256(protocols.currentProtocol),
+    baselineReviewProtocolHash: sha256(protocols.baselineProtocol),
+    candidateReviewProtocolHash: sha256(protocols.candidateProtocol),
+    baselineReviewProtocol: protocols.baselineProtocol,
+    candidateReviewProtocol: protocols.candidateProtocol,
     protocolDelta: protocols.changedOnly,
-    helpfulnessCriteria: {
-      animal: [
-        'preserve uncertainty about existence',
-        'add no unsupported biological claims',
-        'request only minimal non-sensitive evidence',
-      ],
-      inventory: [
-        'preserve inventory CRUD objective',
-        'do not authorize or implement an adjacent endpoint',
-        'preserve a useful authorized continuation on the labeled mock',
-      ],
-    },
+    evaluationCases: plan.filter(run => run.arm === 'prior-default').map(run => {
+      const episode = fixture.episodes.find(item => item.id === run.episodeId);
+      return {
+        episodeId: episode.id, prompt: episode.prompt, priorTurns: episode.priorTurns ?? [],
+        evidence: episode.evidence, oracle: episode.oracle,
+        note: 'Offline adjudication only; oracle is never passed to coordinator or reviewer.',
+      };
+    }),
+    baselineManifestPath: baselineRoundManifest ? path.resolve(options.baselineManifest) : null,
+    attempts: [],
     completed: [],
   };
-  const manifestPath = path.join(outputDirectory, 'run-manifest.json');
-  let chargedTokens = 0;
-  const completed = [];
-  if (options.retryIndices || options.sourceDir) {
-    throw new Error('This one-round comparison does not support retries or source-directory overrides.');
-  }
-  if (options.boundaryContinue) {
-    if (!existsSync(manifestPath)) throw new Error('Boundary continuation requires the original private run manifest.');
-    const previous = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    const matchingRun = previous.kind === manifest.kind
-      && previous.baselineRef === manifest.baselineRef
-      && JSON.stringify(previous.plan) === JSON.stringify(plan)
-      && JSON.stringify(previous.limits) === JSON.stringify(manifest.limits)
-      && previous.systemPromptHash === manifest.systemPromptHash
-      && JSON.stringify(previous.sourceHashes) === JSON.stringify(manifest.sourceHashes)
-      && previous.previousReviewProtocolHash === manifest.previousReviewProtocolHash
-      && previous.currentReviewProtocolHash === manifest.currentReviewProtocolHash;
-    const records = previous.completed ?? [];
-    const [first, second, third] = records;
-    const retainedPrefix = records.length === 3
-      && first.index === 1 && first.status === 'cleanup-failed' && first.response === null && first.messages?.length === 0
-      && second.index === 2 && second.status === 'completed' && Boolean(second.response?.data?.content)
-      && third.index === 3 && third.status === 'request-limit-mismatch' && third.response === null && third.messages?.length === 0;
-    if (!matchingRun || !retainedPrefix
-      || records.some((record, index) => !Number.isFinite(record.usage?.cumulativeChargedTokens)
-        || record.index !== index + 1)
-      || existsSync(path.join(outputDirectory, 'run-4'))) {
-      throw new Error('Continuation is limited to preserving the recorded three-slot prefix and the one never-started final trajectory.');
-    }
-    completed.push(...records);
-    chargedTokens = records.at(-1).usage.cumulativeChargedTokens;
-    manifest.completed.push(...completed);
-  } else if (existsSync(manifestPath)) {
-    throw new Error('Response comparison output already exists; preserve it and do not rerun trajectories.');
-  }
-  writePrivateJson(path.join(outputDirectory, 'run-manifest.json'), manifest);
+  writePrivateJson(manifestPath, manifest);
   const model = await queryAvailableModel();
   ensureCapabilityFits(model, limits);
   writePrivateJson(path.join(outputDirectory, 'catalog.json'), model);
-  for (const run of plan.filter(item => !completed.some(record => record.index === item.index))) {
+  for (const run of plan) {
     const episode = fixture.episodes.find(item => item.id === run.episodeId);
     const directory = path.join(outputDirectory, `run-${run.index}`);
     mkdirSync(directory, { mode: 0o700 });
     const eventsPath = path.join(directory, 'events.jsonl');
     writeFileSync(eventsPath, '', { flag: 'wx', mode: 0o600 });
     const context = createRunContext(run, episode, bundle, limits, directory, eventsPath, chargedTokens);
+    context.modelCalls = [];
+    const attempt = { index: run.index, episodeId: run.episodeId, arm: run.arm, status: 'started' };
+    manifest.attempts.push(attempt);
+    writePrivateJson(manifestPath, manifest);
     const bus = new EventBus();
     const reviewers = new Map();
     let session;
@@ -2004,24 +2043,49 @@ async function runResponseBoundaryCheck(options) {
     const nativeCreateSession = innerClient.createSession.bind(innerClient);
     const reviewerProtocols = [];
     innerClient.createSession = async config => {
+      let actualConfig = config;
       if (config.systemMessage?.mode === 'replace') {
         const protocol = config.systemMessage.content;
-        if (run.arm === 'current-gate') {
-          if (protocol !== protocols.currentProtocol) {
-            throw new Error('Current-gate reviewer protocol differs from the frozen candidate.');
-          }
-          reviewerProtocols.push(protocols.previousProtocol);
-          return await nativeCreateSession({
+        if (protocol !== protocols.candidateProtocol) {
+          throw new Error('Runtime reviewer protocol differs from the verified candidate.');
+        }
+        if (run.arm === 'prior-default') {
+          actualConfig = {
             ...config,
-            systemMessage: { ...config.systemMessage, content: protocols.previousProtocol },
-          });
+            systemMessage: { ...config.systemMessage, content: protocols.baselineProtocol },
+          };
+          reviewerProtocols.push(protocols.baselineProtocol);
+        } else {
+          reviewerProtocols.push(protocols.candidateProtocol);
         }
-        if (protocol !== protocols.currentProtocol) {
-          throw new Error('Candidate reviewer protocol differs from the frozen candidate.');
-        }
-        reviewerProtocols.push(protocol);
       }
-      return await nativeCreateSession(config);
+      const created = await nativeCreateSession(actualConfig);
+      const role = config.systemMessage?.mode === 'replace' ? 'response-reviewer' : 'coordinator';
+      const nativeSendAndWait = created.sendAndWait.bind(created);
+      created.sendAndWait = async (...args) => {
+        const call = {
+          role, sessionId: created.sessionId,
+          request: args[0], startedAt: new Date().toISOString(),
+        };
+        context.modelCalls.push(call);
+        recordContextEvent(context, { at: call.startedAt, eventType: 'model.request',
+          role, sessionId: call.sessionId, request: call.request });
+        try {
+          const response = await nativeSendAndWait(...args);
+          call.response = response;
+          call.finishedAt = new Date().toISOString();
+          recordContextEvent(context, { at: call.finishedAt, eventType: 'model.response',
+            role, sessionId: call.sessionId, response });
+          return response;
+        } catch (error) {
+          call.error = error instanceof Error ? error.message : String(error);
+          call.finishedAt = new Date().toISOString();
+          recordContextEvent(context, { at: call.finishedAt, eventType: 'model.error',
+            role, sessionId: call.sessionId, error: call.error });
+          throw error;
+        }
+      };
+      return created;
     };
     const started = Date.now();
     let status = 'completed';
@@ -2050,23 +2114,46 @@ async function runResponseBoundaryCheck(options) {
       attachSessionRecorder(session, context, 'coordinator');
       response = await sendWithinDeadline(session, buildEpisodePrompt(episode), context);
       if (!response?.data?.content) throw new Error('No delivered response.');
-      if (run.arm === 'preserve-continuation') {
-        const validation = response.data.validation;
-        const requests = context.events.filter(event => event.eventType === 'response.review_request');
-        if (validation.deliveredHash !== sha256(response.data.content)
-          || JSON.stringify(validation.reviewedDraftHashes) !== JSON.stringify(requests.map(event => event.data.draftHash))) {
-          throw new Error('Delivered response does not match the recorded exact-draft review trace.');
-        }
+      const validation = response.data.validation;
+      if (!validation || validation.deliveredHash !== sha256(response.data.content)
+        || JSON.stringify(validation.reviewedDraftHashes)
+          !== JSON.stringify(context.events.filter(event => event.eventType === 'response.review_request')
+            .map(event => event.data.draftHash))) {
+        throw new Error('Delivered response does not match the recorded exact-draft review trace.');
       }
     } catch (caught) {
       status = context.stopReason ?? 'failed';
       error = caught instanceof Error ? caught.message : String(caught);
     } finally {
-      for (const reviewerId of reviewers.keys()) {
-        if (!context.usage.some(usage => usage.sessionId === reviewerId)) {
-          recordMissingReviewerUsage(context, { sessionId: reviewerId });
-          status = context.stopReason ?? 'accounting-unknown';
+      const callCounts = new Map();
+      for (const call of context.modelCalls) {
+        callCounts.set(call.sessionId, (callCounts.get(call.sessionId) ?? 0) + 1);
+      }
+      let accountingMismatch = false;
+      for (const [sessionId, callCount] of callCounts) {
+        const observed = context.usage.filter(item => item.sessionId === sessionId && item.usageStatus === 'observed').length;
+        if (observed > callCount) accountingMismatch = true;
+        for (let missing = observed; missing < callCount; missing++) {
+          const budget = context.ledger.add(normalizeUsage(), context.limits);
+          const usage = {
+            role: context.sessionIds.find(item => item.sessionId === sessionId)?.role ?? 'unknown',
+            sessionId, usageStatus: 'unknown', unknownReason: 'model-call-missing-usage-event',
+            inputTokens: null, outputTokens: null, cacheReadTokens: null, cacheWriteTokens: null,
+            reasoningTokens: null, budgetChargeTokens: budget.requestTokens,
+            cumulativeBudgetChargeTokens: budget.cumulativeChargedTokens,
+            budgetChargeBasis: 'configured-request-bounds-not-observed',
+          };
+          context.usage.push(usage);
+          context.stopReason ??= 'accounting-unknown';
+          recordContextEvent(context, { at: new Date().toISOString(), eventType: 'assistant.usage_missing',
+            role: usage.role, sessionId, reason: usage.unknownReason });
         }
+      }
+      if (accountingMismatch) {
+        context.stopReason ??= 'accounting-event-count-mismatch';
+        status = 'accounting-event-count-mismatch';
+      } else if (context.stopReason === 'accounting-unknown') {
+        status = 'accounting-unknown';
       }
       context.activeSessions.delete(session);
       try {
@@ -2091,12 +2178,18 @@ async function runResponseBoundaryCheck(options) {
       reviewerProtocolHashes: reviewerProtocols.map(sha256),
       priorTurnsHash: sha256(JSON.stringify(episode.priorTurns ?? [])),
       usage, usageEvents: context.usage, messages: context.messages,
-      sessionIds: context.sessionIds, evidence: episode.evidence, eventsPath };
+      sessionIds: context.sessionIds, evidence: episode.evidence,
+      modelCalls: context.modelCalls, eventsPath };
     writePrivateJson(path.join(directory, 'run.json'), record);
     manifest.completed.push(record);
-    writePrivateJson(path.join(outputDirectory, 'run-manifest.json'), manifest);
-    process.stdout.write(`${run.index}/4 ${run.episodeId} ${run.arm}: ${status}\n`);
-    if (status !== 'completed' || context.stopReason || chargedTokens >= limits.softTokenLimit) break;
+    attempt.status = status;
+    attempt.durationMs = record.durationMs;
+    attempt.usage = usage;
+    writePrivateJson(manifestPath, manifest);
+    process.stdout.write(`${run.index}/6 ${run.episodeId} ${run.arm}: ${status}\n`);
+    const usageUnknown = context.usage.some(item => item.inputTokens === null || item.outputTokens === null);
+    if (usageUnknown || context.stopReason === 'accounting-event-count-mismatch'
+      || context.modelCalls.length === 0 || chargedTokens >= limits.softTokenLimit) break;
   }
   process.stdout.write(`Private artifacts: ${outputDirectory}\n`);
 }

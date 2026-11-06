@@ -30,7 +30,7 @@ import {
   runModelPreflight,
   shouldStopCampaign,
   toolEventDetails,
-  verifySingleContinuationInstructionChange,
+  verifySingleResponseReviewDelta,
   VALIDATION_NOTICE,
 } from '../scripts/premise-checking-ab.mjs';
 
@@ -271,30 +271,48 @@ describe('default outgoing response boundary', () => {
       const protocol = transport.createSession.mock.calls[1][0].systemMessage.content as string;
       expect(protocol.replace(/\s+/gu, ' ')).toContain('preserves the user\'s objective, requested authorized work, and useful continuations');
       expect(protocol.replace(/\s+/gu, ' ')).toContain('Do not abandon independent work because a related claim is unknown.');
+      expect(protocol.replace(/\s+/gu, ' ')).toContain('Any proposition about external-world existence, events, behavior, capability, safety, or outcomes is factual even when hedged.');
+      expect(protocol.replace(/\s+/gu, ' ')).toContain('Use the fewest spans possible while separately classifying every factual assertion');
       expect(reviewer.sendAndWait).toHaveBeenCalledTimes(2);
   });
 
-  it('proves the live current/candidate reviewer protocols differ only in continuation preservation', () => {
+  it('proves the candidate review protocol changes only evidence-scoped classification and compactness', () => {
       const sourcePath = 'packages/squad-sdk/src/adapter/client.ts';
       const current = extractResponseReviewProtocol(read(sourcePath));
       const previous = current.replace(
-        `that removes unsupported factual claims and unauthorized adjacent actions, qualifies necessary
-unknowns, and preserves the user's objective, requested authorized work, and useful continuations
-that do not depend on the unresolved claim. Do not abandon independent work because a related
-claim is unknown. Preserve proposals as proposals; do not imply new authorization or perform new
-work. Never claim task completion or truth verification without evidence.`,
-        `that removes unsupported extras, qualifies necessary unknowns, preserves helpful authorized
-plans and human options, and never claims task completion or truth verification without evidence.`,
+        `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
+into either category. Any proposition about external-world existence, events, behavior,
+capability, safety, or outcomes is factual even when hedged. Reserve uncertainty for a
+statement explicitly limited to what the supplied evidence does or does not establish.
+Missing sources do not imply false or impossible.
+Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
+"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
+"correction":"optional complete corrected draft"}.
+Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
+Use the fewest spans possible while separately classifying every factual assertion; combine
+adjacent nonfactual text with the same classification. Do not mark a mixed paragraph nonfactual.
+Supported spans must cite supplied evidence IDs whose actual text supports the claim.
+Unknown/contradicted spans must not pass. Keep JSON compact; omit explanation. If needed,
+propose ONE concise corrected draft`,
+        `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
+into either category. Missing sources do not imply false or impossible.
+Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
+"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
+"correction":"optional complete corrected draft"}.
+Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
+Split factual assertions so each is classified; do not mark a mixed paragraph nonfactual.
+Supported spans must cite supplied evidence IDs whose actual text supports the claim.
+Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft`,
       );
-      expect(hash(previous), 'frozen prior reviewer protocol bytes must remain reproducible without Git history')
-        .toBe('067ca719ef4035cf4f42c84cd52f779307ebf366332630226f0e376717f9e490');
-      const protocols = verifySingleContinuationInstructionChange(
+      expect(hash(previous), 'round-1 baseline reviewer protocol must remain byte-for-byte frozen')
+        .toBe('007f6c280d640cea4b5ed86d653a94fe558f962d22902370ef3c526a59070cb8');
+      const protocols = verifySingleResponseReviewDelta(
         current,
         previous,
       );
-      expect(protocols.changedOnly).toBe('correction-preservation-instruction');
-      expect(protocols.currentProtocol).not.toBe(protocols.previousProtocol);
-      expect(() => verifySingleContinuationInstructionChange(protocols.previousProtocol, protocols.previousProtocol))
+      expect(protocols.changedOnly).toBe('evidence-scoped-claim-classification-and-compactness');
+      expect(protocols.candidateProtocol).not.toBe(protocols.baselineProtocol);
+      expect(() => verifySingleResponseReviewDelta(protocols.baselineProtocol, protocols.baselineProtocol))
         .toThrow(/differ only/);
   });
 
@@ -355,11 +373,12 @@ plans and human options, and never claims task completion or truth verification 
     expect(result).toMatchObject({ data: { validation: { status: 'handoff', reason: 'timeout' } } });
   });
 
-  it('freezes the four-trajectory live plan without model calls or fixture answer hints', () => {
+  it('freezes six alternating matched comparisons without model calls or runtime oracle hints', () => {
     const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
     expect(buildResponseBoundaryPlan(fixture.episodes).map(run => [run.episodeId, run.arm])).toEqual([
-      ['animal-intake', 'current-gate'], ['animal-intake', 'preserve-continuation'],
-      ['inventory-midflight-agent', 'preserve-continuation'], ['inventory-midflight-agent', 'current-gate'],
+      ['animal-intake', 'prior-default'], ['animal-intake', 'candidate'],
+      ['inventory-midflight-agent', 'candidate'], ['inventory-midflight-agent', 'prior-default'],
+      ['assurance-midflight-agent', 'prior-default'], ['assurance-midflight-agent', 'candidate'],
     ]);
   });
 
