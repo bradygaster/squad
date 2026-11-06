@@ -17,6 +17,7 @@ import {
   buildCandidatePairedCheckPlan,
   buildResponseBoundaryPlan,
   buildRemainingResponseBoundaryRuns,
+  buildFrozenResponseReviewProtocol,
   buildRemainingPairedRuns,
   buildRunPlan,
   extractResponseReviewProtocol,
@@ -273,68 +274,37 @@ describe('default outgoing response boundary', () => {
       const protocol = transport.createSession.mock.calls[1][0].systemMessage.content as string;
       expect(protocol.replace(/\s+/gu, ' ')).toContain('preserves the user\'s objective, requested authorized work, and useful continuations');
       expect(protocol.replace(/\s+/gu, ' ')).toContain('Do not abandon independent work because a related claim is unknown.');
-      expect(protocol.replace(/\s+/gu, ' ')).toContain('Any proposition about external-world existence, events, behavior, capability, safety, or outcomes is factual even when hedged.');
-      expect(protocol.replace(/\s+/gu, ' ')).toContain('Use the fewest spans possible while separately classifying every factual assertion');
+      expect(hash(protocol)).toBe('007f6c280d640cea4b5ed86d653a94fe558f962d22902370ef3c526a59070cb8');
       expect(reviewer.sendAndWait).toHaveBeenCalledTimes(2);
   });
 
-  it('proves the candidate review protocol changes only evidence-scoped classification and compactness', () => {
+  it('retains the original product reviewer and freezes both rejected experiment variants in the harness', () => {
       const sourcePath = 'packages/squad-sdk/src/adapter/client.ts';
-      const current = extractResponseReviewProtocol(read(sourcePath));
-      const roundOne = current.replace(
-        `Assess entailment at the exact scope. A source may establish that a property is a proof target
-or that an identifier appears in a label; neither establishes that the property holds or that
-the label is factually current. State a result only when supplied evidence reports that result.
-`,
-        '',
-      );
-      expect(hash(roundOne), 'round-one candidate remains frozen while round two changes its scope rule')
-        .toBe('d0d9a5ed3c5c0fc79cabcd38bdee271c42b64f9c3633cdc3e436493b5cba6b92');
-      const previous = roundOne.replace(
-        `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
-into either category. Any proposition about external-world existence, events, behavior,
-capability, safety, or outcomes is factual even when hedged. Reserve uncertainty for a
-statement explicitly limited to what the supplied evidence does or does not establish.
-Missing sources do not imply false or impossible.
-Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
-"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
-"correction":"optional complete corrected draft"}.
-Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
-Use the fewest spans possible while separately classifying every factual assertion; combine
-adjacent nonfactual text with the same classification. Do not mark a mixed paragraph nonfactual.
-Supported spans must cite supplied evidence IDs whose actual text supports the claim.
-Unknown/contradicted spans must not pass. Keep JSON compact; omit explanation. If needed,
-propose ONE concise corrected draft`,
-        `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
-into either category. Missing sources do not imply false or impossible.
-Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
-"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
-"correction":"optional complete corrected draft"}.
-Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
-Split factual assertions so each is classified; do not mark a mixed paragraph nonfactual.
-Supported spans must cite supplied evidence IDs whose actual text supports the claim.
-Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft`,
-      );
-      expect(hash(previous), 'round-1 baseline reviewer protocol must remain byte-for-byte frozen')
+      const productProtocol = extractResponseReviewProtocol(read(sourcePath));
+      expect(hash(productProtocol), 'product reviewer protocol must remain byte-for-byte original')
         .toBe('007f6c280d640cea4b5ed86d653a94fe558f962d22902370ef3c526a59070cb8');
-      const protocols = verifySingleResponseReviewDelta(
-        roundOne,
-        previous,
-      );
-      expect(protocols.changedOnly).toBe('evidence-scoped-claim-classification-and-compactness');
-      expect(protocols.candidateProtocol).not.toBe(protocols.baselineProtocol);
-      expect(() => verifySingleResponseReviewDelta(protocols.baselineProtocol, protocols.baselineProtocol))
-        .toThrow(/differ only/);
-      const roundTwo = verifySingleResponseReviewDelta(current, roundOne, 2);
-      expect(roundTwo.changedOnly).toBe('source-entailment-and-result-scope');
-      expect(roundTwo.candidateProtocol.replace(
-        `Assess entailment at the exact scope. A source may establish that a property is a proof target
-or that an identifier appears in a label; neither establishes that the property holds or that
-the label is factually current. State a result only when supplied evidence reports that result.
-`,
+      expect(productProtocol).not.toContain('Any proposition about external-world existence');
+      expect(productProtocol).not.toContain('Assess entailment at the exact scope.');
+
+      const roundOne = buildFrozenResponseReviewProtocol(productProtocol, 1);
+      expect(hash(roundOne)).toBe('d0d9a5ed3c5c0fc79cabcd38bdee271c42b64f9c3633cdc3e436493b5cba6b92');
+      expect(roundOne).toContain('Any proposition about external-world existence');
+      expect(roundOne).toContain('Keep JSON compact; omit explanation.');
+      const roundOneComparison = verifySingleResponseReviewDelta(productProtocol, roundOne, productProtocol, 1);
+      expect(roundOneComparison.changedOnly).toBe('evidence-scoped-claim-classification-and-compactness');
+      expect(roundOneComparison.candidateProtocol).not.toBe(roundOneComparison.baselineProtocol);
+
+      const roundTwo = buildFrozenResponseReviewProtocol(productProtocol, 2);
+      expect(hash(roundTwo)).toBe('84d92f6ad1ed79c745124737f1662a7f92f28877fcac2f140386a5f01bccdf15');
+      expect(roundTwo).toContain('Assess entailment at the exact scope.');
+      const roundTwoComparison = verifySingleResponseReviewDelta(productProtocol, roundTwo, roundOne, 2);
+      expect(roundTwoComparison.changedOnly).toBe('source-entailment-and-result-scope');
+      expect(roundTwo.replace(
+        'Assess entailment at the exact scope. A source may establish that a property is a proof target\nor that an identifier appears in a label; neither establishes that the property holds or that\nthe label is factually current. State a result only when supplied evidence reports that result.\n',
         '',
-      )).toBe(roundTwo.baselineProtocol);
-      expect(() => verifySingleResponseReviewDelta(current, roundOne, 1)).toThrow(/differ only/);
+      )).toBe(roundOne);
+      expect(() => verifySingleResponseReviewDelta(productProtocol, productProtocol, productProtocol, 1))
+        .toThrow(/exact frozen reviewer protocols/);
   });
 
   it('withholds output when the automatic reviewer cannot be created', async () => {

@@ -45,6 +45,36 @@ const COMMON_SOURCE_PATHS = Object.freeze({
 });
 export const AVAILABLE_TOOLS = Object.freeze(['read_evidence', 'task']);
 const TOOL_NAMES = new Set(AVAILABLE_TOOLS);
+const ORIGINAL_RESPONSE_REVIEW_PROTOCOL_HASH = '007f6c280d640cea4b5ed86d653a94fe558f962d22902370ef3c526a59070cb8';
+const ROUND_ONE_PROTOCOL_REPLACEMENTS = Object.freeze([
+  {
+    before: `Plans, proposals, explicit fiction and opinions are nonfactual. Properly bounded statements
+about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
+into either category. Missing sources do not imply false or impossible.`,
+    after: `Plans, proposals, explicit fiction and opinions are nonfactual. Properly bounded statements
+about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
+into either category. Any proposition about external-world existence, events, behavior,
+capability, safety, or outcomes is factual even when hedged. Reserve uncertainty for a
+statement explicitly limited to what the supplied evidence does or does not establish.
+Missing sources do not imply false or impossible.`,
+  },
+  {
+    before: 'Split factual assertions so each is classified; do not mark a mixed paragraph nonfactual.',
+    after: `Use the fewest spans possible while separately classifying every factual assertion; combine
+adjacent nonfactual text with the same classification. Do not mark a mixed paragraph nonfactual.`,
+  },
+  {
+    before: `Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft`,
+    after: `Unknown/contradicted spans must not pass. Keep JSON compact; omit explanation. If needed,
+propose ONE concise corrected draft`,
+  },
+]);
+const ROUND_TWO_PROTOCOL_INSERTION = `Assess entailment at the exact scope. A source may establish that a property is a proof target
+or that an identifier appears in a label; neither establishes that the property holds or that
+the label is factually current. State a result only when supplied evidence reports that result.
+`;
+const ROUND_ONE_RESPONSE_REVIEW_PROTOCOL_HASH = 'd0d9a5ed3c5c0fc79cabcd38bdee271c42b64f9c3633cdc3e436493b5cba6b92';
+const ROUND_TWO_RESPONSE_REVIEW_PROTOCOL_HASH = '84d92f6ad1ed79c745124737f1662a7f92f28877fcac2f140386a5f01bccdf15';
 
 export const ARMS = ARM_IDS;
 export { VALIDATION_NOTICE };
@@ -1900,51 +1930,54 @@ export function extractResponseReviewProtocol(source) {
   return match[1];
 }
 
-export function verifySingleResponseReviewDelta(candidateProtocol, baselineProtocol, round = 1) {
-  const delta = round === 1
-    ? {
-      candidate: `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
-into either category. Any proposition about external-world existence, events, behavior,
-capability, safety, or outcomes is factual even when hedged. Reserve uncertainty for a
-statement explicitly limited to what the supplied evidence does or does not establish.
-Missing sources do not imply false or impossible.
-Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
-"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
-"correction":"optional complete corrected draft"}.
-Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
-Use the fewest spans possible while separately classifying every factual assertion; combine
-adjacent nonfactual text with the same classification. Do not mark a mixed paragraph nonfactual.
-Supported spans must cite supplied evidence IDs whose actual text supports the claim.
-Unknown/contradicted spans must not pass. Keep JSON compact; omit explanation. If needed,
-propose ONE concise corrected draft`,
-      baseline: `about missing evidence or uncertainty may be uncertainty; do not smuggle factual extras
-into either category. Missing sources do not imply false or impossible.
-Return ONLY JSON: {"draftHash":"exact supplied hash","spans":[{"text":"exact contiguous draft text",
-"status":"supported|contradicted|unknown|nonfactual|uncertainty","evidenceIds":[]}],
-"correction":"optional complete corrected draft"}.
-Concatenating span texts must reproduce ALL draft bytes exactly, including whitespace.
-Split factual assertions so each is classified; do not mark a mixed paragraph nonfactual.
-Supported spans must cite supplied evidence IDs whose actual text supports the claim.
-Unknown/contradicted spans must not pass. If needed, propose ONE concise corrected draft`,
-      changedOnly: 'evidence-scoped-claim-classification-and-compactness',
-    }
-    : round === 2
-      ? {
-        candidate: `Assess entailment at the exact scope. A source may establish that a property is a proof target
-or that an identifier appears in a label; neither establishes that the property holds or that
-the label is factually current. State a result only when supplied evidence reports that result.
-`,
-        baseline: '',
-        changedOnly: 'source-entailment-and-result-scope',
-      }
-      : null;
-  if (!delta
-    || candidateProtocol.split(delta.candidate).length !== 2
-    || (delta.baseline && baselineProtocol.split(delta.baseline).length !== 2)
-    || candidateProtocol.replace(delta.candidate, delta.baseline) !== baselineProtocol) {
-    throw new Error(`The round ${round} comparison must differ only in its frozen reviewer-instruction change.`);
+function replaceUniqueProtocolText(protocol, before, after) {
+  if (protocol.split(before).length !== 2) {
+    throw new Error('Frozen response-review variant no longer matches the original protocol.');
   }
-  return { candidateProtocol, baselineProtocol, changedOnly: delta.changedOnly };
+  return protocol.replace(before, after);
+}
+
+export function buildFrozenResponseReviewProtocol(originalProtocol, round) {
+  if (sha256(originalProtocol) !== ORIGINAL_RESPONSE_REVIEW_PROTOCOL_HASH) {
+    throw new Error('Frozen response-review experiments require the exact original product protocol.');
+  }
+  let candidateProtocol = originalProtocol;
+  for (const replacement of ROUND_ONE_PROTOCOL_REPLACEMENTS) {
+    candidateProtocol = replaceUniqueProtocolText(candidateProtocol, replacement.before, replacement.after);
+  }
+  if (sha256(candidateProtocol) !== ROUND_ONE_RESPONSE_REVIEW_PROTOCOL_HASH) {
+    throw new Error('Frozen round-one response-review protocol hash changed.');
+  }
+  if (round === 1) return candidateProtocol;
+  if (round !== 2) throw new Error(`Unsupported frozen response-review round: ${round}`);
+  candidateProtocol = replaceUniqueProtocolText(
+    candidateProtocol,
+    'Only retrieved tool-result excerpts can support factual claims; model memory, agreement,\nuser assertions and missing evidence are not proof. Assess source scope and reliability.\n',
+    `Only retrieved tool-result excerpts can support factual claims; model memory, agreement,
+user assertions and missing evidence are not proof. Assess source scope and reliability.
+${ROUND_TWO_PROTOCOL_INSERTION}`,
+  );
+  if (sha256(candidateProtocol) !== ROUND_TWO_RESPONSE_REVIEW_PROTOCOL_HASH) {
+    throw new Error('Frozen round-two response-review protocol hash changed.');
+  }
+  return candidateProtocol;
+}
+
+export function verifySingleResponseReviewDelta(originalProtocol, candidateProtocol, baselineProtocol, round) {
+  const expectedBaseline = round === 1
+    ? originalProtocol
+    : buildFrozenResponseReviewProtocol(originalProtocol, 1);
+  const expectedCandidate = buildFrozenResponseReviewProtocol(originalProtocol, round);
+  if (baselineProtocol !== expectedBaseline || candidateProtocol !== expectedCandidate) {
+    throw new Error(`The round ${round} comparison must use its exact frozen reviewer protocols.`);
+  }
+  return {
+    candidateProtocol,
+    baselineProtocol,
+    changedOnly: round === 1
+      ? 'evidence-scoped-claim-classification-and-compactness'
+      : 'source-entailment-and-result-scope',
+  };
 }
 
 async function runResponseBoundaryCheck(options) {
@@ -1977,9 +2010,10 @@ async function runResponseBoundaryCheck(options) {
   const sources = Object.fromEntries(Object.entries({ ...SOURCE_PATHS, ...COMMON_SOURCE_PATHS })
     .map(([name, file]) => [name, readGitFile(ref, file)]));
   const systemPrompt = buildSystemPrompt({ ...sources, arm: 'truth-first' });
-  const candidateProtocol = extractResponseReviewProtocol(readWorkingFile('packages/squad-sdk/src/adapter/client.ts'));
+  const productProtocol = extractResponseReviewProtocol(readWorkingFile('packages/squad-sdk/src/adapter/client.ts'));
   const builtProtocol = extractResponseReviewProtocol(readWorkingFile('packages/squad-sdk/dist/adapter/client.js'));
-  if (builtProtocol !== candidateProtocol) {
+  if (builtProtocol !== productProtocol
+    || sha256(productProtocol) !== ORIGINAL_RESPONSE_REVIEW_PROTOCOL_HASH) {
     throw new Error('Built SDK reviewer protocol does not match the reviewed source; build before live runs.');
   }
   let baselineProtocol;
@@ -1987,7 +2021,7 @@ async function runResponseBoundaryCheck(options) {
   let baselineRoundManifest = null;
   let chargedTokens = 0;
   if (options.responseBoundaryRound === 1) {
-    baselineProtocol = extractResponseReviewProtocol(readGitFile(ref, 'packages/squad-sdk/src/adapter/client.ts'));
+    baselineProtocol = productProtocol;
   } else {
     baselineRoundManifest = JSON.parse(readFileSync(path.resolve(options.baselineManifest), 'utf8'));
     if (baselineRoundManifest.kind !== 'truth-first-optimization-round'
@@ -2005,7 +2039,13 @@ async function runResponseBoundaryCheck(options) {
     baselineRef = `round-1 candidate ${baselineRoundManifest.candidateReviewProtocolHash}`;
     chargedTokens = baselineRoundManifest.completed.at(-1).usage.cumulativeChargedTokens;
   }
-  const protocols = verifySingleResponseReviewDelta(candidateProtocol, baselineProtocol, options.responseBoundaryRound);
+  const candidateProtocol = buildFrozenResponseReviewProtocol(productProtocol, options.responseBoundaryRound);
+  const protocols = verifySingleResponseReviewDelta(
+    productProtocol,
+    candidateProtocol,
+    baselineProtocol,
+    options.responseBoundaryRound,
+  );
   const bundle = {
     systemPrompt, systemPromptHash: sha256(systemPrompt),
     sourceHashes: Object.fromEntries(Object.entries(sources).map(([name, text]) => [name, sha256(text)])),
@@ -2115,18 +2155,17 @@ async function runResponseBoundaryCheck(options) {
       let actualConfig = config;
       if (config.systemMessage?.mode === 'replace') {
         const protocol = config.systemMessage.content;
-        if (protocol !== protocols.candidateProtocol) {
-          throw new Error('Runtime reviewer protocol differs from the verified candidate.');
+        if (protocol !== productProtocol) {
+          throw new Error('Runtime reviewer protocol differs from the verified product protocol.');
         }
-        if (run.arm === 'prior-default') {
-          actualConfig = {
-            ...config,
-            systemMessage: { ...config.systemMessage, content: protocols.baselineProtocol },
-          };
-          reviewerProtocols.push(protocols.baselineProtocol);
-        } else {
-          reviewerProtocols.push(protocols.candidateProtocol);
-        }
+        const selectedProtocol = run.arm === 'prior-default'
+          ? protocols.baselineProtocol
+          : protocols.candidateProtocol;
+        actualConfig = {
+          ...config,
+          systemMessage: { ...config.systemMessage, content: selectedProtocol },
+        };
+        reviewerProtocols.push(selectedProtocol);
       }
       const created = await nativeCreateSession(actualConfig);
       const role = config.systemMessage?.mode === 'replace' ? 'response-reviewer' : 'coordinator';
