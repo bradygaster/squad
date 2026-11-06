@@ -16,6 +16,7 @@ import {
   buildCandidateCheckPlan,
   buildCandidatePairedCheckPlan,
   buildResponseBoundaryPlan,
+  buildRemainingResponseBoundaryRuns,
   buildRemainingPairedRuns,
   buildRunPlan,
   extractResponseReviewProtocol,
@@ -24,6 +25,7 @@ import {
   compareLimitObservations,
   createUsageLedger,
   hasEvidenceReviewTrace,
+  hasCompleteModelCallUsage,
   loadPromptBundle,
   normalizeUsage,
   recordMissingReviewerUsage,
@@ -375,11 +377,20 @@ Unknown/contradicted spans must not pass. If needed, propose ONE concise correct
 
   it('freezes six alternating matched comparisons without model calls or runtime oracle hints', () => {
     const fixture = JSON.parse(read('test/fixtures/premise-checking/scenarios.json'));
-    expect(buildResponseBoundaryPlan(fixture.episodes).map(run => [run.episodeId, run.arm])).toEqual([
+    const plan = buildResponseBoundaryPlan(fixture.episodes);
+    expect(plan.map(run => [run.episodeId, run.arm])).toEqual([
       ['animal-intake', 'prior-default'], ['animal-intake', 'candidate'],
       ['inventory-midflight-agent', 'candidate'], ['inventory-midflight-agent', 'prior-default'],
       ['assurance-midflight-agent', 'prior-default'], ['assurance-midflight-agent', 'candidate'],
     ]);
+    expect(buildRemainingResponseBoundaryRuns(plan, plan.slice(0, 3))).toEqual(plan.slice(3));
+    expect(() => buildRemainingResponseBoundaryRuns(plan, [plan[1]])).toThrow(/frozen plan prefix/);
+  });
+
+  it('accepts multiple usage events within a tool-using model call without hiding missing accounting', () => {
+    expect(hasCompleteModelCallUsage(3, 4), 'a tool continuation may emit multiple usage events').toBe(true);
+    expect(hasCompleteModelCallUsage(3, 3)).toBe(true);
+    expect(hasCompleteModelCallUsage(3, 2), 'fewer observed usage events remain unaccounted').toBe(false);
   });
 
   it('closes the installed disconnect-based transport without requiring the removed destroy API', async () => {

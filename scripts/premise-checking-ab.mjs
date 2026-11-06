@@ -1402,6 +1402,7 @@ function parseArguments(args) {
     responseBoundaryRound: 1,
     baselineManifest: null,
     episodeIds: null,
+    resume: false,
     help: false,
   };
   for (let index = 0; index < args.length; index++) {
@@ -1419,6 +1420,7 @@ function parseArguments(args) {
       if (!raw || !/^[12]$/.test(raw)) throw new Error('--round must be 1 or 2.');
       options.responseBoundaryRound = Number(raw);
     }
+    else if (arg === '--resume') options.resume = true;
     else if (arg === '--baseline-manifest') options.baselineManifest = args[++index];
     else if (arg === '--indices') {
       const raw = args[++index];
@@ -1456,6 +1458,7 @@ function printHelp() {
     '  node scripts/premise-checking-ab.mjs --candidate-check --episodes <fixture-ids> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --paired-check --episodes <fixture-ids> --out-dir <new-private-path>',
     '  node scripts/premise-checking-ab.mjs --response-boundary-check --round 1 --out-dir <private-round-path>',
+    '  node scripts/premise-checking-ab.mjs --response-boundary-check --round 1 --resume --out-dir <existing-private-round-path>',
     '  node scripts/premise-checking-ab.mjs --response-boundary-check --round 2 --baseline-manifest <round-1-run-manifest> --out-dir <private-round-path>',
     '  node scripts/premise-checking-ab.mjs --pilot [--out-dir <private-path>]',
     '  node scripts/premise-checking-ab.mjs --continue --out-dir <same-private-path>',
@@ -1872,6 +1875,25 @@ export function buildResponseBoundaryPlan(episodes) {
   }).map((run, index) => ({ index: index + 1, ...run }));
 }
 
+export function buildRemainingResponseBoundaryRuns(plan, completed) {
+  if (!Array.isArray(completed) || completed.length > plan.length
+    || completed.some((record, index) => (
+      record.index !== plan[index]?.index
+      || record.episodeId !== plan[index]?.episodeId
+      || record.arm !== plan[index]?.arm
+    ))) {
+    throw new Error('Cannot resume unless recorded response-boundary slots match a frozen plan prefix.');
+  }
+  return plan.slice(completed.length);
+}
+
+export function hasCompleteModelCallUsage(callCount, observedUsageCount) {
+  return Number.isSafeInteger(callCount)
+    && Number.isSafeInteger(observedUsageCount)
+    && callCount >= 0
+    && observedUsageCount >= callCount;
+}
+
 export function extractResponseReviewProtocol(source) {
   const match = /const REVIEW_PROTOCOL = `([\s\S]*?)`;/u.exec(source);
   if (!match) throw new Error('SDK source does not contain its review protocol.');
@@ -1933,7 +1955,12 @@ async function runResponseBoundaryCheck(options) {
     throw new Error('Round 1 cannot use a later-round baseline manifest.');
   }
   const manifestPath = path.join(outputDirectory, 'run-manifest.json');
-  if (existsSync(manifestPath)) throw new Error('Round output already exists; preserve it and do not rerun trajectories.');
+  if (existsSync(manifestPath) && !options.resume) {
+    throw new Error('Round output already exists; preserve it and do not rerun trajectories.');
+  }
+  if (options.resume && (!existsSync(manifestPath) || options.responseBoundaryRound !== 1)) {
+    throw new Error('--resume requires an existing round-1 manifest.');
+  }
 
   const fixture = loadFixture();
   const plan = buildResponseBoundaryPlan(fixture.episodes);
@@ -1974,7 +2001,7 @@ async function runResponseBoundaryCheck(options) {
     systemPrompt, systemPromptHash: sha256(systemPrompt),
     sourceHashes: Object.fromEntries(Object.entries(sources).map(([name, text]) => [name, sha256(text)])),
   };
-  const manifest = {
+  const expectedManifest = {
     kind: 'truth-first-optimization-round',
     round: options.responseBoundaryRound,
     baselineRef: ref,
@@ -2001,11 +2028,44 @@ async function runResponseBoundaryCheck(options) {
     attempts: [],
     completed: [],
   };
-  writePrivateJson(manifestPath, manifest);
-  const model = await queryAvailableModel();
+  let manifest = expectedManifest;
+  let runs = plan;
+  let model;
+  if (options.resume) {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+    if (manifest.kind !== expectedManifest.kind
+      || manifest.round !== expectedManifest.round
+      || manifest.model !== expectedManifest.model
+      || JSON.stringify(manifest.plan) !== JSON.stringify(expectedManifest.plan)
+      || JSON.stringify(manifest.limits) !== JSON.stringify(expectedManifest.limits)
+      || manifest.systemPromptHash !== expectedManifest.systemPromptHash
+      || manifest.baselineReviewProtocolHash !== expectedManifest.baselineReviewProtocolHash
+      || manifest.candidateReviewProtocolHash !== expectedManifest.candidateReviewProtocolHash
+      || manifest.baselineReviewProtocol !== expectedManifest.baselineReviewProtocol
+      || manifest.candidateReviewProtocol !== expectedManifest.candidateReviewProtocol
+      || JSON.stringify(manifest.sourceHashes) !== JSON.stringify(expectedManifest.sourceHashes)) {
+      throw new Error('Existing round manifest differs from the frozen round-1 comparison.');
+    }
+    runs = buildRemainingResponseBoundaryRuns(plan, manifest.completed);
+    if (manifest.attempts.length !== manifest.completed.length
+      || manifest.attempts.some((attempt, index) => (
+        attempt.index !== manifest.completed[index]?.index
+        || attempt.status !== manifest.completed[index]?.status
+      ))) {
+      throw new Error('Cannot resume while a response-boundary slot has an unrecorded attempt.');
+    }
+    chargedTokens = manifest.completed.at(-1)?.usage?.cumulativeChargedTokens ?? 0;
+    if (!Number.isSafeInteger(chargedTokens) || chargedTokens < 0) {
+      throw new Error('Existing round manifest has invalid cumulative usage accounting.');
+    }
+    model = JSON.parse(readFileSync(path.join(outputDirectory, 'catalog.json'), 'utf8'));
+  } else {
+    writePrivateJson(manifestPath, manifest);
+    model = await queryAvailableModel();
+  }
   ensureCapabilityFits(model, limits);
-  writePrivateJson(path.join(outputDirectory, 'catalog.json'), model);
-  for (const run of plan) {
+  if (!options.resume) writePrivateJson(path.join(outputDirectory, 'catalog.json'), model);
+  for (const run of runs) {
     const episode = fixture.episodes.find(item => item.id === run.episodeId);
     const directory = path.join(outputDirectory, `run-${run.index}`);
     mkdirSync(directory, { mode: 0o700 });
@@ -2129,11 +2189,10 @@ async function runResponseBoundaryCheck(options) {
       for (const call of context.modelCalls) {
         callCounts.set(call.sessionId, (callCounts.get(call.sessionId) ?? 0) + 1);
       }
-      let accountingMismatch = false;
       for (const [sessionId, callCount] of callCounts) {
         const observed = context.usage.filter(item => item.sessionId === sessionId && item.usageStatus === 'observed').length;
-        if (observed > callCount) accountingMismatch = true;
-        for (let missing = observed; missing < callCount; missing++) {
+        const accountedUsageCount = hasCompleteModelCallUsage(callCount, observed) ? callCount : observed;
+        for (let missing = accountedUsageCount; missing < callCount; missing++) {
           const budget = context.ledger.add(normalizeUsage(), context.limits);
           const usage = {
             role: context.sessionIds.find(item => item.sessionId === sessionId)?.role ?? 'unknown',
@@ -2149,10 +2208,7 @@ async function runResponseBoundaryCheck(options) {
             role: usage.role, sessionId, reason: usage.unknownReason });
         }
       }
-      if (accountingMismatch) {
-        context.stopReason ??= 'accounting-event-count-mismatch';
-        status = 'accounting-event-count-mismatch';
-      } else if (context.stopReason === 'accounting-unknown') {
+      if (context.stopReason === 'accounting-unknown') {
         status = 'accounting-unknown';
       }
       context.activeSessions.delete(session);
@@ -2188,8 +2244,7 @@ async function runResponseBoundaryCheck(options) {
     writePrivateJson(manifestPath, manifest);
     process.stdout.write(`${run.index}/6 ${run.episodeId} ${run.arm}: ${status}\n`);
     const usageUnknown = context.usage.some(item => item.inputTokens === null || item.outputTokens === null);
-    if (usageUnknown || context.stopReason === 'accounting-event-count-mismatch'
-      || context.modelCalls.length === 0 || chargedTokens >= limits.softTokenLimit) break;
+    if (usageUnknown || context.modelCalls.length === 0 || chargedTokens >= limits.softTokenLimit) break;
   }
   process.stdout.write(`Private artifacts: ${outputDirectory}\n`);
 }
