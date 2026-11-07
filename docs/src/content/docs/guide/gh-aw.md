@@ -111,13 +111,13 @@ SQUAD_SHA="<40-character-commit-sha>"
   exit 1
 }
 
-gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+gh aw add "github/squad/workflows@${SQUAD_SHA}"
 rm -f .github/skills/agentic-workflows/SKILL.md
 
 # 5. On first install, review the safe-update report. Approve ONLY if it
 # contains exactly the two documented secrets (SQUAD_GITHUB_APP_PRIVATE_KEY,
 # SQUAD_GITHUB_TOKEN) and the one documented action
-# (bradygaster/squad/.github/actions/squad-init) and nothing else. STOP and
+# (github/squad/.github/actions/squad-init) and nothing else. STOP and
 # report any other entry instead of approving.
 gh aw compile --strict --approve   # first install only, when the safe-update warning appears
 
@@ -550,7 +550,7 @@ SQUAD_SHA="<40-character-commit-sha>"
   echo "STOP: SQUAD_SHA must be an explicit 40-character Squad commit SHA, not a branch name or shortened hash." >&2
   exit 1
 }
-gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}"
+gh aw add "github/squad/workflows@${SQUAD_SHA}"
 rm -f .github/skills/agentic-workflows/SKILL.md
 ```
 
@@ -641,7 +641,7 @@ source/lock pairs, and one coherent 40-character revision.
 On a clean repository, `gh aw add` reports these expected safe-update changes:
 
 - Restricted secrets: `SQUAD_GITHUB_APP_PRIVATE_KEY` and `SQUAD_GITHUB_TOKEN`
-- Action: `bradygaster/squad/.github/actions/squad-init`
+- Action: `github/squad/.github/actions/squad-init`
 
 > **These are referenced names, not prerequisites.** `gh aw add` lists the secrets
 > the workflows *reference* so you can approve that surface — it is not asking you
@@ -1614,7 +1614,7 @@ comment, ignore a missing proof, or dispatch partial bindings.
 #### Run the existing executable example
 
 The repository's
-[activation finalization integration fixture](https://github.com/bradygaster/squad/blob/dev/test/gh-aw-activation-finalization.test.ts)
+[activation finalization integration fixture](https://github.com/github/squad/blob/dev/test/gh-aw-activation-finalization.test.ts)
 is the executable producer/consumer example. In
 `continues after a later-phase pending-source recovery and validates the complete transitive reader chain`,
 it obtains proofs through the real workflow `verifyReconciliationRequest`,
@@ -1623,7 +1623,7 @@ both the SDK selector and canonical checker. These helpers belong to
 `workflows/shared/squad-activation.mjs`; they are **not** public `/casting` verifier
 exports. The `trusted synchronous publication completion (source and strict-compiled jobs)`
 group also executes emitted job scripts and the pinned issue-creation API adapter.
-The companion [selector contract tests](https://github.com/bradygaster/squad/blob/dev/test/agent-provenance.test.ts)
+The companion [selector contract tests](https://github.com/github/squad/blob/dev/test/agent-provenance.test.ts)
 cover selection, no-record results and rejection cases; their hand-built evidence
 is test data, not production authorization.
 
@@ -2507,7 +2507,7 @@ same native package as one unit:
 ```bash
 SQUAD_SHA="<40-character-commit-sha>"
 
-gh aw add "bradygaster/squad/workflows@${SQUAD_SHA}" --force
+gh aw add "github/squad/workflows@${SQUAD_SHA}" --force
 rm -f .github/skills/agentic-workflows/SKILL.md
 node .github/workflows/shared/squad-install-verifier.mjs --materialize-runtime
 gh aw compile --strict
@@ -2526,8 +2526,8 @@ prints the exact safe recovery commands.
 The schema-v2 integrity manifest records two complete compiled lock digests per
 workflow: `lock_sha256` for a per-workflow source annotation and
 `package_lock_sha256` for a package-root annotation. gh-aw v0.91.5 emits
-`bradygaster/squad/workflows@SHA` for direct package includes, but can emit
-`bradygaster/squad/workflows/package/<workflow>.md@SHA` when installing dispatched
+`github/squad/workflows@SHA` for direct package includes, but can emit
+`github/squad/workflows/package/<workflow>.md@SHA` when installing dispatched
 dependencies. Fresh and forced installs can therefore contain different mixtures.
 The verifier selects one digest from the exact, ownership- and source-validated
 annotation; it never tries both until one passes. Compiled source comments,
@@ -2610,7 +2610,7 @@ other refs.
 
 ## See also
 
-- [Squad README](https://github.com/bradygaster/squad#readme) — project overview and local CLI usage
-- [Workflow definition](https://github.com/bradygaster/squad/blob/dev/workflows/squad.md) — full slash command specification
-- [Implementation worker](https://github.com/bradygaster/squad/blob/dev/workflows/squad-implement-worker.md) — isolated issue implementation workflow
-- [Bootstrap component](https://github.com/bradygaster/squad/blob/dev/workflows/shared/squad.md) — activation and artifact lifecycle
+- [Squad README](https://github.com/github/squad#readme) — project overview and local CLI usage
+- [Workflow definition](https://github.com/github/squad/blob/dev/workflows/squad.md) — full slash command specification
+- [Implementation worker](https://github.com/github/squad/blob/dev/workflows/squad-implement-worker.md) — isolated issue implementation workflow
+- [Bootstrap component](https://github.com/github/squad/blob/dev/workflows/shared/squad.md) — activation and artifact lifecycle
